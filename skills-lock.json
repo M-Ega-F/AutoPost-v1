@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "skills": {
+    "frontend-design": {
+      "source": "anthropics/skills",
+      "sourceType": "github",
+      "skillPath": "skills/frontend-design/SKILL.md",
+      "computedHash": "4eabc66183767153e404b39d1b839b1c37f2d82d86f0a0d7e880a579d8d62336"
+    },
+    "nextjs16-skills": {
+      "source": "gocallum/nextjs16-agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/nextjs16-skills/SKILL.md",
+      "computedHash": "5c397757268a55b69b99e8d40c7c454adaf48a12acafd91f262f2cb16128880d"
+    },
+    "redis-connections": {
+      "source": "redis/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/redis-connections/SKILL.md",
+      "computedHash": "75ec09613fdadfc16edd88940a10d135aa6196cbcf5c7a10a3a1bf6e6d044c5f"
+    },
+    "redis-core": {
+      "source": "redis/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/redis-core/SKILL.md",
+      "computedHash": "3b6196044dfba0f77942f20030faab03ca0741c396ba8d759c179710ebd2a7dd"
+    },
+    "shadcn": {
+      "source": "shadcn/ui",
+      "sourceType": "github",
+      "skillPath": "skills/shadcn/SKILL.md",
+      "computedHash": "a86630dd9b32722a4ea6846abc6756d5da8f06bdc2343dbc625923cc5c7a758b"
+    },
+    "supabase": {
+      "source": "supabase/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/supabase/SKILL.md",
+      "computedHash": "583344c20e90f3654dbb0632f088d89fd9f1dde8ac85e8a644dd12eee59b1380"
+    },
+    "supabase-postgres-best-practices": {
+      "source": "supabase/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/supabase-postgres-best-practices/SKILL.md",
+      "computedHash": "e14e276241805c97dbcfe40dcbea1a3035269cc7293cac4b1832dda41a835e60"
+    },
+    "vercel-cli": {
+      "source": "vercel/vercel",
+      "sourceType": "github",
+      "skillPath": "skills/vercel-cli/SKILL.md",
+      "computedHash": "be9db0e39462b488ff9ddb0712819efd5c273808e85550b8c698f9c63f135af8"
+    }
+  }
+}

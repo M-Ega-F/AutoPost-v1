@@ -1,0 +1,185 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  --radius: 0.5rem;
+
+  --background: 231 50% 97%;
+  --foreground: 245 52% 12%;
+  --card: 240 55% 100%;
+  --card-foreground: 245 52% 12%;
+  --popover: 240 55% 100%;
+  --popover-foreground: 245 52% 12%;
+  --primary: 282 87% 55%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 184 100% 90%;
+  --secondary-foreground: 221 78% 22%;
+  --muted: 232 32% 93%;
+  --muted-foreground: 238 25% 39%;
+  --accent: 327 100% 95%;
+  --accent-foreground: 319 76% 38%;
+  --destructive: 0 72% 45%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 260 48% 83%;
+  --input: 260 48% 83%;
+  --ring: 183 100% 39%;
+
+  --neon-cyan: 183 100% 39%;
+  --neon-pink: 323 94% 55%;
+  --neon-lime: 78 91% 38%;
+  --neon-purple: 282 87% 55%;
+  --neon-surface: 275 100% 98%;
+
+  --success: 142 72% 29%;
+  --success-surface: 142 70% 96%;
+  --success-border: 142 55% 82%;
+  --warning: 32 95% 34%;
+  --warning-surface: 48 100% 96%;
+  --warning-border: 48 96% 78%;
+  --info: 190 95% 38%;
+  --info-surface: 188 100% 95%;
+  --info-border: 188 85% 78%;
+  --destructive-surface: 0 86% 97%;
+  --destructive-border: 0 91% 86%;
+}
+
+.dark {
+  --background: 246 48% 5%;
+  --foreground: 220 40% 98%;
+  --card: 247 43% 10%;
+  --card-foreground: 220 40% 98%;
+  --popover: 247 43% 13%;
+  --popover-foreground: 220 40% 98%;
+  --primary: 303 100% 68%;
+  --primary-foreground: 244 45% 8%;
+  --secondary: 183 100% 50%;
+  --secondary-foreground: 229 54% 7%;
+  --muted: 247 34% 17%;
+  --muted-foreground: 224 30% 77%;
+  --accent: 273 72% 22%;
+  --accent-foreground: 183 100% 82%;
+  --destructive: 0 72% 58%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 269 54% 28%;
+  --input: 269 54% 28%;
+  --ring: 183 100% 65%;
+
+  --neon-cyan: 183 100% 65%;
+  --neon-pink: 320 100% 70%;
+  --neon-lime: 78 100% 64%;
+  --neon-purple: 278 100% 75%;
+  --neon-surface: 264 76% 13%;
+
+  --success: 105 100% 65%;
+  --success-surface: 105 45% 14%;
+  --success-border: 105 60% 30%;
+  --warning: 38 100% 65%;
+  --warning-surface: 38 55% 14%;
+  --warning-border: 38 70% 32%;
+  --info: 190 100% 68%;
+  --info-surface: 190 55% 14%;
+  --info-border: 190 65% 32%;
+  --destructive-surface: 0 45% 14%;
+  --destructive-border: 0 40% 30%;
+}
+
+@theme inline {
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, -apple-system,
+    "Segoe UI", Roboto, sans-serif;
+
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+  --color-popover: hsl(var(--popover));
+  --color-popover-foreground: hsl(var(--popover-foreground));
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+  --color-secondary: hsl(var(--secondary));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+  --color-destructive: hsl(var(--destructive));
+  --color-destructive-foreground: hsl(var(--destructive-foreground));
+  --color-border: hsl(var(--border));
+  --color-input: hsl(var(--input));
+  --color-ring: hsl(var(--ring));
+
+  --color-neon-cyan: hsl(var(--neon-cyan));
+  --color-neon-pink: hsl(var(--neon-pink));
+  --color-neon-lime: hsl(var(--neon-lime));
+  --color-neon-purple: hsl(var(--neon-purple));
+  --color-neon-surface: hsl(var(--neon-surface));
+
+  --color-success: hsl(var(--success));
+  --color-success-surface: hsl(var(--success-surface));
+  --color-success-border: hsl(var(--success-border));
+  --color-warning: hsl(var(--warning));
+  --color-warning-surface: hsl(var(--warning-surface));
+  --color-warning-border: hsl(var(--warning-border));
+  --color-info: hsl(var(--info));
+  --color-info-surface: hsl(var(--info-surface));
+  --color-info-border: hsl(var(--info-border));
+  --color-destructive-surface: hsl(var(--destructive-surface));
+  --color-destructive-border: hsl(var(--destructive-border));
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans;
+    position: relative;
+    isolation: isolate;
+    min-height: 100dvh;
+    background-image:
+      radial-gradient(circle at 8% 0%, hsl(var(--neon-pink) / 0.13), transparent 28rem),
+      radial-gradient(circle at 92% 8%, hsl(var(--neon-cyan) / 0.14), transparent 30rem),
+      linear-gradient(135deg, hsl(var(--background)), hsl(var(--neon-surface)));
+    background-attachment: fixed;
+  }
+
+  body::before {
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    content: "";
+    opacity: 0.3;
+    background-image:
+      linear-gradient(hsl(var(--neon-cyan) / 0.08) 1px, transparent 1px),
+      linear-gradient(90deg, hsl(var(--neon-pink) / 0.08) 1px, transparent 1px);
+    background-size: 44px 44px;
+    mask-image: linear-gradient(to bottom, black, transparent 72%);
+  }
+
+  ::selection {
+    color: hsl(var(--primary-foreground));
+    background: hsl(var(--neon-pink));
+  }
+
+  html {
+    color-scheme: light dark;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
