@@ -43,6 +43,8 @@ export type MediaSummary = {
   height: number | null;
   duration: number | null;
   previewUrl: string | null;
+  storageKey: string | null;
+  sourceUrl: string | null;
 };
 
 export type PostSummary = {
@@ -53,6 +55,7 @@ export type PostSummary = {
   scheduledAt: Date | null;
   publishedAt: Date | null;
   createdAt: Date;
+  updatedAt: Date;
   platforms: PlatformTarget[];
 };
 
@@ -72,9 +75,40 @@ export type PostDetail = PostSummary & {
   executions: ExecutionSummary[];
 };
 
+export type DraftSummary = PostSummary & {
+  hasMedia: boolean;
+};
+
+export type DraftDetail = PostDetail;
+
+export type CalendarPlatform = Pick<
+  PlatformTarget,
+  "id" | "platform" | "status" | "accountLabel" | "errorMessage" | "canRetry"
+>;
+
+export type CalendarPost = {
+  id: string;
+  status: Extract<PostStatus, "scheduled" | "processing" | "failed" | "partial_failure">;
+  scheduledAt: Date;
+  timezone: string;
+  captionPreview: string;
+  platforms: CalendarPlatform[];
+  canCancel: boolean;
+  retryTargetIds: string[];
+};
+
+export type DashboardStats = {
+  scheduled: number;
+  publishing: number;
+  published: number;
+  failed: number;
+};
+
 export type DashboardData = {
   upcoming: PostSummary[];
   recent: PostSummary[];
+  stats: DashboardStats;
+  connectedAccounts: AccountSummary[];
   failedTargets: Array<{
     postId: string;
     caption: string;
@@ -82,7 +116,6 @@ export type DashboardData = {
     platformCount: number;
     target: PlatformTarget;
   }>;
-  reconnectNeeded: AccountSummary[];
 };
 
 export type ActionResult =

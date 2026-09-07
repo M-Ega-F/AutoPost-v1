@@ -33,7 +33,11 @@ export type JsonRequestOptions = {
   ) => ProviderError | null | undefined;
 };
 
-export type JsonResult<T> = { data: T; responseLog: ProviderResponseLog };
+export type JsonResult<T> = {
+  data: T;
+  responseLog: ProviderResponseLog;
+  headers: Headers;
+};
 
 const MAX_LOG_STRING = 500;
 const MAX_LOG_ITEMS = 20;
@@ -455,7 +459,7 @@ export async function requestJson<T>(
     });
   }
 
-  return { data: payload as T, responseLog: log };
+  return { data: payload as T, responseLog: log, headers: response.headers };
 }
 
 /**
@@ -570,7 +574,14 @@ export function verifyOAuthState(state: string): SignedOAuthState | null {
 
     const { userId, platform, nonce, sid } = record;
     if (typeof userId !== "string" || typeof nonce !== "string") return null;
-    if (platform !== "instagram" && platform !== "facebook" && platform !== "tiktok") {
+    if (
+      platform !== "instagram" &&
+      platform !== "facebook" &&
+      platform !== "tiktok" &&
+      platform !== "threads" &&
+      platform !== "linkedin" &&
+      platform !== "x"
+    ) {
       return null;
     }
 

@@ -914,7 +914,10 @@
       "values": [
         "instagram",
         "facebook",
-        "tiktok"
+        "tiktok",
+        "threads",
+        "linkedin",
+        "x"
       ]
     },
     "public.post_platform_status": {

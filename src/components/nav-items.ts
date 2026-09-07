@@ -1,5 +1,7 @@
 import {
   CalendarClock,
+  CalendarDays,
+  FileText,
   History,
   LayoutDashboard,
   Link2,
@@ -17,7 +19,9 @@ export type NavItem = {
 export const NAV_ITEMS: NavItem[] = [
   { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
   { label: "Create Post", href: "/create-post", icon: SquarePen },
+  { label: "Drafts", href: "/drafts", icon: FileText },
   { label: "Scheduled", href: "/scheduled", icon: CalendarClock },
+  { label: "Calendar", href: "/calendar", icon: CalendarDays },
   { label: "History", href: "/history", icon: History },
   { label: "Connected Accounts", href: "/connected-accounts", icon: Link2 },
   { label: "Settings", href: "/settings", icon: Settings },

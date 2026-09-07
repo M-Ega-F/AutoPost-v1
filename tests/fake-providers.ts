@@ -164,14 +164,14 @@ function makeProvider(platform: Platform): SocialProvider {
   };
 }
 
-const providers: Record<Platform, SocialProvider> = {
+const providers: Record<"instagram" | "facebook" | "tiktok", SocialProvider> = {
   instagram: makeProvider("instagram"),
   facebook: makeProvider("facebook"),
   tiktok: makeProvider("tiktok"),
 };
 
 export function getProvider(platform: Platform): SocialProvider {
-  return providers[platform];
+  return providers[platform as keyof typeof providers] ?? makeProvider(platform);
 }
 
 export function allProviders(): SocialProvider[] {

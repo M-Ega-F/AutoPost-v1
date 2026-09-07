@@ -18,6 +18,9 @@ export const platformEnum = pgEnum("platform", [
   "instagram",
   "facebook",
   "tiktok",
+  "threads",
+  "linkedin",
+  "x",
 ]);
 
 export const socialAccountStatusEnum = pgEnum("social_account_status", [

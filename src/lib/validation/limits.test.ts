@@ -21,6 +21,8 @@ describe("captionLimitFor", () => {
     assert.equal(captionLimitFor(["facebook"]), 63_206);
     assert.equal(captionLimitFor(["facebook", "instagram"]), 2_200);
     assert.equal(captionLimitFor(["instagram", "facebook", "tiktok"]), 2_200);
+    assert.equal(captionLimitFor(["threads", "linkedin"]), 500);
+    assert.equal(captionLimitFor(["x"]), 280);
   });
 
   test("an empty selection falls back to the Instagram-safe limit", () => {
@@ -30,6 +32,9 @@ describe("captionLimitFor", () => {
   test("single platforms use their own limit", () => {
     assert.equal(captionLimitFor(["instagram"]), 2_200);
     assert.equal(captionLimitFor(["tiktok"]), 2_200);
+    assert.equal(captionLimitFor(["threads"]), 500);
+    assert.equal(captionLimitFor(["linkedin"]), 3_000);
+    assert.equal(captionLimitFor(["x"]), 280);
   });
 
   test("the limit never exceeds every platform's own limit", () => {
@@ -58,7 +63,7 @@ describe("captionLimitConstrainers", () => {
   test("the constrainer set is consistent with captionLimitFor", () => {
     const limit = captionLimitFor(PLATFORMS);
     const constrainers = captionLimitConstrainers(PLATFORMS, limit);
-    assert.deepEqual(constrainers, ["instagram", "tiktok"]);
+    assert.deepEqual(constrainers, ["x"]);
     assert.equal(captionLimitFor(constrainers), limit);
   });
 });
@@ -117,14 +122,24 @@ describe("upload allow-list", () => {
 });
 
 describe("PLATFORM_LIMITS", () => {
-  test("covers exactly the three supported platforms", () => {
-    assert.deepEqual(Object.keys(PLATFORM_LIMITS), ["instagram", "facebook", "tiktok"]);
+  test("covers exactly the supported platforms", () => {
+    assert.deepEqual(Object.keys(PLATFORM_LIMITS), [
+      "instagram",
+      "facebook",
+      "tiktok",
+      "threads",
+      "linkedin",
+      "x",
+    ]);
   });
 
   test("captions respect the documented platform caps", () => {
     assert.equal(PLATFORM_LIMITS.instagram.captionLength, 2_200);
     assert.equal(PLATFORM_LIMITS.tiktok.captionLength, 2_200);
     assert.equal(PLATFORM_LIMITS.facebook.captionLength, 63_206);
+    assert.equal(PLATFORM_LIMITS.threads.captionLength, 500);
+    assert.equal(PLATFORM_LIMITS.linkedin.captionLength, 3_000);
+    assert.equal(PLATFORM_LIMITS.x.captionLength, 280);
   });
 
   test("video duration bounds are the ones the platforms publish", () => {
@@ -134,6 +149,7 @@ describe("PLATFORM_LIMITS", () => {
     assert.equal(PLATFORM_LIMITS.facebook.maxDurationSec, 600);
     assert.equal(PLATFORM_LIMITS.tiktok.minDurationSec, 3);
     assert.equal(PLATFORM_LIMITS.tiktok.maxDurationSec, 600);
+    assert.equal(PLATFORM_LIMITS.threads.maxDurationSec, 300);
   });
 
   test("every platform accepts exactly the uploaded allow-list's images and videos", () => {

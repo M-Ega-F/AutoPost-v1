@@ -11,6 +11,7 @@ const eslintConfig = [
     ignores: [
       ".next/**",
       "node_modules/**",
+      "AutoPost-v1/**",
       "drizzle/**",
       "supabase/**",
       "next-env.d.ts",

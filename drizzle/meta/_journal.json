@@ -8,6 +8,13 @@
       "when": 1788317235384,
       "tag": "0000_loud_gwen_stacy",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1788317235385,
+      "tag": "0001_add_social_platforms",
+      "breakpoints": true
     }
   ]
 }

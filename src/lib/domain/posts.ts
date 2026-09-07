@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, asc, desc, eq, inArray, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, lt, or, sql } from "drizzle-orm";
 
 import { db } from "@/lib/db";
 import {
@@ -16,12 +16,18 @@ import { AppError, humanErrorMessage, isAuthFailure } from "@/lib/errors";
 import { logger } from "@/lib/logger";
 import { derivePostStatus, type Platform, type PostStatus } from "@/lib/status";
 import { getProvider } from "@/providers/social";
-import { createSignedMediaUrl } from "@/lib/storage";
+import { createSignedMediaUrl, removeMediaObject } from "@/lib/storage";
 import { enqueuePublishJob, removePublishJob } from "@/lib/queue/publish";
-import { accountLabelFor, getAccountRecord } from "@/lib/domain/accounts";
+import {
+  accountLabelFor,
+  getAccountRecord,
+  listAccountSummaries,
+} from "@/lib/domain/accounts";
 import { MAX_ATTEMPTS } from "@/lib/domain/executions";
 import type {
   DashboardData,
+  CalendarPost,
+  DraftSummary,
   MediaSummary,
   PlatformTarget,
   PostDetail,
@@ -49,6 +55,25 @@ export type CreatePostInput = {
   targets: Array<{ platform: Platform; socialAccountId: string }>;
 };
 
+export type DraftTargetInput = {
+  platform: Platform;
+  socialAccountId: string;
+};
+
+export type DraftInput = {
+  postId?: string;
+  userId: string;
+  contentText: string;
+  timezone: string;
+  media: CreatePostMedia | null;
+  targets: DraftTargetInput[];
+};
+
+export type PublishDraftInput = Omit<DraftInput, "postId"> & {
+  postId: string;
+  scheduledAt: Date | null;
+};
+
 function toMediaAsset(media: CreatePostMedia): MediaAsset {
   return {
     mediaType: media.mediaType,
@@ -62,6 +87,12 @@ function toMediaAsset(media: CreatePostMedia): MediaAsset {
   };
 }
 
+function assertMediaOwnership(userId: string, media: CreatePostMedia | null): void {
+  if (media?.storageKey && !media.storageKey.startsWith(`${userId}/`)) {
+    throw new AppError("forbidden", "That media file does not belong to your account.");
+  }
+}
+
 /**
  * Creates the post, its media row and one target per platform, then enqueues
  * one BullMQ job per target. The transaction commits before publishing starts,
@@ -70,6 +101,7 @@ function toMediaAsset(media: CreatePostMedia): MediaAsset {
 export async function createPost(
   input: CreatePostInput,
 ): Promise<{ postId: string; status: PostStatus }> {
+  assertMediaOwnership(input.userId, input.media);
   if (input.targets.length === 0) {
     throw new AppError(
       "validation_failed",
@@ -192,6 +224,292 @@ export async function createPost(
   return { postId: created.postId, status: initialStatus };
 }
 
+async function cleanupUnreferencedMedia(
+  userId: string,
+  storageKeys: readonly (string | null)[],
+): Promise<void> {
+  for (const storageKey of new Set(storageKeys.filter(Boolean))) {
+    if (!storageKey || !storageKey.startsWith(`${userId}/`)) continue;
+
+    const [reference] = await db
+      .select({ id: postMedia.id })
+      .from(postMedia)
+      .innerJoin(posts, eq(posts.id, postMedia.postId))
+      .where(and(eq(posts.userId, userId), eq(postMedia.storageKey, storageKey)))
+      .limit(1);
+
+    if (!reference) await removeMediaObject(storageKey);
+  }
+}
+
+type DbTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+async function replaceDraftChildren(
+  tx: DbTransaction,
+  postId: string,
+  media: CreatePostMedia | null,
+  targets: DraftTargetInput[],
+): Promise<Array<string | null>> {
+  const previousMedia = await tx
+    .select({ storageKey: postMedia.storageKey })
+    .from(postMedia)
+    .where(eq(postMedia.postId, postId));
+
+  await tx.delete(postMedia).where(eq(postMedia.postId, postId));
+  await tx.delete(postPlatforms).where(eq(postPlatforms.postId, postId));
+
+  if (media) {
+    await tx.insert(postMedia).values({
+      postId,
+      storageKey: media.storageKey,
+      sourceUrl: media.sourceUrl,
+      mediaType: media.mediaType,
+      mimeType: media.mimeType,
+      fileSize: media.fileSize,
+      width: media.width,
+      height: media.height,
+      duration: media.duration,
+      position: 0,
+    });
+  }
+
+  if (targets.length > 0) {
+    await tx.insert(postPlatforms).values(
+      targets.map((target) => ({
+        postId,
+        socialAccountId: target.socialAccountId,
+        platform: target.platform,
+        status: "pending" as const,
+        maxAttempts: MAX_ATTEMPTS,
+      })),
+    );
+  }
+
+  return previousMedia.map((row) => row.storageKey);
+}
+
+/** Saves a draft without provider validation, queueing, or external API calls. */
+export async function saveDraft(
+  input: DraftInput,
+): Promise<{ postId: string; status: "draft" }> {
+  assertMediaOwnership(input.userId, input.media);
+  const uniquePlatforms = new Set(input.targets.map((target) => target.platform));
+  if (uniquePlatforms.size !== input.targets.length) {
+    throw new AppError("validation_failed", "Choose one account per platform.");
+  }
+
+  const result = await db.transaction(async (tx) => {
+    let postId = input.postId;
+    if (postId) {
+      const [existing] = await tx
+        .select({ id: posts.id, status: posts.status })
+        .from(posts)
+        .where(and(eq(posts.id, postId), eq(posts.userId, input.userId)))
+        .limit(1);
+
+      if (!existing) throw new AppError("not_found", "We couldn't find that draft.");
+      if (existing.status !== "draft") {
+        throw new AppError("validation_failed", "This post is no longer a draft.");
+      }
+
+      await tx
+        .update(posts)
+        .set({
+          contentText: input.contentText,
+          timezone: input.timezone,
+          scheduledAt: null,
+          status: "draft",
+          cancelledAt: null,
+          updatedAt: new Date(),
+        })
+        .where(eq(posts.id, postId));
+    } else {
+      const [created] = await tx
+        .insert(posts)
+        .values({
+          userId: input.userId,
+          contentText: input.contentText,
+          timezone: input.timezone,
+          scheduledAt: null,
+          status: "draft",
+        })
+        .returning({ id: posts.id });
+      postId = created.id;
+    }
+
+    const oldStorageKeys = await replaceDraftChildren(
+      tx,
+      postId,
+      input.media,
+      input.targets,
+    );
+
+    return { postId, oldStorageKeys };
+  });
+
+  await cleanupUnreferencedMedia(input.userId, result.oldStorageKeys);
+  return { postId: result.postId, status: "draft" };
+}
+
+/**
+ * Converts one existing draft into a normal scheduled/processing post. The
+ * draft id is retained, and queue jobs are created only after the transaction
+ * commits.
+ */
+export async function publishDraft(
+  input: PublishDraftInput,
+): Promise<{ postId: string; status: PostStatus }> {
+  assertMediaOwnership(input.userId, input.media);
+  if (!input.media) throw new AppError("validation_failed", "Add media before publishing.");
+  if (input.targets.length === 0) {
+    throw new AppError("validation_failed", "Select at least one platform.");
+  }
+
+  const uniquePlatforms = new Set(input.targets.map((target) => target.platform));
+  if (uniquePlatforms.size !== input.targets.length) {
+    throw new AppError("validation_failed", "Choose one account per platform.");
+  }
+
+  const mediaAsset = toMediaAsset(input.media);
+  for (const target of input.targets) {
+    const account = await getAccountRecord(input.userId, target.socialAccountId);
+    if (!account || account.platform !== target.platform) {
+      throw new AppError("forbidden", "We couldn't find that account. Reconnect it and try again.");
+    }
+    if (account.status !== "active") {
+      throw new AppError(
+        "validation_failed",
+        humanErrorMessage(target.platform, "account_needs_reconnect"),
+      );
+    }
+
+    const validation = await getProvider(target.platform).validateContent({
+      account,
+      media: mediaAsset,
+      caption: input.contentText,
+    });
+    if (!validation.ok) {
+      throw new AppError(
+        "validation_failed",
+        validation.message || humanErrorMessage(target.platform, validation.code),
+      );
+    }
+  }
+
+  const initialStatus: PostStatus = input.scheduledAt ? "scheduled" : "processing";
+  const result = await db.transaction(async (tx) => {
+    const [updated] = await tx
+      .update(posts)
+      .set({
+        contentText: input.contentText,
+        timezone: input.timezone,
+        scheduledAt: input.scheduledAt,
+        status: initialStatus,
+        publishedAt: null,
+        cancelledAt: null,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(posts.id, input.postId),
+          eq(posts.userId, input.userId),
+          eq(posts.status, "draft"),
+        ),
+      )
+      .returning({ id: posts.id });
+
+    if (!updated) throw new AppError("validation_failed", "This post is no longer a draft.");
+
+    const oldStorageKeys = await replaceDraftChildren(
+      tx,
+      input.postId,
+      input.media,
+      input.targets,
+    );
+    const targets = await tx
+      .select({ id: postPlatforms.id })
+      .from(postPlatforms)
+      .where(eq(postPlatforms.postId, input.postId));
+
+    return { postId: updated.id, targets, oldStorageKeys };
+  });
+
+  await cleanupUnreferencedMedia(input.userId, result.oldStorageKeys);
+
+  for (const target of result.targets) {
+    const delayMs = input.scheduledAt
+      ? Math.max(0, input.scheduledAt.getTime() - Date.now())
+      : 0;
+    try {
+      const jobId = await enqueuePublishJob({
+        postPlatformId: target.id,
+        attempt: 1,
+        delayMs,
+        maxAttempts: MAX_ATTEMPTS,
+      });
+      if (jobId) {
+        await db
+          .update(postPlatforms)
+          .set({ bullmqJobId: jobId, updatedAt: new Date() })
+          .where(eq(postPlatforms.id, target.id));
+      }
+    } catch (error) {
+      logger.error("draft publish enqueue failed", {
+        postPlatformId: target.id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  return { postId: result.postId, status: initialStatus };
+}
+
+export async function listDrafts(userId: string): Promise<DraftSummary[]> {
+  const rows = await db
+    .select()
+    .from(posts)
+    .where(and(eq(posts.userId, userId), eq(posts.status, "draft")))
+    .orderBy(desc(posts.updatedAt))
+    .limit(100);
+
+  if (rows.length === 0) return [];
+  const mediaRows = await db
+    .select({ postId: postMedia.postId })
+    .from(postMedia)
+    .where(inArray(postMedia.postId, rows.map((row) => row.id)));
+  const mediaIds = new Set(mediaRows.map((row) => row.postId));
+  const summaries = await summarize(rows);
+  return summaries.map((summary) => ({ ...summary, hasMedia: mediaIds.has(summary.id) }));
+}
+
+export async function getDraftDetail(
+  userId: string,
+  postId: string,
+): Promise<PostDetail | null> {
+  const detail = await getPostDetail(userId, postId);
+  return detail?.status === "draft" ? detail : null;
+}
+
+export async function deleteDraft(userId: string, postId: string): Promise<void> {
+  const result = await db.transaction(async (tx) => {
+    const [draft] = await tx
+      .select({ id: posts.id })
+      .from(posts)
+      .where(and(eq(posts.id, postId), eq(posts.userId, userId), eq(posts.status, "draft")))
+      .limit(1);
+    if (!draft) throw new AppError("not_found", "We couldn't find that draft.");
+
+    const media = await tx
+      .select({ storageKey: postMedia.storageKey })
+      .from(postMedia)
+      .where(eq(postMedia.postId, postId));
+    await tx.delete(posts).where(eq(posts.id, postId));
+    return media.map((row) => row.storageKey);
+  });
+
+  await cleanupUnreferencedMedia(userId, result);
+}
+
 async function loadTargets(
   postIds: string[],
 ): Promise<Map<string, PlatformTarget[]>> {
@@ -278,6 +596,7 @@ function toPostSummary(post: Post, targets: PlatformTarget[]): PostSummary {
     scheduledAt: post.scheduledAt,
     publishedAt: post.publishedAt,
     createdAt: post.createdAt,
+    updatedAt: post.updatedAt,
     platforms: targets,
   };
 }
@@ -297,6 +616,67 @@ export async function listScheduledPosts(userId: string): Promise<PostSummary[]>
     .limit(100);
 
   return summarize(rows);
+}
+
+/** Returns only active schedule-lifecycle posts inside the requested UTC range. */
+export async function listCalendarPosts(
+  userId: string,
+  range: { start: Date; end: Date },
+): Promise<CalendarPost[]> {
+  if (range.start.getTime() >= range.end.getTime()) return [];
+
+  const rows = await db
+    .select()
+    .from(posts)
+    .where(
+      and(
+        eq(posts.userId, userId),
+        inArray(posts.status, ["scheduled", "processing", "failed", "partial_failure"]),
+        gte(posts.scheduledAt, range.start),
+        lt(posts.scheduledAt, range.end),
+      ),
+    )
+    .orderBy(asc(posts.scheduledAt), asc(posts.createdAt))
+    .limit(500);
+
+  const summaries = await summarize(rows);
+  return summaries.flatMap((post) => {
+    if (
+      post.status !== "scheduled" &&
+      post.status !== "processing" &&
+      post.status !== "failed" &&
+      post.status !== "partial_failure"
+    ) {
+      return [];
+    }
+    if (!post.scheduledAt) return [];
+    const targets = post.platforms.map((target) => ({
+      id: target.id,
+      platform: target.platform,
+      status: target.status,
+      accountLabel: target.accountLabel,
+      errorMessage: target.errorMessage,
+      canRetry: target.canRetry,
+    }));
+    const canCancel =
+      post.status === "scheduled" ||
+      (post.status === "processing" &&
+        targets.length > 0 &&
+        targets.every((target) => target.status === "pending"));
+
+    return [{
+      id: post.id,
+      status: post.status,
+      scheduledAt: post.scheduledAt,
+      timezone: post.timezone,
+      captionPreview: post.contentText.slice(0, 100),
+      platforms: targets,
+      canCancel,
+      retryTargetIds: targets
+        .filter((target) => target.status === "failed" && target.canRetry)
+        .map((target) => target.id),
+    }];
+  });
 }
 
 export async function listHistoryPosts(
@@ -378,6 +758,8 @@ export async function getPostDetail(
       height: mediaRow.height,
       duration: mediaRow.duration,
       previewUrl,
+      storageKey: mediaRow.storageKey,
+      sourceUrl: mediaRow.sourceUrl,
     };
   }
 
@@ -405,7 +787,13 @@ export async function getPostDetail(
 }
 
 export async function getDashboardData(userId: string): Promise<DashboardData> {
-  const [upcomingRows, recentRows, attentionRows] = await Promise.all([
+  const [
+    upcomingRows,
+    recentRows,
+    attentionRows,
+    statusRows,
+    connectedAccounts,
+  ] = await Promise.all([
     db
       .select()
       .from(posts)
@@ -442,6 +830,15 @@ export async function getDashboardData(userId: string): Promise<DashboardData> {
       )
       .orderBy(desc(sql`coalesce(${posts.publishedAt}, ${posts.createdAt})`))
       .limit(10),
+    db
+      .select({
+        status: posts.status,
+        count: sql<number>`count(*)`,
+      })
+      .from(posts)
+      .where(eq(posts.userId, userId))
+      .groupBy(posts.status),
+    listAccountSummaries(userId),
   ]);
 
   const [upcoming, recent, attention] = await Promise.all([
@@ -463,16 +860,29 @@ export async function getDashboardData(userId: string): Promise<DashboardData> {
     )
     .slice(0, 5);
 
-  const { listAccountSummaries } = await import("@/lib/domain/accounts");
-  const accounts = await listAccountSummaries(userId);
+  const stats = {
+    scheduled: 0,
+    publishing: 0,
+    published: 0,
+    failed: 0,
+  };
+
+  for (const row of statusRows) {
+    const count = Number(row.count);
+    if (row.status === "scheduled") stats.scheduled = count;
+    if (row.status === "processing") stats.publishing = count;
+    if (row.status === "published") stats.published = count;
+    if (row.status === "failed" || row.status === "partial_failure") {
+      stats.failed += count;
+    }
+  }
 
   return {
     upcoming,
     recent,
+    stats,
+    connectedAccounts,
     failedTargets,
-    reconnectNeeded: accounts.filter(
-      (account) => account.status === "needs_reconnect",
-    ),
   };
 }
 

@@ -115,6 +115,7 @@ export type OAuthStartInput = {
   userId: string;
   state: string;
   redirectUri: string;
+  setCookie?: (cookie: { name: string; value: string; maxAge: number }) => void;
 };
 
 export type OAuthCallbackInput = {
@@ -122,6 +123,7 @@ export type OAuthCallbackInput = {
   code: string;
   state: string;
   redirectUri: string;
+  codeVerifier?: string;
 };
 
 /**

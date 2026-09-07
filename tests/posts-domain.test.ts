@@ -11,12 +11,18 @@ import {
 } from "@/lib/domain/accounts";
 import {
   createPost,
+  getDashboardData,
+  getDraftDetail,
   getPostDetail,
   getPostSummary,
+  listCalendarPosts,
+  listDrafts,
   listHistoryPosts,
   listScheduledPosts,
+  publishDraft,
   recomputePostStatus,
   retryPlatform,
+  saveDraft,
 } from "@/lib/domain/posts";
 import { postMedia, postPlatforms, posts, socialAccounts } from "@/lib/db/schema";
 import { AppError } from "@/lib/errors";
@@ -232,6 +238,55 @@ describe("createPost — publish now", () => {
   });
 });
 
+describe("draft lifecycle", () => {
+  test("saves a draft without provider validation or queue jobs", async () => {
+    const instagram = await createAccount("instagram");
+    const result = await saveDraft({
+      userId: USER_ID,
+      contentText: "Work in progress",
+      timezone: "Asia/Jakarta",
+      media: null,
+      targets: [{ platform: "instagram", socialAccountId: instagram }],
+    });
+
+    assert.equal(result.status, "draft");
+    assert.equal(enqueued.length, 0);
+    const post = await getPostRow(result.postId);
+    assert.equal(post?.status, "draft");
+    assert.equal((await mediaRowsFor(result.postId)).length, 0);
+    assert.equal((await targetRowsFor(result.postId)).length, 1);
+    assert.equal((await listDrafts(USER_ID)).length, 1);
+    assert.equal((await getDraftDetail(USER_ID, result.postId))?.status, "draft");
+  });
+
+  test("publishing a draft keeps its id and queues only after validation", async () => {
+    const instagram = await createAccount("instagram");
+    const draft = await saveDraft({
+      userId: USER_ID,
+      contentText: "Ready to publish",
+      timezone: "UTC",
+      media: TEST_MEDIA,
+      targets: [{ platform: "instagram", socialAccountId: instagram }],
+    });
+
+    const result = await publishDraft({
+      postId: draft.postId,
+      userId: USER_ID,
+      contentText: "Ready to publish",
+      timezone: "UTC",
+      scheduledAt: null,
+      media: TEST_MEDIA,
+      targets: [{ platform: "instagram", socialAccountId: instagram }],
+    });
+
+    assert.equal(result.postId, draft.postId);
+    assert.equal(result.status, "processing");
+    assert.equal(enqueued.length, 1);
+    assert.equal((await getPostRow(draft.postId))?.status, "processing");
+    assert.equal((await targetRowsFor(draft.postId)).length, 1);
+  });
+});
+
 describe("createPost — schedule for later", () => {
   test("stores the IANA timezone and the UTC instant", async () => {
     const instagram = await createAccount("instagram");
@@ -286,6 +341,65 @@ describe("createPost — schedule for later", () => {
       Math.abs((jobs[0].delayMs ?? 0) - expected) <= 2_000,
       `delay ${jobs[0].delayMs} should be within 2s of ${expected}`,
     );
+  });
+});
+
+describe("listCalendarPosts — scoped date range", () => {
+  test("returns only owned active scheduled lifecycle posts inside the UTC range", async () => {
+    const instagram = await createAccount("instagram");
+    const rangeStart = inTheFuture(60 * 60_000);
+    const rangeEnd = new Date(rangeStart.getTime() + 2 * 60 * 60_000);
+    const insideAt = new Date(rangeStart.getTime() + 30 * 60_000);
+    const outsideAt = new Date(rangeEnd.getTime() + 30 * 60_000);
+
+    const inside = await createPost({
+      userId: USER_ID,
+      contentText: "Inside calendar range",
+      timezone: "Asia/Jakarta",
+      scheduledAt: insideAt,
+      media: TEST_MEDIA,
+      targets: [{ platform: "instagram", socialAccountId: instagram }],
+    });
+
+    const outside = await createPost({
+      userId: USER_ID,
+      contentText: "Outside calendar range",
+      timezone: "Asia/Jakarta",
+      scheduledAt: outsideAt,
+      media: TEST_MEDIA,
+      targets: [{ platform: "instagram", socialAccountId: instagram }],
+    });
+
+    const foreignAccount = await createAccount("facebook", { userId: OTHER_USER_ID });
+    const foreignPost = await createPost({
+      userId: OTHER_USER_ID,
+      contentText: "Foreign calendar post",
+      timezone: "UTC",
+      scheduledAt: insideAt,
+      media: { ...TEST_MEDIA, storageKey: `${OTHER_USER_ID}/media/foreign.jpg` },
+      targets: [{ platform: "facebook", socialAccountId: foreignAccount }],
+    });
+
+    const draft = await saveDraft({
+      userId: USER_ID,
+      contentText: "Unscheduled draft",
+      timezone: "UTC",
+      media: null,
+      targets: [{ platform: "instagram", socialAccountId: instagram }],
+    });
+
+    const result = await listCalendarPosts(USER_ID, {
+      start: rangeStart,
+      end: rangeEnd,
+    });
+
+    assert.deepEqual(result.map((post) => post.id), [inside.postId]);
+    assert.equal(result[0]?.status, "scheduled");
+    assert.equal(result[0]?.captionPreview, "Inside calendar range");
+    assert.equal(result[0]?.platforms[0]?.platform, "instagram");
+    assert.equal(result.some((post) => post.id === outside.postId), false);
+    assert.equal(result.some((post) => post.id === foreignPost.postId), false);
+    assert.equal(result.some((post) => post.id === draft.postId), false);
   });
 });
 
@@ -767,14 +881,39 @@ describe("disconnectAccount", () => {
   });
 });
 
+describe("dashboard aggregation", () => {
+  test("returns real post counts and all connected-account summaries", async () => {
+    await insertPost({ status: "scheduled", scheduledAt: inTheFuture() });
+    await insertPost({ status: "processing" });
+    await insertPost({ status: "published" });
+    await insertPost({ status: "failed" });
+    await insertPost({ status: "partial_failure" });
+
+    const dashboard = await getDashboardData(USER_ID);
+
+    assert.deepEqual(dashboard.stats, {
+      scheduled: 1,
+      publishing: 1,
+      published: 1,
+      failed: 2,
+    });
+    assert.equal(dashboard.upcoming.length, 1);
+    assert.equal(dashboard.connectedAccounts.length, 6);
+    assert.deepEqual(
+      dashboard.connectedAccounts.map((account) => account.platform),
+      ["instagram", "facebook", "tiktok", "threads", "linkedin", "x"],
+    );
+  });
+});
+
 describe("listAccountSummaries", () => {
   test("returns one entry per platform in a fixed order", async () => {
     const summaries = await listAccountSummaries(USER_ID);
 
-    assert.equal(summaries.length, 3);
+    assert.equal(summaries.length, 6);
     assert.deepEqual(
       summaries.map((entry) => entry.platform),
-      ["instagram", "facebook", "tiktok"],
+      ["instagram", "facebook", "tiktok", "threads", "linkedin", "x"],
     );
     for (const entry of summaries) {
       assert.equal(entry.id, null);

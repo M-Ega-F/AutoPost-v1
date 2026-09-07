@@ -10,8 +10,11 @@ import {
   FileText,
   Inbox,
   Instagram,
+  Linkedin,
   Loader2,
   Music2,
+  AtSign,
+  MessageCircle,
   ThumbsUp,
   Unlink,
   Video,
@@ -28,9 +31,22 @@ export type StatusMeta = {
   icon: LucideIcon;
 };
 
-export type Platform = "instagram" | "facebook" | "tiktok";
+export type Platform =
+  | "instagram"
+  | "facebook"
+  | "tiktok"
+  | "threads"
+  | "linkedin"
+  | "x";
 
-export const PLATFORMS: readonly Platform[] = ["instagram", "facebook", "tiktok"];
+export const PLATFORMS: readonly Platform[] = [
+  "instagram",
+  "facebook",
+  "tiktok",
+  "threads",
+  "linkedin",
+  "x",
+];
 
 export type PostStatus =
   | "draft"
@@ -57,12 +73,18 @@ export const PLATFORM_META: Record<Platform, PlatformMeta> = {
   instagram: { label: "Instagram", icon: Instagram, tone: "neutral" },
   facebook: { label: "Facebook", icon: Facebook, tone: "neutral" },
   tiktok: { label: "TikTok", icon: Music2, tone: "neutral" },
+  threads: { label: "Threads", icon: MessageCircle, tone: "neutral" },
+  linkedin: { label: "LinkedIn", icon: Linkedin, tone: "neutral" },
+  x: { label: "X", icon: AtSign, tone: "neutral" },
 };
 
 export const PLATFORM_FALLBACK_ICON: Record<Platform, LucideIcon> = {
   instagram: Camera,
   facebook: ThumbsUp,
   tiktok: Video,
+  threads: MessageCircle,
+  linkedin: Linkedin,
+  x: AtSign,
 };
 
 export const POST_STATUS_META: Record<PostStatus, StatusMeta> = {

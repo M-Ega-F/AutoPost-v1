@@ -3,7 +3,6 @@ import { before, beforeEach, describe, test } from "node:test";
 
 import { createPost, retryPlatform } from "@/lib/domain/posts";
 import { executePublishJob } from "@/lib/publishing/execute";
-import type { Platform } from "@/lib/status";
 
 import {
   createAccount,
@@ -64,8 +63,9 @@ describe("critical scenario (Plan section 42)", () => {
       caption: "Promo September",
     });
 
-    const targets = {} as Record<Platform, string>;
-    for (const platform of ["instagram", "facebook", "tiktok"] as Platform[]) {
+    const platforms = ["instagram", "facebook", "tiktok"] as const;
+    const targets = {} as Record<(typeof platforms)[number], string>;
+    for (const platform of platforms) {
       targets[platform] = await insertTarget(postId, accounts[platform], platform);
     }
 
@@ -76,7 +76,7 @@ describe("critical scenario (Plan section 42)", () => {
     });
 
     let jobIndex = 0;
-    for (const platform of ["instagram", "facebook", "tiktok"] as Platform[]) {
+    for (const platform of platforms) {
       jobIndex += 1;
       await executePublishJob({
         postPlatformId: targets[platform],

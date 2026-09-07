@@ -17,7 +17,6 @@ import {
 import { createPost, recomputePostStatus } from "@/lib/domain/posts";
 import { ProviderError } from "@/lib/errors";
 import { executePublishJob, readResumeHandle } from "@/lib/publishing/execute";
-import type { Platform } from "@/lib/status";
 
 import { getDb } from "./db-harness";
 import {
@@ -51,7 +50,7 @@ import { enqueued, jobsFor } from "./fake-queue";
  */
 
 const WORKER = "publish-worker-test";
-const PLATFORM_ORDER: readonly Platform[] = ["instagram", "facebook", "tiktok"];
+const PLATFORM_ORDER = ["instagram", "facebook", "tiktok"] as const;
 
 beforeEach(async () => {
   await setupTestDatabase();
@@ -99,7 +98,9 @@ async function markTarget(
     .where(eq(postPlatforms.id, postPlatformId));
 }
 
-async function createThreeAccounts(): Promise<Record<Platform, string>> {
+async function createThreeAccounts(): Promise<
+  Record<"instagram" | "facebook" | "tiktok", string>
+> {
   return {
     instagram: await createAccount("instagram"),
     facebook: await createAccount("facebook"),
@@ -210,7 +211,7 @@ describe("failure isolation (Plan 25, 42)", () => {
     const accounts = await createThreeAccounts();
     const postId = await insertPost({ status: "processing" });
 
-    const targets = {} as Record<Platform, string>;
+    const targets = {} as Record<(typeof PLATFORM_ORDER)[number], string>;
     for (const platform of PLATFORM_ORDER) {
       targets[platform] = await insertTarget(postId, accounts[platform], platform);
     }
@@ -230,7 +231,7 @@ describe("failure isolation (Plan 25, 42)", () => {
     assert.equal(instagramOutcome.code, "media_too_large");
     assert.equal(instagramOutcome.postStatus, "processing");
 
-    for (const platform of ["facebook", "tiktok"] as Platform[]) {
+    for (const platform of ["facebook", "tiktok"] as const) {
       const outcome = await runJob(targets[platform]);
       assert.equal(outcome.status, "published");
     }
@@ -242,7 +243,7 @@ describe("failure isolation (Plan 25, 42)", () => {
     assert.equal(instagram?.publishedAt, null);
     assert.equal(instagram?.nextRetryAt, null);
 
-    for (const platform of ["facebook", "tiktok"] as Platform[]) {
+    for (const platform of ["facebook", "tiktok"] as const) {
       const row = await getTargetRow(targets[platform]);
       assert.equal(row?.status, "success");
       assert.equal(row?.lastErrorCode, null);

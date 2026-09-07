@@ -19,6 +19,7 @@ export const RATE_LIMITS = {
   login: { limit: 10, windowMs: 5 * 60_000 },
   signup: { limit: 10, windowMs: 5 * 60_000 },
   createPost: { limit: 20, windowMs: 60_000 },
+  saveDraft: { limit: 60, windowMs: 60_000 },
   publishNow: { limit: 20, windowMs: 60_000 },
   schedule: { limit: 20, windowMs: 60_000 },
   retry: { limit: 30, windowMs: 60_000 },

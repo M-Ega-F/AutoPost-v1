@@ -1,7 +1,11 @@
-import { NextResponse } from "next/server";
-
 import { getUserId } from "@/lib/auth/server";
-import { getPostSummary } from "@/lib/domain/posts";
+import { getPostDetailForUser } from "@/lib/services/posts";
+import {
+  apiError,
+  apiErrorFromUnknown,
+  apiMethodNotAllowed,
+  apiSuccess,
+} from "@/lib/api/response";
 import { logger } from "@/lib/logger";
 
 export const runtime = "nodejs";
@@ -15,35 +19,40 @@ export async function GET(
   const { id } = await params;
 
   if (!userId) {
-    return NextResponse.json(
-      { message: "Please log in to continue." },
-      { status: 401, headers: { "Cache-Control": "no-store" } },
-    );
+    return apiError({ status: 401, code: "UNAUTHORIZED", message: "Please log in to continue." });
   }
 
   try {
-    const post = await getPostSummary(userId, id);
+    const post = await getPostDetailForUser(userId, id);
 
     if (!post) {
-      return NextResponse.json(
-        { message: "We couldn't find that post." },
-        { status: 404, headers: { "Cache-Control": "no-store" } },
-      );
+      return apiError({ status: 404, code: "NOT_FOUND", message: "We couldn't find that post." });
     }
 
-    return NextResponse.json(
-      { post },
-      { status: 200, headers: { "Cache-Control": "no-store" } },
-    );
+    const safeMedia = post.media
+      ? (({ storageKey: _storageKey, sourceUrl: _sourceUrl, ...media }) => media)(post.media)
+      : null;
+    return apiSuccess({ post: { ...post, media: safeMedia } });
   } catch (error) {
     logger.error("post fetch failed", {
       postId: id,
       error: error instanceof Error ? error.message : String(error),
     });
 
-    return NextResponse.json(
-      { message: "We couldn't load this post. Try again." },
-      { status: 500, headers: { "Cache-Control": "no-store" } },
-    );
+    return apiErrorFromUnknown(error, "We couldn't load this post. Try again.");
   }
+}
+
+export async function PATCH(): Promise<Response> {
+  if (!(await getUserId())) {
+    return apiError({ status: 401, code: "UNAUTHORIZED", message: "Please log in to continue." });
+  }
+  return apiMethodNotAllowed("GET");
+}
+
+export async function DELETE(): Promise<Response> {
+  if (!(await getUserId())) {
+    return apiError({ status: 401, code: "UNAUTHORIZED", message: "Please log in to continue." });
+  }
+  return apiMethodNotAllowed("GET");
 }

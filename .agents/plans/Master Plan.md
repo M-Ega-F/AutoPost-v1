@@ -1,733 +1,378 @@
-Oke. Saya akan jelaskan **sangat detail, dari akar masalah sampai dampaknya ke seluruh aplikasi**, berdasarkan log runtime dan hasil implementasi yang sudah kamu kirim sebelumnya.
+# TASK: AUTOPOST PHASE 4 — CALENDAR &amp; SCHEDULE MANAGEMENT
 
-# 🔴 MASALAH UTAMA YANG SEDANG DIHADAPI
+Project:
 
-Saat ini sebenarnya ada **bukan satu masalah**, tetapi **beberapa masalah yang saling terlihat seperti satu masalah**.
+AutoPost-v1
 
-Masalah utamanya berada di **pipeline media**.
+Repository root:
 
-Pipeline media AutoPost sekarang memiliki dua fase yang seharusnya benar-benar terpisah:
+C:\Users\aldis\Documents\Codex\AutoPost-v1
 
-```text
-FASE A — MEDIA SELECTION / PREVIEW
+PRIMARY GOAL:
 
-User pilih gambar
-        ↓
-Browser menyimpan File
-        ↓
-Browser membuat preview
-        ↓
-User melihat gambar
+Implement a complete Calendar and Schedule Management system for AutoPost.
 
+The Calendar must use REAL post data from the existing system.
 
-FASE B — MEDIA PERSISTENCE / PUBLISH
+DO NOT create fake calendar data.
 
-User klik Publish
-        ↓
-File diupload
-        ↓
-Storage
-        ↓
-Post dibuat
-        ↓
-Queue
-        ↓
-Worker
-        ↓
-Facebook
-```
+DO NOT create a second scheduling system.
 
-Masalahnya adalah aplikasi sekarang menunjukkan bahwa **fase A dan fase B masih tercampur di runtime**.
+DO NOT duplicate existing post lifecycle logic.
 
----
+The Calendar must integrate with:
 
-# 1. GEJALA PERTAMA YANG KAMU LIHAT
+- Auth
 
-Di browser kamu:
+- Posts
 
-```text
-Untitled.png
-41 KB
+- Draft System
 
-×
+- Existing scheduling
 
-We couldn't prepare media storage. Try again.
-```
+- Existing Service Layer
 
-Yang menarik:
+- Internal API
 
-```text
-Preview gambar muncul.
-```
+- Dashboard
 
-Artinya:
+- Connected Accounts
 
-```text
-Browser berhasil membaca file.
-```
+- Media architecture
 
-File:
+- Queue
 
-```text
-Untitled.png
-```
+- Worker
 
-berhasil masuk dari komputer ke browser.
+- Timezone handling
 
-Browser juga berhasil membuat preview.
+IMPORTANT:
 
-Jadi bagian ini:
+FIRST audit the existing repository.
 
-```text
-USER COMPUTER
-      ↓
-SELECT FILE
-      ↓
-BROWSER
-      ↓
-FILE OBJECT
-      ↓
-PREVIEW
-```
+FIRST understand the real post lifecycle.
 
-**berhasil**.
+FIRST inspect existing scheduling architecture.
 
-Tetapi setelah preview muncul, aplikasi melakukan sesuatu yang tidak seharusnya.
+THEN design.
 
----
+THEN implement.
 
-# 2. BUKTI TERKUAT: LOG SERVER
+DO NOT make a git commit.
 
-Kamu mendapatkan:
+==================================================
 
-```text
-POST /api/media/upload 400
-```
+CURRENT VERIFIED PROJECT STATUS
 
-Ini sangat penting.
+==================================================
 
-Karena request tersebut berarti:
-
-```text
-Browser
-   ↓
-HTTP POST
-   ↓
-/api/media/upload
-   ↓
-Server
-   ↓
-Storage
-```
+Repository:
 
-Padahal pada tahap itu kamu **belum klik Publish**.
+C:\Users\aldis\Documents\Codex\AutoPost-v1
 
-Kamu hanya:
+Repository validation:
 
-```text
-Pilih gambar.
-```
+npm run lint
 
-Jadi pertanyaan teknisnya:
-
-> Kenapa memilih gambar masih menyebabkan HTTP POST ke `/api/media/upload`?
-
-Itulah masalah pertama.
-
----
-
-# 3. MASALAH PERTAMA:
-
-# SELECTION FLOW MASIH MEMANGGIL UPLOAD FLOW
-
-Arsitektur yang kita inginkan:
-
-```text
-┌───────────────────────┐
-│ USER PILIH GAMBAR     │
-└───────────┬───────────┘
-            ↓
-┌───────────────────────┐
-│ File Object Browser   │
-└───────────┬───────────┘
-            ↓
-┌───────────────────────┐
-│ React State           │
-└───────────┬───────────┘
-            ↓
-┌───────────────────────┐
-│ createObjectURL       │
-└───────────┬───────────┘
-            ↓
-┌───────────────────────┐
-│ Preview               │
-└───────────────────────┘
-
-STOP
-```
-
-Tidak boleh ada:
-
-```text
-fetch
-```
-
-Tidak boleh ada:
-
-```text
-POST
-```
-
-Tidak boleh ada:
-
-```text
-/api/media/upload
-```
-
-Tidak boleh ada:
-
-```text
-Supabase Storage
-```
-
----
-
-Tetapi runtime kamu menunjukkan:
-
-```text
-USER PILIH FILE
-       ↓
-File masuk browser
-       ↓
-Preview dibuat
-       ↓
-❌ ADA CALLBACK LAIN
-       ↓
-❌ POST /api/media/upload
-       ↓
-❌ Storage
-       ↓
-❌ Error
-```
-
-Jadi kemungkinan besar struktur runtime masih seperti ini:
-
-```text
-CreatePostForm
-
-        │
-
-        ▼
-
-MediaTabs
-
-        │
-
-        ▼
-
-MediaFileInput
-
-        │
-
-        ├───────────────┐
-        │               │
-        ▼               ▼
-
-Local Preview       OLD UPLOAD FLOW
-                        │
-                        ▼
-                 /api/media/upload
-                        │
-                        ▼
-                    Storage
-```
-
-Artinya mungkin ada **dua handler yang berjalan**.
-
----
-
-# 4. KENAPA PREVIEW SEMPAT MUNCUL?
-
-Ini penting untuk memahami kenapa bug-nya membingungkan.
-
-Misalnya aplikasi melakukan:
-
-```text
-handleFileSelected(file)
-```
-
-Lalu:
-
-```text
-1. createObjectURL(file)
-2. setPreview(url)
-```
-
-Preview muncul.
-
-Kemudian callback lain:
-
-```text
-3. uploadMedia(file)
-```
-
-dipanggil.
-
-Upload gagal.
-
-Lalu aplikasi:
-
-```text
-4. setError(...)
-5. rollback media
-```
-
-Akibatnya:
-
-```text
-Preview muncul
-      ↓
-Loading
-      ↓
-Upload gagal
-      ↓
-Preview dihapus
-      ↓
-Error muncul
-```
-
-Ini persis cocok dengan gejala yang kamu ceritakan sebelumnya:
-
-> preview gambar muncul saat loading tetapi setelah loading force balik dan tidak ada gambar yang terlihat.
-
-Jadi kemungkinan flow-nya:
-
-```text
-LOCAL PREVIEW
-     ↓
-BERHASIL
-     ↓
-BACKGROUND UPLOAD
-     ↓
-GAGAL
-     ↓
-ROLLBACK
-     ↓
-MEDIA HILANG
-```
-
----
-
-# 5. KENAPA OPEN CODE SEBELUMNYA BILANG SUDAH FIX?
-
-Karena hasil sebelumnya mengatakan:
-
-```text
-Flow selection sekarang tidak lagi memanggil storage.
-```
-
-Dan test:
-
-```text
-249 PASS
-```
-
-Tetapi runtime menunjukkan:
-
-```text
-POST /api/media/upload
-```
-
-Artinya ada gap antara:
-
-# TESTED CODE
-
-dan:
-
-# ACTUAL RUNTIME CODE
-
-Kemungkinan penyebabnya:
-
----
-
-## Kemungkinan A — Komponen runtime memakai hook lain
-
-Misalnya:
-
-```text
-use-media-upload.ts
-```
-
-sudah diperbaiki.
-
-Test:
-
-```text
-use-media-upload.test.ts
-```
-
-lulus.
-
-Tetapi:
-
-```text
-CreatePostForm
-```
-
-tidak memakai hook itu.
-
-Sebaliknya:
-
-```text
-CreatePostForm
-```
-
-masih memakai:
-
-```text
-uploadMedia()
-```
-
-atau helper lama.
-
-Maka:
-
-```text
-TEST
-
-use-media-upload
-       ↓
 PASS
 
+npm run typecheck
 
-RUNTIME
+PASS
 
-CreatePostForm
-       ↓
-old upload function
-       ↓
-POST /api/media/upload
-```
+npm test
 
----
+PASS — 255/255
 
-## Kemungkinan B — Ada dua implementasi media
+npm run test:integration
 
-Contohnya:
+PASS — 74/74
 
-```text
-src/components/posts/media/
+npm run build
 
-use-media-upload.ts
+PASS
 
-media-upload.ts
+git diff --check
 
-media-selection.ts
+PASS
 
-media-utils.ts
-```
+==================================================
 
-Salah satunya sudah diperbaiki.
+COMPLETED PHASES
 
-Tetapi UI masih import yang lama.
+==================================================
 
-Contoh:
+PHASE 1 — INTERNAL API
 
-```typescript
-import { uploadMedia } from "./old-media-upload";
-```
+COMPLETE
 
-Padahal test menguji:
+Existing architecture includes:
 
-```typescript
-useMediaUpload();
-```
+Posts API
 
-Maka test benar.
+GET /api/posts
 
-Tetapi aplikasi tetap salah.
+POST /api/posts
 
----
+GET /api/posts/:id
 
-## Kemungkinan C — Callback parent masih upload
+POST /api/posts/:id/cancel
 
-Misalnya:
+POST /api/posts/:id/retry
 
-```text
-MediaFileInput
-```
+Accounts API
 
-sudah benar.
+GET /api/accounts
 
-Dia hanya melakukan:
+GET /api/accounts/:id
 
-```text
-onFile(file)
-```
+DELETE /api/accounts/:id
 
-Kemudian:
+Dashboard API
 
-```text
-MediaTabs
-```
+GET /api/dashboard
 
-meneruskan:
+Architecture:
 
-```text
-onAdd(file)
-```
+- Session authentication
 
-Tetapi:
+- Ownership checks
 
-```text
-CreatePostForm
-```
+- Safe DTO responses
 
-melakukan:
+- Validation
 
-```text
-async function handleAdd(file) {
+- Rate limiting
 
-    const uploaded =
-      await uploadMedia(file)
+- Service Layer
 
-}
-```
+Never expose:
 
-Jadi:
+- Access tokens
 
-```text
-Media Component
+- Refresh tokens
 
-SUDAH BENAR
-```
+- Provider secrets
 
-tetapi:
+- OAuth secrets
 
-```text
-Parent Component
+- Encrypted credentials
 
-MASIH UPLOAD
-```
+- Service role keys
 
----
+==================================================
 
-# 6. MASALAH KEDUA:
+PHASE 2 — DASHBOARD
 
-# BUCKET `post-media` TIDAK DITEMUKAN
+==================================================
 
-Log:
+COMPLETE
 
-```json
-{
-  "message": "Bucket not found",
-  "bucket": "post-media",
-  "status": 400
-}
-```
+Dashboard currently includes:
 
-Ini masalah berbeda.
+- Real statistics
 
-Artinya ketika server melakukan:
+- Scheduled posts
 
-```text
-Supabase Storage
-       ↓
-Cari Bucket
+- Publishing posts
 
-post-media
-```
+- Published posts
 
-Supabase menjawab:
+- Failed posts
 
-```text
-Bucket tidak ditemukan.
-```
+- Upcoming posts
 
-Kemungkinan:
+- Recent activity
 
-```text
-Bucket belum dibuat
-```
+- Failed posts
 
-atau:
+- Retry actions
 
-```text
-Nama bucket salah
-```
+- Connected accounts summary
 
-atau:
+- Quick actions
 
-```text
-Environment project salah
-```
+Dashboard architecture:
 
-Misalnya kode menunjuk:
+UI
 
-```text
-post-media
-```
+↓
 
-Tetapi bucket sebenarnya:
+Dashboard Service
 
-```text
-media
-```
+↓
 
-atau:
+Domain / Data
 
-```text
-post_media
-```
+DO NOT make Calendar bypass Service Layer if the
 
-atau bucket dibuat di project Supabase lain.
+existing architecture does not do that.
 
----
+==================================================
 
-# 7. MASALAH KETIGA:
+PHASE 2.5 — REPOSITORY HEALTH
 
-# MAXIMUM FILE SIZE
+==================================================
 
-Log kedua:
+COMPLETE
 
-```text
-The object exceeded the maximum allowed size
-```
+Repository root verified.
 
-Ini juga masalah terpisah.
+Nested unrelated worktree is excluded from:
 
-Artinya request upload mencoba mengirim file.
+- ESLint
 
-Storage menerima request.
+- TypeScript
 
-Tetapi file ditolak karena konfigurasi maximum size.
+- Build tooling
 
-Flow:
+Full repository validation works.
 
-```text
-UPLOAD
-   ↓
-Storage menerima
-   ↓
-Check file size
-   ↓
-FILE TOO LARGE
-   ↓
-400
-```
+DO NOT reintroduce nested repository scanning.
 
-Menariknya gambar kamu hanya:
+==================================================
 
-```text
-41 KB
-```
+PHASE 3 — DRAFT SYSTEM
 
-Jadi kalau benar file tersebut 41 KB, error maximum size cukup mencurigakan.
+==================================================
 
-Karena 41 KB itu sangat kecil.
+COMPLETE
 
-Kemungkinan:
+Draft architecture:
 
----
+Draft uses:
 
-## A. Error berasal dari request berbeda
+posts.status = "draft"
 
-Misalnya ada:
+No new Draft table.
 
-```text
-Request 1
+No migration required.
 
-Bucket not found
-```
+Draft capabilities:
 
-dan:
+- Create Draft
 
-```text
-Request 2
+- Empty Draft
 
-File size exceeded
-```
+- Save Draft
 
-bukan dari file yang sama.
+- Edit Draft
 
----
+- Continue Draft
 
-## B. Server mengirim object yang salah
+- Update Draft
 
-Misalnya bukan:
+- Delete Draft
 
-```text
-File
-```
+- Publish Draft
 
-tetapi:
+- Schedule Draft
 
-```text
-FormData salah
-```
+Draft routes:
 
-atau:
+/drafts
 
-```text
-Buffer salah
-```
+/drafts/[id]
 
-atau object serialized.
+Draft API:
 
----
+/api/drafts
 
-## C. Bucket punya limit sangat kecil
+/api/drafts/[id]
 
-Secara konfigurasi:
+/api/drafts/[id]/publish
 
-```text
-Max size
-```
+IMPORTANT:
 
-mungkin salah.
+Publish Draft keeps the SAME postId.
 
----
+Example:
 
-## D. Error dari Storage setup attempt
+Create Draft
 
-Kode mungkin mencoba:
+postId = abc
 
-```text
-Create Bucket
-```
+Edit Draft
 
-dengan konfigurasi:
+postId = abc
 
-```text
-fileSizeLimit
-```
+Publish Draft
 
-yang salah.
+postId = abc
 
----
+DO NOT create a new Post when publishing a Draft.
 
-# 8. MASALAH BESARNYA ADALAH:
+Composer:
 
-# PIPELINE MEDIA BELUM MEMILIKI BATAS YANG JELAS
+Existing Create Post composer is reused.
 
-Saat ini kemungkinan ada konsep:
+DO NOT duplicate the composer.
 
-```text
-Media Upload
-```
+==================================================
 
-yang digunakan untuk dua hal sekaligus.
+CURRENT POST LIFECYCLE
 
-Padahal sebenarnya ada dua konsep yang berbeda.
+==================================================
 
----
+IMPORTANT:
 
-# A. LOCAL MEDIA SELECTION
+Do not assume statuses blindly.
 
-Ini hanya urusan browser.
+Audit actual code first.
 
-```text
-File
+The known architecture includes at minimum:
+
+draft
+
+scheduled
+
+publishing
+
+published
+
+failed
+
+There may also be:
+
+cancelled
+
+or other lifecycle states.
+
+FIRST inspect:
+
+src/lib/domain/posts.ts
+
+Also inspect:
+
+- Database schema
+
+- Migrations
+
+- Post services
+
+- Queue
+
+- Worker
+
+- Retry
+
+- Cancellation
+
+- Schedule logic
+
+Document the REAL lifecycle before implementation.
+
+==================================================
+
+CURRENT MEDIA ARCHITECTURE
+
+==================================================
+
+CRITICAL — DO NOT REGRESS
+
+Media selection:
+
+Select File
 
 ↓
 
@@ -735,2013 +380,3196 @@ Browser Memory
 
 ↓
 
-Preview
+URL.createObjectURL()
 
 ↓
 
-User melihat hasil
-```
-
-Tidak perlu server.
-
----
-
-# B. MEDIA PERSISTENCE
-
-Ini urusan server.
-
-```text
-File
+Local Preview
 
 ↓
 
-Upload
+NO Storage Request
 
-↓
+Storage persistence only occurs during:
 
-Storage
+Save Draft
 
-↓
-
-Persistent URL
-```
-
-Diperlukan ketika:
-
-```text
 Publish
-```
 
-atau:
-
-```text
 Schedule
-```
 
----
+IMPORTANT:
 
-Sekarang dua konsep tersebut kemungkinan masih bercampur.
+Selecting media MUST NOT upload.
 
----
+Calendar media display must use persisted media
 
-# 9. MASALAH ARSITEKTUR YANG HARUS DIPASTIKAN
+references only.
 
-Idealnya media memiliki lifecycle.
+Calendar must NEVER trigger:
 
----
+/api/media/upload
 
-# STATE 1 — LOCAL
+just because a Calendar item is rendered.
 
-Saat user memilih file:
+Do not load full-size media unnecessarily.
 
-```text
-LOCAL
-```
+==================================================
 
-Data:
+CURRENT PUBLISHING ARCHITECTURE
 
-```text
-File
-Preview URL
-Name
-Size
-Type
-```
+==================================================
 
-Contoh:
+Existing architecture includes:
 
-```text
-{
-  state: "local",
+- Queue
 
-  file: File,
+- Worker
 
-  previewUrl:
-  "blob:http://localhost/...",
+- Retry
 
-  name:
-  "image.png"
-}
-```
+- Cancellation
 
-Belum ada:
+- Idempotency
 
-```text
-Storage URL
-```
+- Partial failure handling
 
-Belum ada:
+DO NOT:
 
-```text
-Database ID
-```
+Create another queue.
 
-Belum ada:
+Create another worker.
 
-```text
-Upload ID
-```
+Create another scheduling system.
 
----
+Duplicate publish logic.
 
-# STATE 2 — READY TO PUBLISH
+Duplicate retry logic.
 
-User selesai menulis:
+Calendar must consume existing lifecycle.
 
-```text
-Caption
-```
+Architecture:
 
-memilih:
-
-```text
-Facebook
-```
-
-Media masih:
-
-```text
-LOCAL
-```
-
-Contoh:
-
-```text
-{
-  state: "local",
-
-  file: File,
-
-  previewUrl:
-  "blob:..."
-}
-```
-
----
-
-# STATE 3 — PERSISTING
-
-User klik:
-
-```text
-Publish
-```
-
-Baru:
-
-```text
-LOCAL FILE
+Calendar Action
 
 ↓
 
-UPLOAD START
+Posts / Schedule Service
 
 ↓
 
-PERSISTING
-```
-
-Contoh:
-
-```text
-{
-  state: "persisting"
-}
-```
-
----
-
-# STATE 4 — PERSISTED
-
-Upload berhasil.
-
-```text
-Storage URL
-```
-
-Contoh:
-
-```text
-{
-  state: "persisted",
-
-  storagePath:
-  "user/post/image.png"
-}
-```
-
----
-
-# STATE 5 — PUBLISHING
-
-```text
-PERSISTED
+Existing Domain Logic
 
 ↓
 
-CREATE POST
+Existing Queue / Worker
+
+NOT:
+
+Calendar
 
 ↓
 
-CREATE TARGET
+New Schedule Table
 
 ↓
 
-QUEUE
+New Queue
 
 ↓
 
-WORKER
-```
+New Worker
 
----
+unless the audit proves such architecture already exists.
 
-# STATE 6 — PUBLISHED
+==================================================
 
-```text
-Facebook Published
-```
+PHASE 4 PRIMARY GOAL
 
----
+==================================================
 
-# 10. SEKARANG STATE ITU KEMUNGKINAN TIDAK DIPISAH
+Implement:
 
-Yang mungkin terjadi:
+CALENDAR
 
-```text
-USER SELECT FILE
++
 
-↓
+SCHEDULE MANAGEMENT
 
-LOCAL PREVIEW
+The user must be able to:
 
-↓
+1. Open Calendar
 
-AUTO PERSIST ❌
-```
+2. View scheduled posts
 
-Padahal seharusnya:
+3. Navigate dates
 
-```text
-USER SELECT FILE
+4. View posts by date
 
-↓
+5. View scheduled time
 
-LOCAL PREVIEW
+6. View platforms/accounts
 
-↓
+7. View post status
 
-WAIT
-```
+8. Open post details
 
-Kemudian:
+9. Continue Draft when appropriate
 
-```text
-USER CLICK PUBLISH
+10. Cancel scheduled post when supported
 
-↓
+11. Retry failed post when supported
 
-PERSIST
-```
+12. Navigate to editing flow
 
----
+13. Understand timezone correctly
 
-# 11. MASALAH BERIKUTNYA:
+The Calendar must display REAL application data.
 
-# BROWSER MEMORY TIDAK BISA LANGSUNG MASUK DATABASE
+==================================================
 
-Ini penting untuk langkah setelah preview selesai.
+CORE USER FLOW
 
-Kita tidak boleh berpikir:
+==================================================
 
-```text
-File di React State
-```
-
-lalu:
-
-```text
-Server Action
-```
-
-langsung bisa mengakses file itu.
-
-Browser dan server berbeda.
-
-Browser:
-
-```text
-User PC
-```
-
-Server:
-
-```text
-Next.js Server
-```
-
-Jadi saat publish harus ada proses transfer.
-
-Pilihan yang benar:
-
-```text
-Browser
+USER
 
 ↓
 
-POST multipart/form-data
+Dashboard
 
 ↓
 
-Server
+View Calendar
 
 ↓
 
-Storage
-```
+Calendar
 
-atau mekanisme upload lain.
+USER CAN:
 
-Tetapi itu hanya saat:
+Navigate Month
 
-```text
-PUBLISH
-```
+Navigate Week
 
----
-
-# 12. SCHEDULE LEBIH KOMPLEKS DARI PUBLISH
-
-Kalau user:
-
-```text
-Publish Now
-```
-
-file bisa langsung:
-
-```text
-Browser
-↓
-Upload
-↓
-Storage
-↓
-Worker
-↓
-Provider
-```
-
-Tetapi kalau:
-
-```text
-Schedule besok
-```
-
-Browser user mungkin sudah:
-
-```text
-Tutup laptop
-```
-
-atau:
-
-```text
-Tutup browser
-```
-
-Jadi file wajib sudah berada di persistent storage.
-
-Flow:
-
-```text
-User pilih gambar
+Navigate Day
 
 ↓
 
-Browser Preview
+See Scheduled Posts
 
 ↓
 
-User Schedule
+Click Post
 
 ↓
 
-UPLOAD FILE
+View Details
+
+Then:
+
+Edit
+
+or
+
+Cancel
+
+or
+
+Retry
+
+or
+
+Continue Draft
+
+depending on the actual lifecycle and permissions.
+
+==================================================
+
+CALENDAR DATA
+
+==================================================
+
+Calendar must use existing Post data.
+
+Possible statuses:
+
+draft
+
+scheduled
+
+publishing
+
+published
+
+failed
+
+cancelled
+
+DO NOT automatically display every status.
+
+Define Calendar visibility based on actual product behavior.
+
+Recommended behavior:
+
+SCHEDULED
+
+Appears on Calendar
+
+PUBLISHING
+
+May appear if currently relevant
+
+PUBLISHED
+
+May appear in history/calendar depending on current
+
+product architecture
+
+FAILED
+
+May appear with failure indicator if relevant
+
+DRAFT
+
+Does NOT occupy a calendar time unless scheduled
+
+UNSCHEDULED DRAFTS
+
+May appear in:
+
+Sidebar
+
+or
+
+Dedicated section
+
+but must not pretend to have a schedule.
+
+==================================================
+
+REQUIRED AUDIT BEFORE IMPLEMENTATION
+
+==================================================
+
+FIRST inspect:
+
+DATABASE
+
+- posts table
+
+- post status
+
+- scheduled timestamp fields
+
+- timezone fields
+
+- publish jobs
+
+- media tables
+
+- connected account relationships
+
+POST DOMAIN
+
+Inspect:
+
+src/lib/domain/posts.ts
+
+Also inspect:
+
+- Post types
+
+- Status types
+
+- Lifecycle transitions
+
+- Create Post
+
+- Publish
+
+- Schedule
+
+- Cancel
+
+- Retry
+
+SERVICE LAYER
+
+Inspect:
+
+- Posts Service
+
+- Dashboard Service
+
+- Existing DTOs
+
+- Existing query methods
+
+API
+
+Inspect:
+
+GET /api/posts
+
+POST /api/posts
+
+GET /api/posts/:id
+
+POST /api/posts/:id/cancel
+
+POST /api/posts/:id/retry
+
+Also inspect Draft APIs.
+
+SCHEDULING
+
+Find the actual code responsible for:
+
+- Schedule creation
+
+- Schedule validation
+
+- Scheduled timestamps
+
+- Queue/job creation
+
+- Worker execution
+
+TIMEZONE
+
+Find:
+
+- default timezone
+
+- timezone storage
+
+- timezone conversion
+
+- UTC usage
+
+- display formatting
+
+UI
+
+Inspect:
+
+- Existing Calendar route if any
+
+- Dashboard Calendar quick action
+
+- Post History
+
+- Draft List
+
+- Create Post
+
+- Post cards
+
+- Design system
+
+==================================================
+
+ARCHITECTURE DECISION
+
+==================================================
+
+Before implementation determine:
+
+1.
+
+Where Calendar data should come from.
+
+Possible:
+
+Posts Service
+
+Calendar Service
+
+Existing Dashboard aggregation
+
+Internal API
+
+DO NOT create duplicate query logic.
+
+Preferred architecture:
+
+UI
 
 ↓
 
-Storage
+Calendar Service / Existing Service Layer
+
+↓
+
+Posts Domain
 
 ↓
 
 Database
 
-↓
+OR:
 
-WAIT
-```
-
-Kemudian besok:
-
-```text
-Worker
+UI
 
 ↓
 
-Storage
+Internal API
 
 ↓
 
-File
+Service Layer
 
 ↓
 
-Facebook
-```
+Domain
 
-Jadi storage memang **tetap diperlukan**.
+Follow the existing architecture.
 
-Tetapi waktunya yang salah sekarang.
+==================================================
 
----
+CALENDAR SERVICE
 
-# 13. KENAPA KITA TIDAK BOLEH HAPUS STORAGE SEPENUHNYA
+==================================================
 
-Karena nanti:
+If Calendar-specific aggregation is needed:
 
-```text
-Facebook
-Instagram
-TikTok
-```
+Create a Calendar Service ONLY if it adds clear
 
-butuh akses ke media.
+domain separation.
 
-Jika browser menutup:
+Possible conceptual responsibilities:
 
-```text
-blob:http://localhost/...
-```
+getCalendarRange()
 
-hilang.
+getCalendarMonth()
 
-Worker tidak bisa mengakses:
+getCalendarWeek()
 
-```text
-blob URL browser
-```
+getCalendarDay()
 
-Jadi:
+getUnscheduledDrafts()
 
-```text
-Browser Preview
-```
+BUT:
 
-hanya sementara.
+Do not blindly create these methods.
 
-Sedangkan:
+Follow repository conventions.
 
-```text
-Storage
-```
+Avoid:
 
-persistent.
+Calendar UI
 
-Arsitektur final:
+↓
 
-```text
-BROWSER
+Direct Supabase query
 
-File
-│
-├── Preview
-│
-└── Publish
-      ↓
+if existing application architecture uses Service Layer.
+
+==================================================
+
+CALENDAR ROUTE
+
+==================================================
+
+Determine existing routing convention.
+
+Preferred route:
+
+/calendar
+
+If it already exists:
+
+Extend it.
+
+Do not create duplicate Calendar routes.
+
+Dashboard Quick Action:
+
+View Calendar
+
+must navigate to the real Calendar.
+
+==================================================
+
+CALENDAR VIEWS
+
+==================================================
+
+Implement at minimum:
+
+MONTH VIEW
+
+Example:
+
+September 2026
+
+MON  TUE  WED  THU  FRI  SAT  SUN
+
+31   1    2    3    4    5    6
+
+7    8    9    10   11   12   13
+
+14   15   16   17   18   19   20
+
+21   22   23   24   25   26   27
+
+28   29   30
+
+Each day may show:
+
+Scheduled Posts
+
+Platform indicators
+
+Time
+
+Post preview
+
+==================================================
+
+WEEK VIEW
+
+==================================================
+
+Implement Week View if compatible with current UI
+
+scope without excessive complexity.
+
+Example:
+
+Monday
+
+09:00
+
+Facebook Post
+
+14:00
+
+Instagram Post
+
+19:00
+
+Facebook + Instagram
+
+Week View must use REAL scheduled times.
+
+==================================================
+
+DAY VIEW
+
+==================================================
+
+Implement Day View only if it fits naturally with
+
+existing Calendar architecture.
+
+DO NOT over-engineer.
+
+Priority order:
+
+1. Month View
+
+2. Week View
+
+3. Day View
+
+Month View is REQUIRED.
+
+==================================================
+
+DATE NAVIGATION
+
+==================================================
+
+Support:
+
+Previous
+
+Next
+
+Today
+
+Examples:
+
+Previous Month
+
+Next Month
+
+Today
+
+Week View:
+
+Previous Week
+
+Next Week
+
+Today
+
+Do not reload unnecessary data.
+
+Use efficient range queries.
+
+==================================================
+
+DATE RANGE QUERY
+
+==================================================
+
+Calendar must NOT load:
+
+All Posts
+
+and filter them in browser.
+
+Instead:
+
+Calendar Range
+
+↓
+
+Server-side range query
+
+↓
+
+Only relevant Posts
+
+Example:
+
+Month:
+
+2026-09-01
+
+through
+
+2026-10-01
+
+Use correct inclusive/exclusive range logic.
+
+Avoid:
+
+N+1 queries.
+
+==================================================
+
+TIMEZONE — CRITICAL
+
+==================================================
+
+Calendar timezone must be audited before implementation.
+
+Determine:
+
+Where schedule timestamp is stored.
+
+Possible:
+
+UTC
+
+or:
+
+Timezone-aware timestamp
+
+or:
+
+Local time + timezone
+
+DO NOT guess.
+
+Preferred conceptual flow:
+
+DATABASE
+
+UTC
+
+↓
 
 SERVER
 
-      ↓
-
-STORAGE
-
-      ↓
-
-WORKER
-
-      ↓
-
-PROVIDER
-```
-
----
-
-# 14. MASALAH SAAT INI BELUM SAMPAI FACEBOOK
-
-Ini juga sangat penting.
-
-Kita belum boleh menyimpulkan:
-
-```text
-Facebook publish gagal
-```
-
-Karena sekarang pipeline bahkan belum sampai sana.
-
-Pipeline berhenti di:
-
-```text
-MEDIA
-```
-
-Urutan runtime:
-
-```text
-1. Browser
-
-2. Media selection
-
-3. ❌ Upload terlalu cepat
-
-4. ❌ Storage error
-
-STOP
-```
-
-Belum sampai:
-
-```text
-Post Creation
-```
-
-Belum sampai:
-
-```text
-Queue
-```
-
-Belum sampai:
-
-```text
-Worker
-```
-
-Belum sampai:
-
-```text
-Facebook Graph API
-```
-
-Jadi Facebook belum menjadi masalah saat ini.
-
----
-
-# 15. HUBUNGAN DENGAN FACEBOOK OAUTH
-
-Facebook OAuth adalah pipeline terpisah.
-
-OAuth:
-
-```text
-AutoPost
+Normalize
 
 ↓
 
-Facebook Login
+USER TIMEZONE
 
 ↓
 
-Permission
+CALENDAR DISPLAY
+
+Example:
+
+Database:
+
+2026-09-10T09:00:00Z
+
+User timezone:
+
+Asia/Jakarta
+
+Calendar:
+
+2026-09-10 16:00 WIB
+
+But use actual project conventions.
+
+==================================================
+
+TIMEZONE REQUIREMENTS
+
+==================================================
+
+Calendar must:
+
+Display correct local date.
+
+Display correct local time.
+
+Handle month boundary correctly.
+
+Handle day boundary correctly.
+
+Example:
+
+UTC:
+
+September 30 18:00
+
+Asia/Jakarta:
+
+October 1 01:00
+
+This must appear on:
+
+October 1
+
+not:
+
+September 30.
+
+==================================================
+
+DEFAULT TIMEZONE
+
+==================================================
+
+Existing project previously used:
+
+Asia/Jakarta
+
+Audit actual implementation.
+
+DO NOT hardcode Asia/Jakarta everywhere.
+
+Use:
+
+User preference
+
+or:
+
+Existing default timezone architecture.
+
+==================================================
+
+TIMEZONE TESTS
+
+==================================================
+
+Add tests for:
+
+UTC → local conversion.
+
+Month boundary.
+
+Day boundary.
+
+Calendar range.
+
+Scheduled post appears on correct date.
+
+Do not rely only on manual testing.
+
+==================================================
+
+CALENDAR POST CARD
+
+==================================================
+
+Each Calendar item should show concise information.
+
+Possible:
+
+Time
+
+Platform icon
+
+Caption preview
+
+Status
+
+Example:
+
+09:00
+
+Facebook
+
+Launching our new feature...
+
+Do not render full caption unnecessarily.
+
+==================================================
+
+CALENDAR MEDIA
+
+==================================================
+
+Optional media preview:
+
+Use:
+
+Small thumbnail
+
+only if existing persisted media architecture supports it.
+
+DO NOT:
+
+Load full media.
+
+Trigger upload.
+
+Create object URL.
+
+Access browser-selected files.
+
+Calendar only uses persisted media.
+
+==================================================
+
+PLATFORM DISPLAY
+
+==================================================
+
+Reuse existing Connected Account abstraction.
+
+Do not hardcode:
+
+Facebook
+
+Instagram
+
+Calendar should work with future providers.
+
+Display conceptually:
+
+Facebook
+
+Instagram
+
+TikTok
+
+Threads
+
+etc.
+
+Use existing platform enum/type.
+
+==================================================
+
+MULTI-ACCOUNT POSTS
+
+==================================================
+
+A Post may target multiple accounts.
+
+Calendar must represent this correctly.
+
+Example:
+
+09:00
+
+Facebook + Instagram
+
+Do not duplicate the same Post visually if one Post
+
+targets multiple accounts.
+
+Preferred:
+
+One Calendar Item
 
 ↓
 
-Callback
+Multiple platform indicators
 
-↓
+unless existing product architecture represents
 
-Access Token
+platform publishing separately.
 
-↓
+Audit first.
 
-Connected Account
-```
+==================================================
 
-Media:
+CALENDAR STATUS DISPLAY
 
-```text
-File
+==================================================
 
-↓
+Use clear state.
 
-Storage
+SCHEDULED
 
-↓
+Scheduled
 
-Post
+PUBLISHING
 
-↓
+Publishing
 
-Queue
+PUBLISHED
 
-↓
+Published
 
-Worker
-```
+FAILED
 
-Publish:
+Failed
 
-```text
-Worker
+DRAFT
 
-↓
+Draft
 
-Facebook Provider
+CANCELLED
 
-↓
+Cancelled
 
-Graph API
-```
+Use existing status naming conventions.
 
-Saat ini:
+Do not invent new lifecycle names.
 
-```text
-OAUTH
-```
+==================================================
 
-bisa saja sudah benar.
+UNSCHEDULED DRAFTS
 
-Tetapi:
+==================================================
 
-```text
-MEDIA
-```
+Drafts without schedule must not occupy a fake
 
-masih bermasalah.
+calendar slot.
 
-Jadi:
+Implement one of:
 
-```text
-Facebook Connected
-```
+Option A:
 
-tidak otomatis berarti:
+Unscheduled Draft Sidebar
 
-```text
-Facebook Publish
-```
+Option B:
 
-sudah bisa.
+Draft Section
 
----
+Option C:
 
-# 16. MASALAH TEST YANG BARU TERUNGKAP
+Link to Drafts page
 
-Ini salah satu masalah engineering paling penting sekarang.
+Choose based on existing UI architecture.
 
-Kita punya:
+Preferred:
 
-```text
-Unit Tests
+Small sidebar/section:
 
-249 PASS
-```
+Unscheduled Drafts
 
-dan:
+Example:
 
-```text
-Integration Tests
+Product Launch
 
-70 PASS
-```
+Edited 10 minutes ago
 
-Tetapi runtime:
+Continue Editing
 
-```text
-POST /api/media/upload
-```
+Do not load excessive Draft data.
 
-masih terjadi.
+==================================================
 
-Artinya testing coverage belum menjamin:
+CALENDAR POST CLICK
 
-# ACTUAL USER FLOW
+==================================================
 
-Kemungkinan test hanya menguji:
+Click Calendar Post.
 
-```text
-FUNCTION
-```
+Behavior should follow status.
 
-Contoh:
+SCHEDULED:
 
-```text
-useMediaUpload()
-```
+Open Post Detail
 
-tanpa menguji:
+or
 
-```text
-CreatePostForm
+Schedule Management
 
-↓
+DRAFT:
 
-MediaTabs
+Continue Editing
 
-↓
+FAILED:
 
-MediaFileInput
+Open Post Detail
 
-↓
+PUBLISHED:
 
-User Event
+Open Post Detail / History
 
-↓
+Do not create duplicate detail pages if Phase 5 has not
 
-Network
-```
+implemented them yet.
 
-Yang sebenarnya kita butuhkan sekarang adalah test:
+If a full detail page does not exist:
 
-```text
-USER SELECT FILE
-```
+Use existing routes/actions safely.
 
-kemudian assert:
+Do not build Phase 5 prematurely.
 
-```text
-fetch
+==================================================
 
-NOT CALLED
-```
+SCHEDULE MANAGEMENT
 
-Ini berbeda dengan hanya menguji:
+==================================================
 
-```text
-previewUrl exists
-```
+Calendar must integrate with existing schedule
 
----
+management.
 
-# 17. MASALAH YANG HARUS DIAUDIT
+Users should be able to safely perform existing
 
-OpenCode sekarang seharusnya mencari seluruh call chain.
+actions.
 
-Kurang lebih:
+Possible actions:
 
-```text
-CreatePostPage
+Cancel Scheduled Post
 
-↓
+Retry Failed Post
 
-CreatePostForm
+Continue Editing Draft
 
-↓
+View Post
 
-MediaTabs
+DO NOT implement actions that existing lifecycle
 
-↓
+does not support.
 
-MediaFileInput
+==================================================
 
-↓
+CANCEL SCHEDULE
 
-useMediaUpload
+==================================================
 
-↓
+Existing API includes:
 
-onAdd
+POST /api/posts/:id/cancel
 
-↓
+Audit what it actually supports.
 
-Parent Callback
+If it supports scheduled post cancellation:
 
-↓
+Calendar may expose:
 
-???????
-
-↓
-
-/api/media/upload
-```
-
-Tanda:
-
-```text
-???????
-```
-
-adalah yang belum diketahui secara pasti.
-
-Dan itu yang harus ditemukan.
-
----
-
-# 18. KEMUNGKINAN SANGAT BESAR: CALLBACK `onAdd`
-
-Dari error nested form sebelumnya kita tahu struktur media melibatkan komponen seperti:
-
-```text
-CreatePostForm
-```
-
-dan:
-
-```text
-MediaUrlInput
-```
-
-Juga ada:
-
-```text
-MediaTabs
-```
-
-Kemungkinan:
-
-```text
-MediaFileInput
-```
-
-memanggil:
-
-```typescript
-onAdd(media)
-```
-
-Lalu parent:
-
-```text
-CreatePostForm
-```
-
-mungkin melakukan:
-
-```typescript
-await uploadMedia(media)
-```
-
-Contoh arsitektur lama:
-
-```typescript
-const handleMediaAdd = async (file) => {
-
-  const media =
-    await uploadMedia(file)
-
-  setMedia(media)
-
-}
-```
-
-Arsitektur baru seharusnya:
-
-```typescript
-const handleMediaAdd = (file) => {
-
-  const preview =
-    URL.createObjectURL(file)
-
-  setMedia({
-    file,
-    preview
-  })
-
-}
-```
-
-Upload baru:
-
-```typescript
-const handlePublish = async () => {
-
-  await persistPendingMedia(media)
-
-}
-```
-
-Kemungkinan besar bug ada di pemisahan ini.
-
----
-
-# 19. MASALAH `MEDIA URL`
-
-Kamu juga punya fitur:
-
-```text
-Tambahkan Media URL
-```
-
-Ini juga harus dipisahkan.
-
-Saat:
-
-```text
-https://example.com/image.jpg
-```
-
-ditambahkan:
-
-```text
-URL
-
-↓
-
-Validate
-
-↓
-
-Preview
-```
-
-Tidak perlu:
-
-```text
-/api/media/url
-```
-
-pada tahap Add.
-
-Kalau sekarang ada API:
-
-```text
-/api/media/url
-```
-
-maka kita perlu memastikan:
-
-```text
-MediaUrlInput
-```
-
-tidak masih memanggil endpoint itu.
-
----
-
-# 20. MASALAH `API ROUTES` YANG MASIH ADA
-
-Saat ini:
-
-```text
-/api/media/upload
-```
-
-dan:
-
-```text
-/api/media/url
-```
-
-masih ada.
-
-Itu tidak otomatis salah.
-
-Yang salah adalah:
-
-```text
-KAPAN endpoint tersebut dipanggil.
-```
-
-Endpoint:
-
-```text
-/api/media/upload
-```
-
-seharusnya:
-
-```text
-PUBLISH
-
-atau
-
-SCHEDULE
-```
-
-Bukan:
-
-```text
-SELECT FILE
-```
-
----
-
-# 21. MASALAH STORAGE `post-media`
-
-Setelah masalah selection selesai, kita akan masuk ke masalah berikutnya.
-
-Saat user klik Publish:
-
-```text
-Click Publish
-
-↓
-
-persistPendingMedia()
-
-↓
-
-Storage
-```
-
-Kemudian saat ini akan muncul:
-
-```text
-Bucket not found
-```
-
-Jadi nanti kita harus memastikan bucket:
-
-```text
-post-media
-```
-
-memang ada.
-
-Tapi sebelum itu kita perlu audit:
-
-```text
-Apakah bucket memang seharusnya dibuat otomatis?
-```
-
-atau:
-
-```text
-Harus dibuat manual?
-```
-
-atau:
-
-```text
-Ada migration/setup script yang belum dijalankan?
-```
-
-atau:
-
-```text
-Nama bucket di code tidak sama dengan production?
-```
-
----
-
-# 22. BUCKET BUKAN DATABASE TABLE
-
-Ini perlu dibedakan.
-
-Kamu punya:
-
-```text
-Supabase PostgreSQL
-```
-
-untuk:
-
-```text
-Users
-Posts
-Accounts
-Jobs
-Targets
-```
-
-Dan:
-
-```text
-Supabase Storage
-```
-
-untuk:
-
-```text
-Images
-Videos
-Media Files
-```
-
-Bucket:
-
-```text
-post-media
-```
-
-adalah bagian dari:
-
-```text
-Storage
-```
-
-Bukan:
-
-```text
-Drizzle table
-```
-
-Jadi error:
-
-```text
-Bucket not found
-```
-
-tidak berarti database kamu rusak.
-
----
-
-# 23. MASALAH FILE SIZE
-
-Ini juga harus diaudit nanti.
-
-Kita perlu mengetahui:
-
-```text
-Bucket configuration
-```
-
-Contoh:
-
-```text
-Maximum file size:
-
-1 MB
-```
-
-atau:
-
-```text
-10 MB
-```
-
-atau:
-
-```text
-100 MB
-```
-
-Karena aplikasi ingin mendukung:
-
-```text
-Image
-```
-
-dan:
-
-```text
-Video
-```
-
-Maka limit harus sesuai.
-
-Contoh konsep:
-
-```text
-Image
-
-≤ X MB
-```
-
-Video:
-
-```text
-≤ Y MB
-```
-
-Tetapi jangan asal menaikkan limit sekarang.
-
-Pertama kita harus tahu:
-
-```text
-Kenapa file 41 KB bisa memicu maximum size?
-```
-
-Itu harus dibuktikan.
-
----
-
-# 24. MASALAH ERROR HANDLING
-
-Sekarang UI menunjukkan:
-
-```text
-We couldn't prepare media storage. Try again.
-```
-
-Masalahnya pesan ini muncul pada:
-
-```text
-Media Selection
-```
-
-Padahal user tidak merasa sedang:
-
-```text
-Prepare Storage
-```
-
-Mereka hanya:
-
-```text
-Pilih gambar.
-```
-
-Jadi secara UX:
-
-```text
-USER ACTION
-
-Upload/select image
-```
-
-Error:
-
-```text
-Storage preparation failed
-```
-
-Ini membocorkan detail implementasi dan membingungkan.
-
-Setelah flow benar:
-
-Saat selection gagal:
-
-```text
-We couldn't add this media. Try again.
-```
-
-mungkin lebih sesuai.
-
-Sedangkan saat Publish:
-
-```text
-We couldn't upload this media. Try again.
-```
-
-lebih tepat.
-
-Tetapi kita harus mengikuti [`Design.md`](http://Design.md) untuk copy UI dan tidak sembarang mengganti string.
-
----
-
-# 25. MASALAH LAIN: ROLLBACK MEDIA
-
-Kemungkinan besar saat upload gagal aplikasi melakukan:
-
-```text
-setMedia([])
-```
-
-atau:
-
-```text
-removeMedia()
-```
-
-Karena itu preview:
-
-```text
-muncul
-```
-
-kemudian:
-
-```text
-hilang.
-```
+Cancel
 
 Flow:
 
-```text
-LOCAL STATE
-
-✓ File
-✓ Preview
+Calendar
 
 ↓
 
-Upload Failed
+Cancel Action
 
 ↓
 
-ROLLBACK
+Existing API / Service
 
 ↓
 
-✗ File
-✗ Preview
-```
+Existing lifecycle
 
-Padahal seharusnya:
+Do not create:
 
-```text
-LOCAL STATE
+/api/calendar/cancel
 
-✓ File
-✓ Preview
+unless existing architecture explicitly requires it.
+
+==================================================
+
+RETRY
+
+==================================================
+
+Existing API includes:
+
+POST /api/posts/:id/retry
+
+Audit supported statuses.
+
+Calendar may expose Retry only when valid.
+
+Do not show Retry for:
+
+Draft
+
+Published
+
+unless actual architecture supports it.
+
+Reuse existing retry logic.
+
+==================================================
+
+RESCHEDULE
+
+==================================================
+
+IMPORTANT:
+
+Do NOT blindly implement rescheduling.
+
+First audit whether existing architecture supports:
+
+Scheduled Post
 
 ↓
 
-Publish Failed
+Change Schedule Time
+
+If it already exists:
+
+Reuse it.
+
+If it does NOT exist:
+
+Do not silently implement a second scheduling system.
+
+Reschedule may be:
+
+OUT OF SCOPE
+
+unless safely supported through existing Posts Service.
+
+If implemented:
+
+Must update:
+
+- Schedule timestamp
+
+- Queue/job
+
+- Existing lifecycle
+
+atomically.
+
+Avoid:
+
+Calendar shows new time
+
+but worker still publishes old time.
+
+==================================================
+
+NO DRAG AND DROP BY DEFAULT
+
+==================================================
+
+Drag and Drop scheduling is NOT required.
+
+Do NOT implement drag/drop unless existing project
+
+already supports it.
+
+Reason:
+
+Drag/drop rescheduling can introduce:
+
+- timezone bugs
+
+- stale queue jobs
+
+- duplicate jobs
+
+- lifecycle inconsistencies
+
+Phase 4 priority is correct scheduling visibility and
+
+safe management.
+
+==================================================
+
+SCHEDULE DATA CONSISTENCY
+
+==================================================
+
+Calendar must reflect source of truth.
+
+Avoid:
+
+Calendar has cached schedule:
+
+10:00
+
+Database has:
+
+12:00
+
+Always define source of truth.
+
+Prefer:
+
+Posts Service / existing domain state.
+
+==================================================
+
+REAL-TIME
+
+==================================================
+
+Realtime Calendar updates are OUT OF SCOPE.
+
+Do not add:
+
+Supabase Realtime
+
+WebSockets
+
+Polling loops
+
+unless existing architecture already uses them and the
+
+Calendar can safely reuse them.
+
+Normal refresh/navigation is sufficient.
+
+==================================================
+
+DASHBOARD INTEGRATION
+
+==================================================
+
+Existing Dashboard includes:
+
+Upcoming Posts
+
+Calendar should be consistent with it.
+
+Same scheduled Post should show consistent:
+
+- Date
+
+- Time
+
+- Status
+
+- Platform
+
+Do not implement separate date conversion logic in:
+
+Dashboard
+
+Calendar
+
+Reuse shared formatting/helper/service if appropriate.
+
+==================================================
+
+CALENDAR ↔ DASHBOARD
+
+==================================================
+
+Flow:
+
+Dashboard
 
 ↓
 
-KEEP FILE
-KEEP PREVIEW
+View Calendar
 
 ↓
 
-SHOW ERROR
-```
+Calendar
 
-Jadi user bisa:
+Calendar
 
-```text
-Fix error
-```
+↓
 
-lalu:
+Click Post
 
-```text
-Retry Publish
-```
+↓
 
-tanpa memilih file lagi.
+Existing Post/Draft flow
 
-Ini juga perlu dicek.
+No dead links.
 
----
+==================================================
 
-# 26. MASALAH SINKRONISASI STATE
+INTERNAL API
 
-Kemungkinan struktur sekarang:
+==================================================
 
-```text
-MediaInput State
-```
+Determine whether Calendar requires a new API endpoint.
 
-dan:
+Possible:
 
-```text
-CreatePostForm State
-```
+GET /api/calendar
 
-terpisah.
+with:
 
-Contoh:
+start
 
-```text
-MediaInput
+end
 
-media = [file]
-```
+timezone
 
-Tetapi:
+BUT:
 
-```text
-CreatePostForm
+DO NOT create endpoint automatically.
 
-media = []
-```
+If existing:
 
-Kemudian upload async berhasil/gagal menentukan state utama.
+GET /api/posts
 
-Ini bisa menyebabkan:
+can safely support:
 
-```text
-Preview component
+status filtering
 
-punya data
-```
+date range
 
-tetapi:
+then reuse it if architecture allows.
 
-```text
-Parent
+However:
 
-tidak punya data
-```
+Do not expose database query complexity directly
 
-Saat parent rerender:
+to client.
 
-```text
-Preview hilang.
-```
+API design must follow existing conventions.
 
-Ini cocok dengan gejala:
+==================================================
 
-> Preview muncul sebentar lalu hilang.
+POSSIBLE CALENDAR API
 
-Jadi selain network upload, perlu dicek apakah ada:
+==================================================
 
-```text
-state synchronization problem
-```
+ONLY IF REQUIRED.
 
-antara:
+Example:
 
-```text
-Child
+GET /api/calendar?start=...&amp;end=...
 
-dan
+Server must:
 
-Parent
-```
+Authenticate user.
 
----
+Resolve ownership server-side.
 
-# 27. GAMBARAN MASALAH DALAM SATU DIAGRAM
+Validate date range.
 
-Sekarang kemungkinan:
-
-```text
-                 USER
-                   │
-                   ▼
-             SELECT FILE
-                   │
-                   ▼
-          ┌────────────────┐
-          │ Media Component│
-          └───────┬────────┘
-                  │
-          ┌───────┴─────────┐
-          │                 │
-          ▼                 ▼
+Validate timezone if accepted.
 
-    LOCAL PREVIEW        OLD FLOW
-          │                 │
-          ▼                 ▼
+Limit maximum range.
 
-      IMAGE ✓       POST /api/media/upload
-                            │
-                            ▼
+Return safe DTO.
 
-                       SUPABASE
-                            │
-                     ┌──────┴──────┐
-                     │             │
-                     ▼             ▼
+Never expose:
 
-                Bucket Error   Size Error
-                     │             │
-                     └──────┬──────┘
-                            │
-                            ▼
+tokens
 
-                      UPLOAD FAILED
-                            │
-                            ▼
+credentials
 
-                      ROLLBACK
-                            │
-                            ▼
+raw media storage internals
 
-                     PREVIEW HILANG
-```
+provider secrets
 
-Target:
+==================================================
 
-```text
-                 USER
-                   │
-                   ▼
-             SELECT FILE
-                   │
-                   ▼
+DATE RANGE SECURITY
 
-          ┌────────────────┐
-          │ Browser State  │
-          └───────┬────────┘
-                  │
-                  ▼
+==================================================
 
-         URL.createObjectURL
-                  │
-                  ▼
+Prevent abuse.
 
-              PREVIEW ✓
-                  │
-                  ▼
+Do not allow:
 
-                WAIT
+start = 1900
 
+end = 2100
 
-       USER CLICKS PUBLISH
-                  │
-                  ▼
+without limit.
 
-          persistPendingMedia
-                  │
-                  ▼
+Validate range.
 
-             STORAGE
-                  │
-                  ▼
+Example concept:
 
-              QUEUE
-                  │
-                  ▼
+Maximum Calendar range:
 
-              WORKER
-                  │
-                  ▼
+reasonable application range.
 
-             FACEBOOK
-```
+Do not choose arbitrary limit without considering UI.
 
----
+==================================================
 
-# 28. STATUS SETIAP LAPISAN SEKARANG
+CALENDAR DTO
 
-## Browser UI
+==================================================
 
-```text
-Login
+Use safe Calendar DTO.
 
-✓
-```
+Possible fields:
 
-```text
-Signup
+id
 
-✓
-```
+status
 
-```text
-Create Post
+scheduledAt
 
-✓
-```
+captionPreview
 
-```text
-Caption
+platforms
 
-✓
-```
+mediaPreview
 
-```text
-File Selection
+createdAt
 
-✓ sebagian
-```
+updatedAt
 
-```text
-Preview
+DO NOT expose:
 
-✓ muncul
-```
+accessToken
 
-```text
-Preview Stable
+refreshToken
 
-❌ sebelumnya rollback
-```
+credentials
 
----
+encryptedToken
 
-# Media Layer
+storage internals
 
-```text
-Local File State
+provider secrets
 
-🟡 perlu runtime audit
-```
+Follow existing API DTO patterns.
 
-```text
-Object URL
+==================================================
 
-✓
-```
+OWNERSHIP
 
-```text
-Storage Call
+==================================================
 
-❌ terlalu cepat
-```
+CRITICAL.
 
-```text
-Upload Timing
+Calendar only returns current user's Posts.
 
-❌ salah
-```
+Never trust:
 
----
+userId from query
 
-# Storage Layer
+Use:
 
-```text
-Code
+Authenticated session
 
-✓ ada
-```
+↓
 
-```text
-Bucket
+Current user
 
-❌ tidak ditemukan
-```
+↓
 
-```text
-Size Limit
+Ownership scoped query
 
-❌ bermasalah
-```
+User A must NOT see:
 
-```text
-Publish Verification
+User B Calendar
 
-⏳ belum
-```
+User B Drafts
 
----
+User B Scheduled Posts
 
-# Database
+User B Failed Posts
 
-```text
-Schema
+==================================================
 
-✓
-```
-
-```text
 RLS
 
-✓
-```
+==================================================
 
-```text
-Migration
+Audit existing RLS.
 
-✓
-```
+Do not weaken it.
 
-Tidak ada bukti masalah database pada error sekarang.
+Calendar database/service query must remain
 
----
+ownership-safe.
 
-# Auth
+If new query or migration is required:
 
-```text
-Login
+verify RLS behavior.
 
-✓ sekarang dianggap selesai
-```
+No migration should be added unless necessary.
 
-```text
-Signup
+==================================================
 
-✓
-```
+NO DATABASE REDESIGN
 
-```text
-Supabase Auth
+==================================================
 
-✓
-```
+Phase 4 should primarily be:
 
-Masalah media tidak berhubungan langsung dengan login.
+Read + Presentation
 
----
++
 
-# OAuth
+Existing lifecycle actions.
 
-```text
-Architecture
+DO NOT redesign:
 
-✓
-```
+posts table
 
-```text
-Facebook setup
+queue
 
-✓ sedang/baru selesai
-```
+worker
 
-```text
-Actual Connected Account
+media
 
-🟡 perlu verifikasi UI
-```
-
----
-
-# Queue
-
-```text
-Implementation
-
-✓
-```
-
-```text
-Integration Test
-
-✓
-```
-
-```text
-Real Facebook Job
-
-⏳ belum
-```
-
----
-
-# Worker
-
-```text
-Implementation
-
-✓
-```
-
-```text
-Tests
-
-✓
-```
-
-```text
-Real Provider Publish
-
-⏳ belum
-```
-
----
-
-# Facebook Graph API
-
-```text
 OAuth
 
-🟡
-```
+accounts
 
-```text
-Account Connected
+unless audit proves a minimal change is required.
 
-🟡
-```
+==================================================
 
-```text
-Real Publish
+CALENDAR UI REQUIREMENTS
 
-❌ belum diuji
-```
+==================================================
 
----
+Use existing:
 
-# 29. PRIORITAS PERBAIKAN YANG BENAR
+- Design system
 
-Sekarang jangan lompat ke Facebook.
+- Components
 
-Jangan lompat ke TikTok.
+- Cards
 
-Jangan lompat ke Instagram.
+- Buttons
 
-Jangan tambah fitur baru.
+- Dialogs
 
-Urutannya:
+- Alerts
 
----
+- Typography
 
-## PRIORITAS 1
+- Spacing
 
-# TEMUKAN EXACT CALLER `/api/media/upload`
+DO NOT introduce a second design system.
 
-Kita perlu tahu:
+==================================================
 
-```text
-SIAPA
+MONTH VIEW UI
 
-yang memanggil endpoint?
-```
+==================================================
 
-Bukan:
+Required:
 
-```text
-endpoint melakukan apa?
-```
+Header:
 
-Kita sudah tahu endpoint ada.
+Month
 
-Yang belum tahu:
+Year
 
-```text
-Siapa yang memanggilnya saat selection.
-```
+Controls:
 
----
+Previous
 
-## PRIORITAS 2
+Today
 
-# PISAHKAN SELECTION DAN PERSISTENCE
+Next
 
-Selection:
+Calendar Grid:
 
-```text
-Browser Only
-```
+7 days
 
-Persistence:
+Each day:
 
-```text
-Publish/Schedule Only
-```
+Date
 
----
+Calendar Items
 
-## PRIORITAS 3
+Current day:
 
-# RUNTIME TEST
+Visually identifiable using existing design patterns.
 
-User pilih gambar.
+Do not hardcode colors unless existing design system
 
-Server log harus:
+already defines them.
 
-```text
-GET /create-post
-```
+==================================================
 
-dan tidak boleh:
+CALENDAR RESPONSIVENESS
 
-```text
-POST /api/media/upload
-```
+==================================================
 
----
+Desktop:
 
-## PRIORITAS 4
+Full Month Grid
 
-# PERBAIKI STORAGE
+Tablet:
 
-Setelah selection bersih:
+Compact Grid
 
-```text
-post-media bucket
-```
+Mobile:
 
-harus diverifikasi.
+Usable Calendar
 
----
+Do not simply shrink desktop UI until unreadable.
 
-## PRIORITAS 5
+Possible mobile behavior:
 
-# TEST PUBLISH
+Agenda/List presentation
 
-User:
+or:
 
-```text
-Select Image
-```
+Horizontally usable grid
 
-✓
+Follow existing responsive patterns.
 
-```text
-Select Facebook
-```
+==================================================
 
-✓
+MOBILE PRIORITY
 
-```text
-Click Publish
-```
+==================================================
+
+On mobile users must still be able to:
+
+Navigate dates.
+
+See scheduled posts.
+
+Open posts.
+
+Continue drafts.
+
+Cancel valid scheduled posts.
+
+Retry failed posts.
+
+Do not hide critical actions permanently.
+
+==================================================
+
+CALENDAR EMPTY STATE
+
+==================================================
+
+If no scheduled posts:
+
+No posts scheduled for this period.
+
+Action:
+
+Create Post
+
+or:
+
+Create Draft
+
+Follow existing UX.
+
+==================================================
+
+UNSCHEDULED DRAFT EMPTY STATE
+
+==================================================
+
+If no Drafts:
+
+No drafts to continue.
+
+Do not render empty broken sidebar.
+
+==================================================
+
+LOADING STATE
+
+==================================================
+
+Calendar navigation should show proper loading.
+
+Examples:
+
+Loading calendar...
+
+Skeleton
+
+Existing loading components
+
+Do not freeze UI.
+
+==================================================
+
+ERROR STATE
+
+==================================================
+
+Use safe error messages.
+
+Examples:
+
+We couldn't load your calendar.
+
+We couldn't update this post.
+
+We couldn't cancel this scheduled post.
+
+We couldn't load posts for this date range.
+
+Do not expose:
+
+SQL
+
+Supabase internals
+
+Stack traces
+
+Queue internals
+
+Provider raw responses
+
+==================================================
+
+CANCEL CONFIRMATION
+
+==================================================
+
+If Calendar exposes Cancel:
+
+Require confirmation if existing UI pattern supports it.
+
+Example:
+
+Cancel scheduled post?
+
+This prevents accidental cancellation.
+
+Do not implement destructive action without reasonable
+
+UX protection.
+
+==================================================
+
+RETRY CONFIRMATION
+
+==================================================
+
+Retry may execute provider work.
+
+Use existing UX conventions.
+
+Do not create duplicate retry flow.
+
+==================================================
+
+ACCESSIBILITY
+
+==================================================
+
+Ensure:
+
+Keyboard navigation.
+
+Semantic buttons.
+
+Accessible labels.
+
+Calendar controls have labels.
+
+Screen-reader readable dates.
+
+Status indicators have text or aria labels.
+
+Focus management for dialogs.
+
+No critical icon-only action without accessible label.
+
+==================================================
+
+PERFORMANCE
+
+==================================================
+
+Calendar must not:
+
+Load all Posts.
+
+Load all media.
+
+Load all connected accounts.
+
+Run N+1 queries.
+
+Use:
+
+Date range queries.
+
+Ownership scope.
+
+Efficient aggregation.
+
+Small DTOs.
+
+Lazy media where appropriate.
+
+==================================================
+
+CAPTION PREVIEW
+
+==================================================
+
+Calendar item should show limited caption.
+
+Example:
+
+First 50-100 characters
+
+Use existing text truncation patterns.
+
+Do not send huge post content if Calendar does not
+
+need it.
+
+==================================================
+
+MEDIA PREVIEW PERFORMANCE
+
+==================================================
+
+If thumbnail supported:
+
+Use thumbnail.
+
+Do not load original video.
+
+Do not autoplay video.
+
+Do not preload all media.
+
+Calendar must remain fast.
+
+==================================================
+
+FAILED POSTS
+
+==================================================
+
+Decide based on UX.
+
+Possible:
+
+Failed posts shown on original scheduled date.
+
+With:
+
+Failed indicator.
+
+Action:
+
+Retry
+
+Do not invent failure data.
+
+Use existing failure lifecycle.
+
+==================================================
+
+PUBLISHED POSTS
+
+==================================================
+
+Decide based on existing Calendar scope.
+
+Possible:
+
+Show published posts historically.
+
+Or:
+
+Calendar only shows schedule lifecycle.
+
+Do not overload Phase 4.
+
+Priority:
+
+Scheduled management.
+
+==================================================
+
+CALENDAR FILTERS
+
+==================================================
+
+Optional filters:
+
+Status
+
+Platform
+
+Only implement if:
+
+Existing data abstraction makes it simple.
+
+UI benefits clearly.
+
+Do NOT build a complex analytics filter system.
+
+Possible:
+
+All
+
+Scheduled
+
+Published
+
+Failed
+
+Platform:
+
+All Platforms
+
+Facebook
+
+Instagram
+
+Use existing platform abstraction.
+
+==================================================
+
+FILTER SECURITY
+
+==================================================
+
+Filters must never bypass ownership.
+
+Example:
+
+status=scheduled
+
+still:
+
+current user only.
+
+==================================================
+
+FILTER URL STATE
+
+==================================================
+
+If filters implemented:
+
+Consider URL state.
+
+Example:
+
+/calendar?view=month
+
+Do not create excessive URL complexity.
+
+Keep navigation predictable.
+
+==================================================
+
+CALENDAR STATE
+
+==================================================
+
+Preferred concepts:
+
+Current Date
+
+View
+
+Date Range
+
+Filters
+
+Avoid storing server data unnecessarily in global state.
+
+Follow existing React/Next architecture.
+
+==================================================
+
+NEXT.JS ARCHITECTURE
+
+==================================================
+
+Audit current Next.js patterns.
+
+Use:
+
+Server Components
+
+Server Actions
+
+Route Handlers
+
+according to existing architecture.
+
+Do not introduce client-side database access.
+
+Do not expose privileged server logic to browser.
+
+==================================================
+
+NO DIRECT SUPABASE FROM UI
+
+==================================================
+
+Calendar UI should NOT suddenly bypass architecture
+
+and directly query Supabase.
+
+Preferred:
+
+UI
 
 ↓
 
-Baru:
-
-```text
-POST /api/media/upload
-```
-
-boleh muncul.
+Service/API
 
 ↓
 
-Storage.
+Domain
 
 ↓
 
-Post.
+Supabase
+
+Follow actual repository architecture.
+
+==================================================
+
+TESTING REQUIREMENTS
+
+==================================================
+
+Add comprehensive tests.
+
+Do not reduce existing tests.
+
+==================================================
+
+TEST: CALENDAR RANGE
+
+==================================================
+
+Verify:
+
+Correct Posts returned for date range.
+
+Outside range not returned.
+
+Ownership preserved.
+
+No unnecessary statuses.
+
+Correct boundaries.
+
+==================================================
+
+TEST: MONTH VIEW
+
+==================================================
+
+Verify:
+
+Scheduled post appears on correct day.
+
+Month navigation changes range.
+
+Previous month.
+
+Next month.
+
+Today.
+
+Month boundary.
+
+==================================================
+
+TEST: TIMEZONE
+
+==================================================
+
+Verify:
+
+UTC conversion.
+
+Asia/Jakarta or actual default timezone.
+
+Day boundary.
+
+Month boundary.
+
+Correct display date.
+
+Correct display time.
+
+==================================================
+
+TEST: OWNERSHIP
+
+==================================================
+
+User A creates Scheduled Post.
+
+User B requests Calendar.
+
+User B must NOT see User A Post.
+
+==================================================
+
+TEST: DRAFT
+
+==================================================
+
+Unscheduled Draft:
+
+Does NOT occupy scheduled Calendar slot.
+
+Draft can appear in Draft section if implemented.
+
+Continue Draft action points to correct Draft.
+
+==================================================
+
+TEST: SCHEDULED POST
+
+==================================================
+
+Scheduled Post:
+
+Appears in Calendar.
+
+Correct time.
+
+Correct date.
+
+Correct platform.
+
+Correct status.
+
+==================================================
+
+TEST: MULTI ACCOUNT
+
+==================================================
+
+One Post.
+
+Multiple accounts/platforms.
+
+Verify:
+
+One logical Calendar Item.
+
+Correct platform indicators.
+
+No accidental duplicate visual data.
+
+Follow actual domain model.
+
+==================================================
+
+TEST: CANCEL
+
+==================================================
+
+If Calendar exposes Cancel:
+
+Scheduled Post
 
 ↓
+
+Cancel
+
+Verify:
+
+Existing cancel service reused.
+
+Correct lifecycle.
+
+Calendar updates.
+
+No duplicate cancel logic.
+
+==================================================
+
+TEST: RETRY
+
+==================================================
+
+If Calendar exposes Retry:
+
+Failed Post
+
+↓
+
+Retry
+
+Verify:
+
+Existing retry service reused.
+
+Correct lifecycle.
+
+No duplicate retry architecture.
+
+==================================================
+
+TEST: API SECURITY
+
+==================================================
+
+Verify Calendar response never exposes:
+
+Access tokens.
+
+Refresh tokens.
+
+OAuth secrets.
+
+Encrypted credentials.
+
+Service role keys.
+
+Provider secrets.
+
+Raw database errors.
+
+==================================================
+
+TEST: EMPTY STATE
+
+==================================================
+
+No Posts.
+
+Calendar shows valid Empty State.
+
+No crash.
+
+==================================================
+
+TEST: PERFORMANCE / QUERY
+
+==================================================
+
+Where testable verify:
+
+Date range query used.
+
+Ownership scope.
+
+No unbounded all-post loading.
+
+No N+1 obvious regression.
+
+==================================================
+
+TEST: DASHBOARD CONSISTENCY
+
+==================================================
+
+If same scheduled Post appears in:
+
+Dashboard Upcoming Posts
+
+and:
+
+Calendar
+
+Verify consistent:
+
+Date.
+
+Time.
+
+Status.
+
+Timezone.
+
+==================================================
+
+REGRESSION PROTECTION
+
+==================================================
+
+DO NOT BREAK:
+
+AUTH
+
+Login.
+
+Signup.
+
+Session.
+
+Ownership.
+
+MEDIA
+
+Select File
+
+↓
+
+Browser Memory
+
+↓
+
+Object URL
+
+↓
+
+Preview
+
+↓
+
+NO Storage Request
+
+Storage only:
+
+Save Draft
+
+Publish
+
+Schedule
+
+POSTS
+
+Create Post.
+
+Save Draft.
+
+Edit Draft.
+
+Publish.
+
+Schedule.
+
+DRAFT
+
+Create.
+
+Update.
+
+Delete.
+
+Publish.
+
+Schedule.
+
+Same postId.
+
+PUBLISHING
 
 Queue.
 
-↓
-
 Worker.
 
----
+Retry.
 
-## PRIORITAS 6
+Cancellation.
 
-# FACEBOOK GRAPH API
+Idempotency.
 
-Baru setelah media sampai ke worker.
+Partial failure.
 
----
+OAUTH
 
-# 30. KESIMPULAN PALING SEDERHANA
+Facebook.
 
-Masalah sekarang adalah:
+Instagram.
 
-> **Aplikasi berhasil membuat preview media secara lokal di browser, tetapi masih ada jalur kode runtime yang memperlakukan pemilihan media sebagai proses upload dan mencoba mengirim file ke Supabase Storage terlalu cepat.**
+Connected Accounts.
 
-Akibatnya:
+API
 
-```text
-Pilih gambar
+Existing endpoints.
+
+DASHBOARD
+
+Statistics.
+
+Upcoming.
+
+Recent Activity.
+
+Failed Posts.
+
+Retry.
+
+Connected Accounts.
+
+==================================================
+
+OUT OF SCOPE
+
+==================================================
+
+DO NOT IMPLEMENT:
+
+Drag and Drop scheduling.
+
+Automatic rescheduling unless existing architecture
+
+already safely supports it.
+
+Calendar realtime.
+
+WebSockets.
+
+Supabase Realtime.
+
+Polling loops.
+
+Auto-save.
+
+New Draft architecture.
+
+New queue.
+
+New worker.
+
+New publishing system.
+
+New scheduling system.
+
+Analytics dashboard.
+
+Templates.
+
+Public API.
+
+Webhooks.
+
+Team collaboration.
+
+Approval workflows.
+
+Phase 5 full Post Detail redesign.
+
+Phase 4 is:
+
+CALENDAR
+
++
+
+SCHEDULE MANAGEMENT
+
+==================================================
+
+DATABASE RULE
+
+==================================================
+
+Do not add migration unless necessary.
+
+Before migration answer internally:
+
+1.
+
+Can existing scheduled timestamp be queried?
+
+2.
+
+Can existing posts status support Calendar?
+
+3.
+
+Can existing account relationships provide platforms?
+
+4.
+
+Can existing media references provide thumbnails?
+
+5.
+
+Can existing Services provide required data?
+
+If YES:
+
+No migration.
+
+If migration required:
+
+Keep minimal.
+
+Preserve:
+
+Existing data.
+
+RLS.
+
+Indexes.
+
+Post lifecycle.
+
+Queue.
+
+Document exactly why.
+
+==================================================
+
+FULL FINAL AUDIT
+
+==================================================
+
+Before finishing verify:
+
+ARCHITECTURE
+
+1. Calendar uses real data.
+
+2. No fake Calendar data.
+
+3. Existing Service Layer reused.
+
+4. No direct database logic duplication.
+
+5. Existing schedule logic reused.
+
+6. Existing cancel logic reused.
+
+7. Existing retry logic reused.
+
+8. No second queue.
+
+9. No second worker.
+
+10. One source of truth.
+
+CALENDAR
+
+11. Month View works.
+
+12. Date navigation works.
+
+13. Today works.
+
+14. Correct Posts displayed.
+
+15. Correct statuses displayed.
+
+16. Correct platforms displayed.
+
+17. Correct time displayed.
+
+18. Correct timezone.
+
+19. Empty state works.
+
+20. Mobile usable.
+
+DRAFT
+
+21. Draft does not occupy fake Calendar slot.
+
+22. Draft access remains available.
+
+23. Continue Draft works.
+
+SCHEDULE
+
+24. Scheduled Post appears.
+
+25. Cancel works if supported.
+
+26. Retry works if supported.
+
+27. No duplicate scheduling logic.
+
+28. No queue duplication.
+
+MEDIA
+
+29. Calendar does not upload media.
+
+30. Calendar does not call /api/media/upload.
+
+31. Calendar only uses persisted media.
+
+32. Large media not unnecessarily loaded.
+
+SECURITY
+
+33. Authentication enforced.
+
+34. Ownership enforced.
+
+35. RLS preserved.
+
+36. Tokens hidden.
+
+37. Secrets hidden.
+
+38. Safe errors.
+
+PERFORMANCE
+
+39. Server-side date range.
+
+40. No all-post loading.
+
+41. No obvious N+1.
+
+42. Efficient DTO.
+
+REGRESSION
+
+43. Create Post works.
+
+44. Save Draft works.
+
+45. Publish works.
+
+46. Schedule works.
+
+47. Dashboard works.
+
+48. Media Preview works.
+
+49. Internal API works.
+
+50. OAuth/Accounts unaffected.
+
+==================================================
+
+VALIDATION
+
+==================================================
+
+Run ALL commands from:
+
+C:\Users\aldis\Documents\Codex\AutoPost-v1
+
+Verify root:
+
+git rev-parse --show-toplevel
+
+Then run:
+
+npm run lint
+
+npm run typecheck
+
+npm test
+
+npm run test:integration
+
+npm run build
+
+git diff --check
+
+IMPORTANT:
+
+Do not claim PASS without actually running command.
+
+Do not use scoped validation instead of full validation.
+
+All commands must run from actual repository root.
+
+==================================================
+
+VALIDATION FAILURE
+
+==================================================
+
+If any validation fails report:
+
+1. Command.
+
+2. Exact error.
+
+3. File.
+
+4. Pre-existing or introduced.
+
+5. Relation to Phase 4.
+
+6. Attempted fix.
+
+7. Final status.
+
+Do not hide failures.
+
+==================================================
+
+FINAL REPORT
+
+==================================================
+
+Provide the following.
+
+==================================================
+
+## 1. CALENDAR ARCHITECTURE
+
+Explain:
+
+Where Calendar data comes from.
+
+Which Service/API is used.
+
+Why this architecture was chosen.
+
+How duplicate queries were avoided.
+
+==================================================
+
+## 2. REAL POST LIFECYCLE
+
+List actual statuses discovered.
+
+Show which statuses appear in Calendar.
+
+Example:
+
+Draft
 
 ↓
 
-Preview berhasil
+Not scheduled
+
+Scheduled
 
 ↓
 
-Upload otomatis yang tidak seharusnya
+Calendar
+
+Publishing
 
 ↓
 
-POST /api/media/upload
+Optional active display
+
+Published
 
 ↓
 
-Storage
+Historical display if implemented
+
+Failed
 
 ↓
 
-Bucket error / size error
+Failure indicator / Retry
+
+Use actual implementation.
+
+==================================================
+
+## 3. USER FLOW
+
+Show:
+
+Dashboard
 
 ↓
 
-Media rollback
+View Calendar
 
 ↓
 
-Preview hilang
+Calendar
 
 ↓
 
-Error merah
-```
-
-Padahal seharusnya:
-
-```text
-Pilih gambar
+Navigate Date
 
 ↓
 
-Preview
+View Scheduled Post
 
 ↓
 
-Simpan di browser
+Open Post
+
+Then possible actions.
+
+Also show:
+
+Draft
 
 ↓
 
-Tunggu user
+Draft Section
 
 ↓
 
-User pilih target
+Continue Editing
 
-↓
+==================================================
 
-User klik Publish
+## 4. CALENDAR VIEWS
 
-↓
+State:
 
-BARU upload ke Storage
-```
+Month View.
 
-# 🎯 ROOT PROBLEM DALAM SATU KALIMAT
+Week View.
 
-**Media selection flow dan media persistence flow belum benar-benar terpisah pada runtime, meskipun sebagian kode dan unit test sudah mencoba memisahkannya.**
+Day View.
 
-Dan setelah itu ada masalah kedua yang akan muncul:
+Clearly mark:
 
-**Supabase Storage** `post-media` **belum siap/konfigurasinya tidak cocok dengan kode upload.**
+Implemented.
 
-Jadi urutan masalah sebenarnya:
+Not implemented.
 
-```text
-MASALAH 1
-Upload dipanggil terlalu cepat
-        ↓
-FIX
-        ↓
-MASALAH 2
-Storage bucket/configuration
-        ↓
-FIX
-        ↓
-MASALAH 3
-Real publish pipeline
-        ↓
-TEST
-        ↓
-MASALAH 4
-Facebook Graph API real publish
-```
+Reason.
 
-Menurut saya, **jangan ubah arsitektur besar sekarang**. Kita tinggal melakukan audit call chain media secara tepat, memastikan **satu sumber state media**, dan memaksa batas yang jelas antara **Select/Preview** vs **Publish/Persist**. Itu titik paling kritis saat ini.
+==================================================
+
+## 5. DATE NAVIGATION
+
+Explain:
+
+Previous.
+
+Next.
+
+Today.
+
+Date range query.
+
+==================================================
+
+## 6. TIMEZONE
+
+Explain:
+
+Database timezone.
+
+Application timezone.
+
+Default timezone.
+
+Calendar conversion.
+
+Month boundary behavior.
+
+Day boundary behavior.
+
+==================================================
+
+## 7. SCHEDULE MANAGEMENT
+
+Explain:
+
+Existing schedule architecture reused.
+
+Cancel.
+
+Retry.
+
+Reschedule.
+
+Clearly state:
+
+Implemented.
+
+Not implemented.
+
+Reason.
+
+==================================================
+
+## 8. DRAFT INTEGRATION
+
+Explain:
+
+How unscheduled Drafts behave.
+
+Where they appear.
+
+How Continue Editing works.
+
+==================================================
+
+## 9. DASHBOARD INTEGRATION
+
+Explain:
+
+View Calendar Quick Action.
+
+Upcoming Post consistency.
+
+Date/time consistency.
+
+==================================================
+
+## 10. MEDIA
+
+Explain:
+
+Calendar media preview.
+
+Persisted media only.
+
+No browser blob dependency.
+
+No upload during Calendar rendering.
+
+==================================================
+
+## 11. API
+
+List:
+
+New endpoints.
+
+Modified endpoints.
+
+Reused endpoints.
+
+For each explain:
+
+Authentication.
+
+Ownership.
+
+Validation.
+
+Safe DTO.
+
+==================================================
+
+## 12. DATABASE
+
+Explicitly state:
+
+Migration:
+
+YES / NO
+
+Tables:
+
+Changed / Not Changed
+
+Columns:
+
+Changed / Not Changed
+
+Enums:
+
+Changed / Not Changed
+
+Indexes:
+
+Changed / Not Changed
+
+RLS:
+
+Changed / Not Changed
+
+Explain any changes.
+
+==================================================
+
+## 13. SECURITY
+
+Explain:
+
+Authentication.
+
+Ownership.
+
+Calendar isolation.
+
+RLS.
+
+Token protection.
+
+Secret protection.
+
+Safe errors.
+
+==================================================
+
+## 14. PERFORMANCE
+
+Explain:
+
+Date range query.
+
+Pagination if any.
+
+Media optimization.
+
+N+1 prevention.
+
+DTO optimization.
+
+==================================================
+
+## 15. TESTS
+
+List:
+
+New Unit Tests.
+
+New Integration Tests.
+
+Calendar Range Tests.
+
+Timezone Tests.
+
+Ownership Tests.
+
+Schedule Tests.
+
+Draft Tests.
+
+Cancel Tests.
+
+Retry Tests.
+
+Report totals.
+
+==================================================
+
+## 16. VALIDATION
+
+Show actual results:
+
+npm run lint
+
+npm run typecheck
+
+npm test
+
+npm run test:integration
+
+npm run build
+
+git diff --check
+
+==================================================
+
+## 17. FILES CREATED
+
+List every file.
+
+==================================================
+
+## 18. FILES MODIFIED
+
+List every file.
+
+Explain why.
+
+==================================================
+
+## 19. OUT OF SCOPE
+
+Explicitly confirm not implemented:
+
+Drag and Drop.
+
+Realtime.
+
+New Queue.
+
+New Worker.
+
+New Publish System.
+
+New Schedule System.
+
+Analytics.
+
+Templates.
+
+Public API.
+
+==================================================
+
+## 20. NEXT PHASE
+
+Do not implement.
+
+Next Phase:
+
+PHASE 5
+
+POST DETAIL &amp; MANAGEMENT
+
+Possible scope:
+
+Post Detail.
+
+Post Status.
+
+Post Result.
+
+Provider Result.
+
+Media.
+
+Platform Result.
+
+Cancel.
+
+Retry.
+
+Management.
+
+DO NOT implement Phase 5.
+
+==================================================
+
+## 21. GIT
+
+State:
+
+Commit created:
+
+YES / NO
+
+Expected:
+
+NO
+
+==================================================
+
+FINAL CRITICAL RULE
+
+==================================================
+
+DO NOT over-engineer Calendar.
+
+Audit first.
+
+Use real Post data.
+
+Reuse existing Service Layer.
+
+Reuse existing scheduling.
+
+Reuse existing queue.
+
+Reuse existing worker.
+
+Do not duplicate lifecycle.
+
+Do not upload media when rendering Calendar.
+
+Do not break browser media preview.
+
+Do not weaken security.
+
+Do not weaken RLS.
+
+Do not create fake Calendar data.
+
+Do not hide validation failures.
+
+Validate from the real repository root.
+
+DO NOT MAKE A GIT COMMIT.

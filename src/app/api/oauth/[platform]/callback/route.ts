@@ -29,6 +29,17 @@ function clearStateCookie(response: NextResponse, platform: string): NextRespons
     path: "/",
     maxAge: 0,
   });
+  if (platform === "x") {
+    response.cookies.set({
+      name: "oauth_pkce_x",
+      value: "",
+      httpOnly: true,
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
+      path: "/",
+      maxAge: 0,
+    });
+  }
   return response;
 }
 
@@ -125,6 +136,7 @@ export async function GET(
       code,
       state,
       redirectUri,
+      codeVerifier: request.cookies.get("oauth_pkce_x")?.value,
     });
 
     const saved = await saveConnectedAccounts(userId, drafts);

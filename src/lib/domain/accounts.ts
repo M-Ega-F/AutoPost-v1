@@ -50,7 +50,7 @@ export function accountLabelFor(
   return row.username ? `@${row.username}` : (row.displayName ?? null);
 }
 
-/** One summary per platform, in the fixed Instagram → Facebook → TikTok order. */
+/** One summary per platform, in the fixed platform order used by the UI. */
 export async function listAccountSummaries(
   userId: string,
 ): Promise<AccountSummary[]> {
@@ -66,7 +66,14 @@ export async function listAccountSummaries(
     byPlatform.set(record.platform, record);
   }
 
-  return (["instagram", "facebook", "tiktok"] as Platform[]).map((platform) => {
+  return ([
+    "instagram",
+    "facebook",
+    "tiktok",
+    "threads",
+    "linkedin",
+    "x",
+  ] as Platform[]).map((platform) => {
     const record = byPlatform.get(platform);
     const provider = getProvider(platform);
 

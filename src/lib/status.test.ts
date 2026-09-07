@@ -270,10 +270,16 @@ describe("status copy contract (Design.md section 5)", () => {
       "instagram",
       "facebook",
       "tiktok",
+      "threads",
+      "linkedin",
+      "x",
     ]);
     assertCopy(PLATFORM_META.instagram, "Instagram");
     assertCopy(PLATFORM_META.facebook, "Facebook");
     assertCopy(PLATFORM_META.tiktok, "TikTok");
+    assertCopy(PLATFORM_META.threads, "Threads");
+    assertCopy(PLATFORM_META.linkedin, "LinkedIn");
+    assertCopy(PLATFORM_META.x, "X");
 
     // Platform badges are always neutral: identity comes from icon + name.
     for (const platform of PLATFORMS) {
@@ -286,10 +292,19 @@ describe("status copy contract (Design.md section 5)", () => {
     assert.equal(platformLabel("instagram"), "Instagram");
     assert.equal(platformLabel("facebook"), "Facebook");
     assert.equal(platformLabel("tiktok"), "TikTok");
-    assert.equal(platformLabel("threads"), "threads");
+    assert.equal(platformLabel("threads"), "Threads");
+    assert.equal(platformLabel("linkedin"), "LinkedIn");
+    assert.equal(platformLabel("x"), "X");
   });
 
-  test("PLATFORMS order is Instagram, Facebook, TikTok", () => {
-    assert.deepEqual([...PLATFORMS], ["instagram", "facebook", "tiktok"]);
+  test("PLATFORMS order is stable", () => {
+    assert.deepEqual([...PLATFORMS], [
+      "instagram",
+      "facebook",
+      "tiktok",
+      "threads",
+      "linkedin",
+      "x",
+    ]);
   });
 });

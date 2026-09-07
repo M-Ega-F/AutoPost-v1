@@ -44,6 +44,9 @@ export const PLATFORM_LABELS = {
   instagram: "Instagram",
   facebook: "Facebook",
   tiktok: "TikTok",
+  threads: "Threads",
+  linkedin: "LinkedIn",
+  x: "X",
 } as const;
 
 export type PlatformLabel = keyof typeof PLATFORM_LABELS;

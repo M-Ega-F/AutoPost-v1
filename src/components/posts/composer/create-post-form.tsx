@@ -3,6 +3,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { AlertCircle, AlertTriangle, Loader2 } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   useCallback,
   useEffect,
@@ -14,7 +15,12 @@ import { useForm, useWatch } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
 
-import { cancelPostAction, createPostAction } from "@/lib/actions/posts";
+import {
+  cancelPostAction,
+  createPostAction,
+  publishDraftAction,
+  saveDraftAction,
+} from "@/lib/actions/posts";
 import type { CreatePostPayload } from "@/lib/actions/posts";
 import {
   Alert,
@@ -32,7 +38,7 @@ import {
 import { PLATFORM_LABELS } from "@/lib/errors";
 import { PLATFORMS, type Platform } from "@/lib/status";
 import { formatDateTime, zonedTimeToUtc } from "@/lib/time";
-import type { AccountSummary } from "@/lib/domain/types";
+import type { AccountSummary, DraftDetail } from "@/lib/domain/types";
 import {
   captionLimitConstrainers,
   captionLimitFor,
@@ -48,7 +54,10 @@ import { MediaPreview } from "../media/media-preview";
 import { MediaTabs } from "../media/media-tabs";
 import { useMediaUpload } from "../media/use-media-upload";
 
-const platformValueSchema = z.enum(["instagram", "facebook", "tiktok"]);
+const platformValueSchema = z.custom<Platform>(
+  (value) => typeof value === "string" && PLATFORMS.includes(value as Platform),
+  { message: "Unsupported platform." },
+);
 
 const mediaValueSchema = z.object({
   kind: z.enum(["upload", "url"]),
@@ -109,6 +118,27 @@ const composerSchema = z
     }
   });
 
+const draftComposerSchema = z
+  .object({
+    caption: z.string(),
+    platforms: z.array(platformValueSchema),
+    media: mediaValueSchema.nullable(),
+  })
+  .superRefine((values, ctx) => {
+    if (values.platforms.length === 0) return;
+    const limit = captionLimitFor(values.platforms);
+    if (values.caption.length > limit) {
+      const [first] = captionLimitConstrainers(values.platforms, limit);
+      if (first) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["caption"],
+          message: `Caption is too long for ${PLATFORM_LABELS[first]}.`,
+        });
+      }
+    }
+  });
+
 type ComposerValues = z.infer<typeof composerSchema>;
 
 const COMPATIBILITY_DEBOUNCE_MS = 400;
@@ -135,12 +165,17 @@ function toMediaPayload(
 export function CreatePostForm({
   accounts,
   defaultTimezone,
+  mode = "create",
+  draft,
 }: {
   accounts: AccountSummary[];
   defaultTimezone: string;
+  mode?: "create" | "draft";
+  draft?: DraftDetail;
 }) {
+  const router = useRouter();
   const [isPending, startTransition] = useTransition();
-  const [pendingAction, setPendingAction] = useState<"publish" | "schedule" | null>(
+  const [pendingAction, setPendingAction] = useState<"save" | "publish" | "schedule" | null>(
     null,
   );
   const [cancelling, setCancelling] = useState(false);
@@ -173,14 +208,40 @@ export function CreatePostForm({
     [accounts],
   );
 
+  const draftMedia = useMemo(() => {
+    if (!draft?.media) return null;
+    return {
+      kind: draft.media.storageKey ? ("upload" as const) : ("url" as const),
+      storageKey: draft.media.storageKey,
+      sourceUrl: draft.media.sourceUrl,
+      mimeType: draft.media.mimeType,
+      fileName: "Saved media",
+      previewUrl: draft.media.previewUrl,
+      mediaType: draft.media.mediaType,
+      fileSize: draft.media.fileSize,
+      width: draft.media.width,
+      height: draft.media.height,
+      duration: draft.media.duration,
+    };
+  }, [draft]);
+
+  const initialPlatforms = useMemo(
+    () => (draft
+      ? draft.platforms
+          .map((target) => target.platform)
+          .filter((platform) => connectedPlatforms.includes(platform))
+      : connectedPlatforms),
+    [connectedPlatforms, draft],
+  );
+
   const form = useForm<ComposerValues>({
-    resolver: zodResolver(composerSchema),
+    resolver: zodResolver(mode === "draft" ? draftComposerSchema : composerSchema),
     mode: "onBlur",
     reValidateMode: "onChange",
     defaultValues: {
-      caption: "",
-      platforms: connectedPlatforms,
-      media: null,
+      caption: draft?.contentText ?? "",
+      platforms: initialPlatforms,
+      media: draftMedia,
     },
   });
 
@@ -190,6 +251,7 @@ export function CreatePostForm({
     setValue,
     trigger,
     handleSubmit,
+    getValues,
     formState: { errors },
   } = form;
 
@@ -378,12 +440,15 @@ export function CreatePostForm({
           return;
         }
         setValue("media", postMedia, { shouldValidate: false });
-        const result = await createPostAction({
+        const payload = {
           contentText: values.caption,
           media: toMediaPayload(postMedia, storageKey),
           platforms: values.platforms,
           schedule,
-        });
+        };
+        const result = mode === "draft" && draft
+          ? await publishDraftAction(draft.id, payload)
+          : await createPostAction(payload);
 
         if (cancellation.signal.aborted) {
           if (result.ok && result.postId) {
@@ -420,7 +485,11 @@ export function CreatePostForm({
             `Post scheduled for ${formatDateTime(instant, schedule.timezone)}.`,
           );
           resetUploader();
-          resetForm({ caption: "", platforms: connectedPlatforms, media: null });
+          if (mode === "draft") {
+            router.push("/drafts");
+          } else {
+            resetForm({ caption: "", platforms: connectedPlatforms, media: null });
+          }
           setCompatibility({});
           setSubmitAttempted(false);
           setCancelling(false);
@@ -433,7 +502,11 @@ export function CreatePostForm({
         // reset it so the user can create another post without leaving this page.
         toast.success("Post submitted. Track its status in History.");
         resetUploader();
-        resetForm({ caption: "", platforms: connectedPlatforms, media: null });
+        if (mode === "draft") {
+          router.push("/drafts");
+        } else {
+          resetForm({ caption: "", platforms: connectedPlatforms, media: null });
+        }
         setCompatibility({});
         setSubmitAttempted(false);
         setCancelling(false);
@@ -443,12 +516,63 @@ export function CreatePostForm({
     },
     [
       connectedPlatforms,
+      draft,
+      mode,
       persistPendingMedia,
       resetForm,
       resetUploader,
+      router,
       setValue,
     ],
   );
+
+  const saveDraft = useCallback(() => {
+    const parsed = draftComposerSchema.safeParse(getValues());
+    if (!parsed.success) {
+      setSubmitAttempted(true);
+      setServerError(parsed.error.issues[0]?.message ?? "Complete the draft fields.");
+      return;
+    }
+
+    const cancellation = new AbortController();
+    setActiveSubmission(cancellation);
+    setCancelling(false);
+    setServerError(null);
+    setPendingAction("save");
+    startTransition(async () => {
+      let media = parsed.data.media;
+      if (media) {
+        const persisted = await persistPendingMedia(media);
+        if (!persisted.ok || !persisted.media.storageKey) {
+          setActiveSubmission(null);
+          setPendingAction(null);
+          return;
+        }
+        media = persisted.media;
+        setValue("media", media, { shouldValidate: false });
+      }
+
+      const result = await saveDraftAction({
+        postId: draft?.id,
+        caption: parsed.data.caption,
+        media: media ? toMediaPayload(media, media.storageKey as string) : null,
+        platforms: parsed.data.platforms,
+        timezone: draft?.timezone ?? defaultTimezone,
+      });
+
+      if (!result.ok) {
+        setServerError(result.message);
+        setActiveSubmission(null);
+        setPendingAction(null);
+        return;
+      }
+
+      toast.success("Draft saved.");
+      setActiveSubmission(null);
+      setPendingAction(null);
+      router.push(`/drafts/${result.postId}`);
+    });
+  }, [defaultTimezone, draft, getValues, persistPendingMedia, router, setValue]);
 
   const cancelSubmit = useCallback(() => {
     if (!isPending && pendingAction === null) return;
@@ -459,14 +583,26 @@ export function CreatePostForm({
 
   const onPublish = handleSubmit(
     (values) => {
+      const valid = composerSchema.safeParse(values);
+      if (!valid.success) {
+        setServerError(valid.error.issues[0]?.message ?? "Complete the post before publishing.");
+        setSubmitAttempted(true);
+        return;
+      }
       setPendingAction("publish");
-      submit(values, null);
+      submit(valid.data, null);
     },
     () => setSubmitAttempted(true),
   );
 
   const onScheduleClick = handleSubmit(
-    () => {
+    (values) => {
+      const valid = composerSchema.safeParse(values);
+      if (!valid.success) {
+        setServerError(valid.error.issues[0]?.message ?? "Complete the post before scheduling.");
+        setSubmitAttempted(true);
+        return;
+      }
       setServerError(null);
       setScheduleOpen(true);
     },
@@ -477,9 +613,15 @@ export function CreatePostForm({
     (schedule: ScheduleValue) => {
       void handleSubmit(
         (values) => {
+          const valid = composerSchema.safeParse(values);
+          if (!valid.success) {
+            setServerError(valid.error.issues[0]?.message ?? "Complete the post before scheduling.");
+            setSubmitAttempted(true);
+            return;
+          }
           setScheduleOpen(false);
           setPendingAction("schedule");
-          submit(values, schedule);
+          submit(valid.data, schedule);
         },
         () => {
           setScheduleOpen(false);
@@ -703,6 +845,23 @@ export function CreatePostForm({
 
               {!submitting ? (
                 <>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="h-11 w-full sm:h-9 sm:w-auto"
+                    disabled={isPending}
+                    onClick={saveDraft}
+                  >
+                    {pendingAction === "save" ? (
+                      <>
+                        <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                        Saving…
+                      </>
+                    ) : (
+                      "Save draft"
+                    )}
+                  </Button>
+
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <span className="w-full sm:w-auto">

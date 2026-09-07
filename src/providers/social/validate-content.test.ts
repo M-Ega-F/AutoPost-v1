@@ -16,6 +16,9 @@ import {
 // modules. The test below pins the registry back to these instances.
 import { metaFacebookProvider, metaInstagramProvider } from "@/providers/social/meta";
 import { tiktokProvider } from "@/providers/social/tiktok";
+import { threadsProvider } from "@/providers/social/threads";
+import { linkedinProvider } from "@/providers/social/linkedin";
+import { xProvider } from "@/providers/social/x";
 
 /* -------------------------------------------------------------------------- */
 
@@ -138,10 +141,16 @@ describe("the provider registry", () => {
     assert.equal(getProvider("instagram"), metaInstagramProvider);
     assert.equal(getProvider("facebook"), metaFacebookProvider);
     assert.equal(getProvider("tiktok"), tiktokProvider);
+    assert.equal(getProvider("threads"), threadsProvider);
+    assert.equal(getProvider("linkedin"), linkedinProvider);
+    assert.equal(getProvider("x"), xProvider);
     assert.deepEqual(allProviders(), [
       metaInstagramProvider,
       metaFacebookProvider,
       tiktokProvider,
+      threadsProvider,
+      linkedinProvider,
+      xProvider,
     ]);
   });
 });

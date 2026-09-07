@@ -7,6 +7,7 @@ import {
   loginSchema,
   mediaUrlSchema,
   postMediaSchema,
+  saveDraftSchema,
   scheduleSchema,
 } from "@/lib/validation/schemas";
 
@@ -211,7 +212,7 @@ describe("createPostSchema", () => {
   });
 
   test("rejects an unknown platform", () => {
-    const result = createPostSchema.safeParse({ ...valid, platforms: ["threads"] });
+    const result = createPostSchema.safeParse({ ...valid, platforms: ["mastodon"] });
     assert.equal(result.success, false);
     assert.ok(issueMessages(result).includes("Unsupported platform."));
   });
@@ -282,5 +283,38 @@ describe("createPostSchema", () => {
       false,
       "the same URL is refused at the point of entry",
     );
+  });
+});
+
+describe("saveDraftSchema", () => {
+  test("accepts an empty draft without media or platforms", () => {
+    const result = saveDraftSchema.safeParse({
+      caption: "",
+      media: null,
+      platforms: [],
+      timezone: "UTC",
+    });
+    assert.equal(result.success, true);
+  });
+
+  test("accepts a persisted-media draft", () => {
+    const result = saveDraftSchema.safeParse({
+      caption: "Work in progress",
+      media: VALID_MEDIA,
+      platforms: ["instagram"],
+      timezone: "Asia/Jakarta",
+    });
+    assert.equal(result.success, true);
+  });
+
+  test("rejects duplicate draft platforms", () => {
+    const result = saveDraftSchema.safeParse({
+      caption: "Work in progress",
+      media: null,
+      platforms: ["instagram", "instagram"],
+      timezone: "UTC",
+    });
+    assert.equal(result.success, false);
+    assert.ok(issueMessages(result).includes("Choose one account per platform."));
   });
 });

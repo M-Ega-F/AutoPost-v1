@@ -84,6 +84,32 @@ export const PLATFORM_LIMITS: Record<Platform, PlatformLimits> = {
     minWidth: 200,
     minHeight: 200,
   },
+  threads: {
+    captionLength: 500,
+    maxBytes: 100 * 1024 * 1024,
+    imageMimeTypes: IMAGE_MIME,
+    videoMimeTypes: VIDEO_MIME,
+    minDurationSec: 1,
+    maxDurationSec: 300,
+    minWidth: 200,
+    minHeight: 200,
+  },
+  linkedin: {
+    captionLength: 3_000,
+    maxBytes: 100 * 1024 * 1024,
+    imageMimeTypes: IMAGE_MIME,
+    videoMimeTypes: VIDEO_MIME,
+    minWidth: 1,
+    minHeight: 1,
+  },
+  x: {
+    captionLength: 280,
+    maxBytes: 50 * 1024 * 1024,
+    imageMimeTypes: IMAGE_MIME,
+    videoMimeTypes: VIDEO_MIME,
+    minWidth: 1,
+    minHeight: 1,
+  },
 };
 
 export function captionLimitFor(platforms: readonly Platform[]): number {

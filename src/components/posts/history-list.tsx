@@ -315,6 +315,17 @@ export function HistoryList({
         </CardContent>
       </Card>
 
+      {detail && !posts.some((post) => post.id === detail.id) ? (
+        <Card className="rounded-lg">
+          <CardHeader>
+            <p className="text-base font-medium">Post details</p>
+          </CardHeader>
+          <CardContent>
+            <PostDetailPanel post={detail} />
+          </CardContent>
+        </Card>
+      ) : null}
+
       {showDetailDialog ? (
         <Dialog
           open

@@ -6,7 +6,13 @@ import { SkeletonRows } from "@/components/shared/skeletons";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 
-const CARD_TITLES = ["Upcoming posts", "Recent activity", "Failed posts"];
+const CARD_TITLES = [
+  "Quick actions",
+  "Post overview",
+  "Upcoming posts",
+  "Recent activity",
+  "Connected accounts",
+];
 
 export default function DashboardLoading() {
   return (

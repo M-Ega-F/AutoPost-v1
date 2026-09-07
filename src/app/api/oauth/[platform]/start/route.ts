@@ -23,9 +23,12 @@ function isPlatform(value: string): value is Platform {
  * Design.md, never an environment variable name.
  */
 function missingCredentialNames(platform: string): string[] {
-  return platform === "tiktok"
-    ? ["TIKTOK_CLIENT_KEY", "TIKTOK_CLIENT_SECRET"]
-    : ["META_CLIENT_ID", "META_CLIENT_SECRET"];
+  if (platform === "tiktok") return ["TIKTOK_CLIENT_KEY", "TIKTOK_CLIENT_SECRET"];
+  if (platform === "threads") return ["THREADS_CLIENT_ID", "THREADS_CLIENT_SECRET"];
+  if (platform === "linkedin") return ["LINKEDIN_CLIENT_ID", "LINKEDIN_CLIENT_SECRET"];
+  // X OAuth 2.0 PKCE supports public clients, so the client secret is optional.
+  if (platform === "x") return ["X_CLIENT_ID"];
+  return ["META_CLIENT_ID", "META_CLIENT_SECRET"];
 }
 
 function logDevelopmentOAuthStart(
@@ -97,10 +100,12 @@ export async function GET(
       resolveAppUrl(origin),
     ).toString();
 
+    const providerCookies: Array<{ name: string; value: string; maxAge: number }> = [];
     const authorizationUrl = await provider.getAuthorizationUrl({
       userId: user.id,
       state,
       redirectUri,
+      setCookie: (cookie) => providerCookies.push(cookie),
     });
 
     logDevelopmentOAuthStart(platform, authorizationUrl, redirectUri);
@@ -115,6 +120,15 @@ export async function GET(
       path: "/",
       maxAge: STATE_TTL_SECONDS,
     });
+    for (const cookie of providerCookies) {
+      response.cookies.set({
+        ...cookie,
+        httpOnly: true,
+        sameSite: "lax",
+        secure: process.env.NODE_ENV === "production",
+        path: "/",
+      });
+    }
 
     return response;
   } catch (error) {

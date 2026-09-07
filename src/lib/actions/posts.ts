@@ -3,15 +3,17 @@
 import { revalidatePath } from "next/cache";
 
 import { requireUserId } from "@/lib/auth/server";
-import { AppError, PLATFORM_LABELS, errorMessageForUser } from "@/lib/errors";
+import { AppError, errorMessageForUser } from "@/lib/errors";
 import { consumeRateLimit } from "@/lib/rate-limit";
-import { listActiveAccounts } from "@/lib/domain/accounts";
 import {
-  cancelScheduledPost,
-  createPost,
-  retryPlatform,
-} from "@/lib/domain/posts";
-import { zonedTimeToUtc } from "@/lib/time";
+  cancelPostForUser,
+  createPostForUser,
+  deleteDraftForUser,
+  publishDraftForUser,
+  saveDraftForUser,
+  retryPostPlatformForUser,
+} from "@/lib/services/posts";
+import { createPostSchema, saveDraftSchema } from "@/lib/validation/schemas";
 import type { ActionResult } from "@/lib/domain/types";
 import type { Platform } from "@/lib/status";
 
@@ -46,6 +48,22 @@ export type CreatePostPayload = {
   schedule: { date: string; time: string; timezone: string } | null;
 };
 
+export type DraftPayload = {
+  postId?: string;
+  caption: string;
+  media: CreatePostMediaPayload | null;
+  platforms: Platform[];
+  timezone: string;
+};
+
+function normalizeMedia(media: CreatePostMediaPayload | null | undefined) {
+  if (!media) return null;
+  return {
+    ...media,
+    sourceUrl: media.kind === "url" ? media.sourceUrl : null,
+  };
+}
+
 function fail(error: unknown, fallback: string): ActionResult {
   if (error instanceof AppError) {
     return { ok: false, message: error.message, code: error.code };
@@ -59,7 +77,7 @@ export async function createPostAction(
   const userId = await requireUserId();
 
   const limited = consumeRateLimit(
-    payload.schedule ? "schedule" : "publishNow",
+    payload?.schedule ? "schedule" : "publishNow",
     userId,
   );
   if (!limited.ok) {
@@ -71,68 +89,18 @@ export async function createPostAction(
   }
 
   try {
-    const caption = payload.contentText.trim();
-    if (!caption) {
-      return { ok: false, message: "Write a caption before publishing." };
-    }
-
-    if (payload.platforms.length === 0) {
-      return { ok: false, message: "Select at least one platform." };
-    }
-
-    if (!payload.media?.storageKey) {
-      return { ok: false, message: "Add media before publishing." };
-    }
-
-    const accounts = await listActiveAccounts(userId);
-    const byplatform = new Map(accounts.map((account) => [account.platform, account]));
-
-    const targets: Array<{ platform: Platform; socialAccountId: string }> = [];
-    for (const platform of payload.platforms) {
-      const account = byplatform.get(platform);
-      if (!account) {
-        return {
-          ok: false,
-          message: `Your ${
-            PLATFORM_LABELS[platform] ?? "This platform"
-          } account is no longer connected.`,
-          code: "forbidden",
-        };
-      }
-      targets.push({ platform, socialAccountId: account.id });
-    }
-
-    const scheduledAt = payload.schedule
-      ? zonedTimeToUtc(
-          payload.schedule.date,
-          payload.schedule.time,
-          payload.schedule.timezone,
-        )
-      : null;
-
-    if (scheduledAt && scheduledAt.getTime() <= Date.now()) {
-      return { ok: false, message: "Choose a time in the future." };
-    }
-
-    const timezone = payload.schedule?.timezone ?? "UTC";
-
-    const result = await createPost({
-      userId,
-      contentText: caption,
-      timezone,
-      scheduledAt,
-      media: {
-        storageKey: payload.media.storageKey,
-        sourceUrl: payload.media.kind === "url" ? payload.media.sourceUrl : null,
-        mediaType: payload.media.mediaType,
-        mimeType: payload.media.mimeType,
-        fileSize: payload.media.fileSize,
-        width: payload.media.width,
-        height: payload.media.height,
-        duration: payload.media.duration,
-      },
-      targets,
+    const parsed = createPostSchema.safeParse({
+      caption: payload?.contentText,
+      media: normalizeMedia(payload?.media),
+      platforms: payload?.platforms,
+      schedule: payload?.schedule,
     });
+
+    if (!parsed.success) {
+      return { ok: false, message: parsed.error.issues[0]?.message ?? "Invalid post." };
+    }
+
+    const result = await createPostForUser(userId, parsed.data);
 
     revalidatePath("/dashboard");
     revalidatePath("/scheduled");
@@ -141,6 +109,94 @@ export async function createPostAction(
     return { ok: true, postId: result.postId };
   } catch (error) {
     return fail(error, "We couldn't create this post. Try again.");
+  }
+}
+
+export async function saveDraftAction(
+  payload: DraftPayload,
+): Promise<ActionResult & { postId?: string }> {
+  const userId = await requireUserId();
+  const limited = consumeRateLimit("saveDraft", userId);
+  if (!limited.ok) {
+    return {
+      ok: false,
+      message: "Too many saves at once. Wait a moment and try again.",
+      code: "rate_limited_action",
+    };
+  }
+
+  try {
+    const parsed = saveDraftSchema.safeParse({
+      postId: payload?.postId,
+      caption: payload?.caption,
+      media: normalizeMedia(payload?.media),
+      platforms: payload?.platforms,
+      timezone: payload?.timezone,
+    });
+    if (!parsed.success) {
+      return { ok: false, message: parsed.error.issues[0]?.message ?? "Invalid draft." };
+    }
+
+    const result = await saveDraftForUser(userId, {
+      ...parsed.data,
+      postId: payload?.postId,
+    });
+    revalidatePath("/drafts");
+    revalidatePath(`/drafts/${result.postId}`);
+    return { ok: true, postId: result.postId };
+  } catch (error) {
+    return fail(error, "We couldn't save this draft. Try again.");
+  }
+}
+
+export async function publishDraftAction(
+  postId: string,
+  payload: CreatePostPayload,
+): Promise<ActionResult & { postId?: string }> {
+  const userId = await requireUserId();
+  const limited = consumeRateLimit(
+    payload?.schedule ? "schedule" : "publishNow",
+    userId,
+  );
+  if (!limited.ok) {
+    return {
+      ok: false,
+      message: "Too many posts at once. Wait a moment and try again.",
+      code: "rate_limited_action",
+    };
+  }
+
+  try {
+    const parsed = createPostSchema.safeParse({
+      caption: payload?.contentText,
+      media: normalizeMedia(payload?.media),
+      platforms: payload?.platforms,
+      schedule: payload?.schedule,
+    });
+    if (!parsed.success) {
+      return { ok: false, message: parsed.error.issues[0]?.message ?? "Invalid post." };
+    }
+    const result = await publishDraftForUser(userId, postId, parsed.data);
+    revalidatePath("/drafts");
+    revalidatePath(`/drafts/${postId}`);
+    revalidatePath("/dashboard");
+    revalidatePath("/scheduled");
+    revalidatePath("/history");
+    return { ok: true, postId: result.postId };
+  } catch (error) {
+    return fail(error, "We couldn't publish this draft. Try again.");
+  }
+}
+
+export async function deleteDraftAction(postId: string): Promise<ActionResult> {
+  const userId = await requireUserId();
+  try {
+    await deleteDraftForUser(userId, postId);
+    revalidatePath("/drafts");
+    revalidatePath(`/drafts/${postId}`);
+    return { ok: true };
+  } catch (error) {
+    return fail(error, "We couldn't delete this draft. Try again.");
   }
 }
 
@@ -157,7 +213,7 @@ export async function cancelPostAction(postId: string): Promise<ActionResult> {
   }
 
   try {
-    await cancelScheduledPost(userId, postId);
+    await cancelPostForUser(userId, postId);
     revalidatePath("/dashboard");
     revalidatePath("/scheduled");
     revalidatePath("/history");
@@ -182,7 +238,7 @@ export async function retryPlatformAction(
   }
 
   try {
-    await retryPlatform(userId, postPlatformId);
+    await retryPostPlatformForUser(userId, postPlatformId);
     revalidatePath("/dashboard");
     revalidatePath("/history");
     return { ok: true };

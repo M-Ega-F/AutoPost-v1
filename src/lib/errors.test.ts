@@ -144,7 +144,7 @@ describe("humanErrorMessage", () => {
 
   test("unknown platforms still read as a sentence", () => {
     assert.equal(
-      humanErrorMessage("threads", "unsupported_media"),
+      humanErrorMessage("mastodon", "unsupported_media"),
       "This platform rejected this media format.",
     );
   });

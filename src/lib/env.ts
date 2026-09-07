@@ -133,6 +133,28 @@ export const serverConfig = {
       clientSecret: optional("TIKTOK_CLIENT_SECRET"),
     }))();
   },
+
+  get threads() {
+    return lazy(() => ({
+      clientId: optional("THREADS_CLIENT_ID"),
+      clientSecret: optional("THREADS_CLIENT_SECRET"),
+    }))();
+  },
+
+  get linkedin() {
+    return lazy(() => ({
+      clientId: optional("LINKEDIN_CLIENT_ID"),
+      clientSecret: optional("LINKEDIN_CLIENT_SECRET"),
+      version: optional("LINKEDIN_API_VERSION") ?? "202604",
+    }))();
+  },
+
+  get x() {
+    return lazy(() => ({
+      clientId: optional("X_CLIENT_ID"),
+      clientSecret: optional("X_CLIENT_SECRET"),
+    }))();
+  },
 } as const;
 
 /**
