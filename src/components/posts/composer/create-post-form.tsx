@@ -3,13 +3,18 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { AlertCircle, AlertTriangle, Loader2 } from "lucide-react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  useTransition,
+} from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
 
-import { createPostAction } from "@/lib/actions/posts";
+import { cancelPostAction, createPostAction } from "@/lib/actions/posts";
 import type { CreatePostPayload } from "@/lib/actions/posts";
 import {
   Alert,
@@ -134,11 +139,13 @@ export function CreatePostForm({
   accounts: AccountSummary[];
   defaultTimezone: string;
 }) {
-  const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [pendingAction, setPendingAction] = useState<"publish" | "schedule" | null>(
     null,
   );
+  const [cancelling, setCancelling] = useState(false);
+  const [activeSubmission, setActiveSubmission] =
+    useState<AbortController | null>(null);
   const [serverError, setServerError] = useState<string | null>(null);
   const [submitAttempted, setSubmitAttempted] = useState(false);
   const [scheduleOpen, setScheduleOpen] = useState(false);
@@ -151,9 +158,10 @@ export function CreatePostForm({
     uploading,
     resolving,
     error: mediaError,
-    uploadFile,
+    selectFile,
     addFromUrl,
     persistPendingMedia,
+    cancelPersistence,
     reset: resetUploader,
   } = useMediaUpload();
 
@@ -178,6 +186,7 @@ export function CreatePostForm({
 
   const {
     control,
+    reset: resetForm,
     setValue,
     trigger,
     handleSubmit,
@@ -345,10 +354,18 @@ export function CreatePostForm({
     (values: ComposerValues, schedule: ScheduleValue | null) => {
       if (!values.media) return;
 
+      const cancellation = new AbortController();
+      setActiveSubmission(cancellation);
+      setCancelling(false);
       setServerError(null);
       startTransition(async () => {
         const persisted = await persistPendingMedia(values.media!);
         if (!persisted.ok || !persisted.media.storageKey) {
+          if (cancellation.signal.aborted) {
+            toast.success("Publishing cancelled.");
+            setCancelling(false);
+          }
+          setActiveSubmission(null);
           setPendingAction(null);
           return;
         }
@@ -356,6 +373,7 @@ export function CreatePostForm({
         const postMedia = persisted.media;
         const storageKey = postMedia.storageKey;
         if (!storageKey) {
+          setActiveSubmission(null);
           setPendingAction(null);
           return;
         }
@@ -367,8 +385,27 @@ export function CreatePostForm({
           schedule,
         });
 
+        if (cancellation.signal.aborted) {
+          if (result.ok && result.postId) {
+            const cancelled = await cancelPostAction(result.postId);
+            if (cancelled.ok) {
+              toast.success("Publishing cancelled.");
+            } else {
+              setServerError(cancelled.message);
+              toast.error(cancelled.message);
+            }
+          } else {
+            toast.success("Publishing cancelled.");
+          }
+          setActiveSubmission(null);
+          setCancelling(false);
+          setPendingAction(null);
+          return;
+        }
+
         if (!result.ok) {
           setServerError(result.message);
+          setActiveSubmission(null);
           setPendingAction(null);
           return;
         }
@@ -382,16 +419,43 @@ export function CreatePostForm({
           toast.success(
             `Post scheduled for ${formatDateTime(instant, schedule.timezone)}.`,
           );
-          router.push("/scheduled");
+          resetUploader();
+          resetForm({ caption: "", platforms: connectedPlatforms, media: null });
+          setCompatibility({});
+          setSubmitAttempted(false);
+          setCancelling(false);
+          setActiveSubmission(null);
+          setPendingAction(null);
           return;
         }
 
-        // Publishing happens in the background: let the user watch the status.
-        router.push(`/history?post=${result.postId ?? ""}`);
+        // Publishing happens in the background. Keep the composer open and
+        // reset it so the user can create another post without leaving this page.
+        toast.success("Post submitted. Track its status in History.");
+        resetUploader();
+        resetForm({ caption: "", platforms: connectedPlatforms, media: null });
+        setCompatibility({});
+        setSubmitAttempted(false);
+        setCancelling(false);
+        setActiveSubmission(null);
+        setPendingAction(null);
       });
     },
-    [persistPendingMedia, router, setValue],
+    [
+      connectedPlatforms,
+      persistPendingMedia,
+      resetForm,
+      resetUploader,
+      setValue,
+    ],
   );
+
+  const cancelSubmit = useCallback(() => {
+    if (!isPending && pendingAction === null) return;
+    activeSubmission?.abort();
+    setCancelling(true);
+    cancelPersistence();
+  }, [activeSubmission, cancelPersistence, isPending, pendingAction]);
 
   const onPublish = handleSubmit(
     (values) => {
@@ -430,14 +494,14 @@ export function CreatePostForm({
     async (file: File) => {
       setServerError(null);
       setCompatibility({});
-      const result = await uploadFile(file);
+      const result = await selectFile(file);
       if (!result.ok) return;
       setValue("media", result.media, {
         shouldValidate: submitAttempted,
         shouldDirty: true,
       });
     },
-    [setValue, submitAttempted, uploadFile],
+    [selectFile, setValue, submitAttempted],
   );
 
   const handleUrl = useCallback(
@@ -481,6 +545,7 @@ export function CreatePostForm({
 
   const captionError = errors.caption?.message;
   const mediaFieldError = errors.media?.message;
+  const submitting = isPending || pendingAction !== null;
 
   return (
     <Card className="max-w-2xl rounded-lg p-4 shadow-none md:p-6">
@@ -614,65 +679,91 @@ export function CreatePostForm({
 
           <TooltipProvider>
             <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <span className="w-full sm:w-auto">
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      className="h-11 w-full sm:h-9 sm:w-auto"
-                      disabled={isPending || noAccounts || mediaUnsupported}
-                      onClick={() => void onScheduleClick()}
-                    >
-                      {pendingAction === "schedule" ? (
-                        <>
-                          <Loader2
-                            className="size-4 animate-spin"
-                            aria-hidden="true"
-                          />
-                          Scheduling…
-                        </>
-                      ) : (
-                        "Schedule"
-                      )}
-                    </Button>
-                  </span>
-                </TooltipTrigger>
-                {noAccounts ? (
-                  <TooltipContent>Connect an account to publish.</TooltipContent>
-                ) : mediaUnsupported ? (
-                  <TooltipContent>
-                    No selected platform supports this media.
-                  </TooltipContent>
-                ) : null}
-              </Tooltip>
+              {submitting ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-11 w-full sm:h-9 sm:w-auto"
+                  disabled={cancelling}
+                  onClick={cancelSubmit}
+                >
+                  {cancelling ? (
+                    <>
+                      <Loader2
+                        className="size-4 animate-spin"
+                        aria-hidden="true"
+                      />
+                      Cancelling…
+                    </>
+                  ) : (
+                    "Cancel"
+                  )}
+                </Button>
+              ) : null}
 
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <span className="w-full sm:w-auto">
-                    <Button
-                      type="submit"
-                      className="h-11 w-full sm:h-9 sm:w-auto"
-                      disabled={isPending || publishDisabledReason !== null}
-                    >
-                      {pendingAction === "publish" ? (
-                        <>
-                          <Loader2
-                            className="size-4 animate-spin"
-                            aria-hidden="true"
-                          />
-                          Publishing…
-                        </>
-                      ) : (
-                        "Publish now"
-                      )}
-                    </Button>
-                  </span>
-                </TooltipTrigger>
-                {publishDisabledReason ? (
-                  <TooltipContent>{publishDisabledReason}</TooltipContent>
-                ) : null}
-              </Tooltip>
+              {!submitting ? (
+                <>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span className="w-full sm:w-auto">
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          className="h-11 w-full sm:h-9 sm:w-auto"
+                          disabled={isPending || noAccounts || mediaUnsupported}
+                          onClick={() => void onScheduleClick()}
+                        >
+                          {pendingAction === "schedule" ? (
+                            <>
+                              <Loader2
+                                className="size-4 animate-spin"
+                                aria-hidden="true"
+                              />
+                              Scheduling…
+                            </>
+                          ) : (
+                            "Schedule"
+                          )}
+                        </Button>
+                      </span>
+                    </TooltipTrigger>
+                    {noAccounts ? (
+                      <TooltipContent>Connect an account to publish.</TooltipContent>
+                    ) : mediaUnsupported ? (
+                      <TooltipContent>
+                        No selected platform supports this media.
+                      </TooltipContent>
+                    ) : null}
+                  </Tooltip>
+
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span className="w-full sm:w-auto">
+                        <Button
+                          type="submit"
+                          className="h-11 w-full sm:h-9 sm:w-auto"
+                          disabled={isPending || publishDisabledReason !== null}
+                        >
+                          {pendingAction === "publish" ? (
+                            <>
+                              <Loader2
+                                className="size-4 animate-spin"
+                                aria-hidden="true"
+                              />
+                              Publishing…
+                            </>
+                          ) : (
+                            "Publish now"
+                          )}
+                        </Button>
+                      </span>
+                    </TooltipTrigger>
+                    {publishDisabledReason ? (
+                      <TooltipContent>{publishDisabledReason}</TooltipContent>
+                    ) : null}
+                </Tooltip>
+                </>
+              ) : null}
             </div>
           </TooltipProvider>
         </div>

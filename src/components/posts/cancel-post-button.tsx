@@ -21,9 +21,17 @@ import { cn } from "@/lib/utils";
 export function CancelPostButton({
   onConfirm,
   className,
+  disabled = false,
+  title = "Cancel scheduled post?",
+  description = "This post will not be published. You can create it again.",
+  keepLabel = "Keep scheduled",
 }: {
   onConfirm: () => void;
   className?: string;
+  disabled?: boolean;
+  title?: string;
+  description?: string;
+  keepLabel?: string;
 }) {
   const [open, setOpen] = useState(false);
 
@@ -33,6 +41,7 @@ export function CancelPostButton({
         variant="ghost"
         size="sm"
         className={cn("h-11 md:h-8", className)}
+        disabled={disabled}
         onClick={() => setOpen(true)}
       >
         Cancel
@@ -41,20 +50,17 @@ export function CancelPostButton({
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="rounded-lg">
           <DialogHeader>
-            <DialogTitle className="text-base">
-              Cancel scheduled post?
-            </DialogTitle>
-            <DialogDescription>
-              This post will not be published. You can create it again.
-            </DialogDescription>
+            <DialogTitle className="text-base">{title}</DialogTitle>
+            <DialogDescription>{description}</DialogDescription>
           </DialogHeader>
 
           <DialogFooter>
             <DialogClose asChild>
-              <Button variant="outline">Keep scheduled</Button>
+              <Button variant="outline">{keepLabel}</Button>
             </DialogClose>
             <Button
               variant="destructive"
+              disabled={disabled}
               onClick={() => {
                 setOpen(false);
                 onConfirm();

@@ -1,7 +1,16 @@
 import type { Platform } from "@/lib/status";
 
-export const MAX_UPLOAD_BYTES = 100 * 1024 * 1024;
-export const MAX_REMOTE_DOWNLOAD_BYTES = 100 * 1024 * 1024;
+// Supabase Free projects enforce a 50 MiB global Storage limit. This remains
+// configurable for plans/projects that permit a larger global limit.
+const DEFAULT_MAX_UPLOAD_MB = 50;
+const configuredMaxUploadMb = Number(process.env.NEXT_PUBLIC_MEDIA_MAX_UPLOAD_MB);
+const MAX_UPLOAD_MB =
+  Number.isInteger(configuredMaxUploadMb) && configuredMaxUploadMb > 0
+    ? configuredMaxUploadMb
+    : DEFAULT_MAX_UPLOAD_MB;
+
+export const MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024;
+export const MAX_REMOTE_DOWNLOAD_BYTES = MAX_UPLOAD_BYTES;
 export const REMOTE_FETCH_TIMEOUT_MS = 15_000;
 
 export const ACCEPTED_UPLOAD_MIME_TYPES = [
@@ -22,7 +31,7 @@ export const ACCEPTED_UPLOAD_EXTENSIONS = [
 ] as const;
 
 export const UPLOAD_HINT =
-  "JPEG, PNG, WebP, MP4 or MOV · up to 100 MB";
+  `JPEG, PNG, WebP, MP4 or MOV · up to ${MAX_UPLOAD_MB} MB`;
 
 export type PlatformLimits = {
   /** Maximum caption length in characters. */

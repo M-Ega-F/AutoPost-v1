@@ -368,7 +368,7 @@ describe("cancel scheduled post (Plan section 28)", () => {
   });
 
   test("cancelling a post that is no longer scheduled is rejected", async () => {
-    for (const status of ["published", "processing"] as const) {
+    for (const status of ["published"] as const) {
       const postId = await insertPost({ status });
 
       await assert.rejects(
@@ -380,6 +380,28 @@ describe("cancel scheduled post (Plan section 28)", () => {
 
       assert.equal((await getPostRow(postId))?.status, status);
     }
+  });
+
+  test("a publish-now post can be cancelled before a worker claims it", async () => {
+    const instagram = await createAccount("instagram");
+    const { postId, status } = await createPost({
+      userId: USER_ID,
+      contentText: "Cancel this publish",
+      timezone: "Asia/Jakarta",
+      scheduledAt: null,
+      media: TEST_MEDIA,
+      targets: [{ platform: "instagram", socialAccountId: instagram }],
+    });
+
+    assert.equal(status, "processing");
+    const postPlatformId = enqueued[0].postPlatformId;
+
+    await cancelScheduledPost(USER_ID, postId);
+
+    assert.equal((await getPostRow(postId))?.status, "cancelled");
+    assert.equal((await getTargetRow(postPlatformId))?.status, "failed");
+    assert.equal((await getTargetRow(postPlatformId))?.lastErrorCode, "cancelled");
+    assert.equal(publishCallsFor("instagram").length, 0);
   });
 });
 

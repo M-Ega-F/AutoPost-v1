@@ -32,7 +32,9 @@ function failure(error: unknown): NextResponse {
         ? 413
         : error.code === "rate_limited_action"
           ? 429
-          : 400;
+          : error.code === "server_error"
+            ? 500
+            : 400;
     return NextResponse.json({ message: error.message }, { status });
   }
 

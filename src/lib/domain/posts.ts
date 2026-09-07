@@ -491,17 +491,26 @@ export async function cancelScheduledPost(
 
     if (!post) throw new AppError("not_found", "We couldn't find that post.");
 
-    if (post.status !== "scheduled") {
-      throw new AppError(
-        "validation_failed",
-        "This post can no longer be cancelled.",
-      );
-    }
-
     const targets = await tx
-      .select({ id: postPlatforms.id, jobId: postPlatforms.bullmqJobId })
+      .select({
+        id: postPlatforms.id,
+        jobId: postPlatforms.bullmqJobId,
+        status: postPlatforms.status,
+      })
       .from(postPlatforms)
       .where(eq(postPlatforms.postId, postId));
+
+    const canCancelProcessing =
+      post.status === "processing" &&
+      targets.length > 0 &&
+      targets.every((target) => target.status === "pending");
+
+    if (post.status !== "scheduled" && !canCancelProcessing) {
+      throw new AppError(
+        "validation_failed",
+        "Publishing has already started, so this post can no longer be cancelled.",
+      );
+    }
 
     jobIds.push(...targets.map((row) => row.jobId));
 

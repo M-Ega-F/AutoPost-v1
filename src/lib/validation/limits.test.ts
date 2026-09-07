@@ -106,13 +106,13 @@ describe("upload allow-list", () => {
   });
 
   test("size and timeout budgets", () => {
-    assert.equal(MAX_UPLOAD_BYTES, 100 * 1024 * 1024);
-    assert.equal(MAX_REMOTE_DOWNLOAD_BYTES, 100 * 1024 * 1024);
+    assert.equal(MAX_UPLOAD_BYTES, 50 * 1024 * 1024);
+    assert.equal(MAX_REMOTE_DOWNLOAD_BYTES, 50 * 1024 * 1024);
     assert.equal(REMOTE_FETCH_TIMEOUT_MS, 15_000);
   });
 
   test("the upload hint names the formats a user recognises", () => {
-    assert.equal(UPLOAD_HINT, "JPEG, PNG, WebP, MP4 or MOV · up to 100 MB");
+    assert.equal(UPLOAD_HINT, "JPEG, PNG, WebP, MP4 or MOV · up to 50 MB");
   });
 });
 
@@ -145,7 +145,7 @@ describe("PLATFORM_LIMITS", () => {
         "image/webp",
       ]);
       assert.deepEqual([...limits.videoMimeTypes], ["video/mp4", "video/quicktime"]);
-      assert.equal(limits.maxBytes, MAX_UPLOAD_BYTES);
+       assert.ok(limits.maxBytes >= MAX_UPLOAD_BYTES);
     }
   });
 

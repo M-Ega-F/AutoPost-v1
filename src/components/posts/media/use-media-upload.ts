@@ -7,111 +7,35 @@ import {
   ACCEPTED_UPLOAD_MIME_TYPES,
   MAX_UPLOAD_BYTES,
 } from "@/lib/validation/limits";
+import {
+  createLocalUrlMedia,
+  revokePreviewUrls,
+  selectLocalFile,
+  type ComposerMedia,
+} from "./media-selection";
+import {
+  persistMediaUrl,
+  persistSelectedFile,
+} from "./media-persistence";
 
-export type MediaPreviewItem = {
-  fileName: string;
-  previewUrl: string | null;
-  mediaType: "image" | "video";
-  fileSize: number | null;
-  width: number | null;
-  height: number | null;
-  duration: number | null;
-};
-
-export type ComposerMedia = MediaPreviewItem & {
-  kind: "upload" | "url";
-  storageKey: string | null;
-  sourceUrl: string | null;
-  mimeType: string;
-};
+export type { ComposerMedia, LocalFileSelection, MediaPreviewItem } from "./media-selection";
 
 export type MediaResult =
   | { ok: true; media: ComposerMedia }
   | { ok: false; message: string };
-
-type MediaApiResponse = {
-  storageKey: string;
-  sourceUrl?: string | null;
-  mediaType: "image" | "video";
-  mimeType: string;
-  fileSize: number | null;
-  width: number | null;
-  height: number | null;
-  duration: number | null;
-};
 
 const UNSUPPORTED_TYPE =
   "This file type isn't supported. Use JPEG, PNG, WebP, MP4 or MOV.";
 const TOO_LARGE = `This file is too large. Maximum size is ${Math.round(
   MAX_UPLOAD_BYTES / (1024 * 1024),
 )} MB.`;
-const UPLOAD_FAILED =
-  "We couldn't upload this file. Check your connection and try again.";
 const INVALID_URL = "Invalid media URL.";
 const HTTPS_ONLY = "Only HTTPS URLs are supported.";
-const URL_UNREACHABLE =
-  "We couldn't reach this URL. Check that it's publicly accessible.";
 const MEDIA_REQUIRED = "Add media before publishing.";
-
-function messageFrom(payload: unknown, fallback: string): string {
-  if (payload && typeof payload === "object" && "message" in payload) {
-    const message = (payload as { message?: unknown }).message;
-    if (typeof message === "string" && message.length > 0) return message;
-  }
-  return fallback;
-}
-
-function parseJson(text: string): unknown {
-  try {
-    return JSON.parse(text) as unknown;
-  } catch {
-    return null;
-  }
-}
 
 function extensionOf(fileName: string): string {
   const index = fileName.lastIndexOf(".");
   return index === -1 ? "" : fileName.slice(index).toLowerCase();
-}
-
-function mediaTypeFromExtension(extension: string): "image" | "video" {
-  return extension === ".mp4" || extension === ".mov" ? "video" : "image";
-}
-
-function mediaTypeFromFile(file: File): "image" | "video" {
-  if (file.type.startsWith("video/")) return "video";
-  return mediaTypeFromExtension(extensionOf(file.name));
-}
-
-function mediaTypeFromUrl(url: string): "image" | "video" {
-  try {
-    return mediaTypeFromExtension(extensionOf(new URL(url).pathname));
-  } catch {
-    return "image";
-  }
-}
-
-function mimeTypeFromFile(file: File): string {
-  return file.type || "application/octet-stream";
-}
-
-function mimeTypeFromUrl(url: string): string {
-  let extension = "";
-  try {
-    extension = extensionOf(new URL(url).pathname);
-  } catch {
-    return "application/octet-stream";
-  }
-
-  const mimeTypes: Record<string, string> = {
-    ".jpg": "image/jpeg",
-    ".jpeg": "image/jpeg",
-    ".png": "image/png",
-    ".webp": "image/webp",
-    ".mp4": "video/mp4",
-    ".mov": "video/quicktime",
-  };
-  return mimeTypes[extension] ?? "application/octet-stream";
 }
 
 /** A fast local check so the user is not left waiting for a doomed upload. */
@@ -129,96 +53,6 @@ function validateFile(file: File): string | null {
   return typeAllowed || extensionAllowed ? null : UNSUPPORTED_TYPE;
 }
 
-function fileNameFromUrl(url: string): string {
-  try {
-    const parsed = new URL(url);
-    const last = parsed.pathname.split("/").filter(Boolean).pop();
-    return last ? decodeURIComponent(last) : parsed.hostname;
-  } catch {
-    return url;
-  }
-}
-
-function localFileMedia(file: File, previewUrl: string): ComposerMedia {
-  return {
-    kind: "upload",
-    storageKey: null,
-    sourceUrl: null,
-    mimeType: mimeTypeFromFile(file),
-    fileName: file.name,
-    previewUrl,
-    mediaType: mediaTypeFromFile(file),
-    fileSize: file.size,
-    width: null,
-    height: null,
-    duration: null,
-  };
-}
-
-function localUrlMedia(url: string): ComposerMedia {
-  return {
-    kind: "url",
-    storageKey: null,
-    sourceUrl: url,
-    mimeType: mimeTypeFromUrl(url),
-    fileName: fileNameFromUrl(url),
-    previewUrl: url,
-    mediaType: mediaTypeFromUrl(url),
-    fileSize: null,
-    width: null,
-    height: null,
-    duration: null,
-  };
-}
-
-/** XHR reports upload progress, which the composer displays during publish. */
-function postUpload(
-  file: File,
-  onProgress: (percent: number) => void,
-): Promise<MediaApiResponse> {
-  return new Promise((resolve, reject) => {
-    const request = new XMLHttpRequest();
-    request.open("POST", "/api/media/upload");
-
-    request.upload.addEventListener("progress", (event) => {
-      if (event.lengthComputable) {
-        onProgress(Math.round((event.loaded / event.total) * 100));
-      }
-    });
-
-    request.addEventListener("load", () => {
-      const payload = parseJson(request.responseText);
-      if (request.status >= 200 && request.status < 300) {
-        resolve(payload as MediaApiResponse);
-        return;
-      }
-      reject(new Error(messageFrom(payload, UPLOAD_FAILED)));
-    });
-
-    request.addEventListener("error", () => reject(new Error(UPLOAD_FAILED)));
-    request.addEventListener("abort", () => reject(new Error(UPLOAD_FAILED)));
-
-    const body = new FormData();
-    body.append("file", file, file.name);
-    request.send(body);
-  });
-}
-
-async function resolveRemoteUrl(url: string): Promise<MediaApiResponse> {
-  const response = await fetch("/api/media/url", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ url }),
-  });
-  const payload: unknown = await response.json().catch(() => null);
-
-  if (!response.ok) {
-    throw new Error(messageFrom(payload, URL_UNREACHABLE));
-  }
-
-  return payload as MediaApiResponse;
-}
-
 export function useMediaUpload() {
   const [pending, setPending] = useState<ComposerMedia | null>(null);
   const [progress, setProgress] = useState(0);
@@ -227,21 +61,24 @@ export function useMediaUpload() {
   const [error, setError] = useState<string | null>(null);
   const selectedFile = useRef<File | null>(null);
   const objectUrls = useRef<string[]>([]);
+  const persistenceAbort = useRef<AbortController | null>(null);
 
   useEffect(() => {
     const urls = objectUrls;
     return () => {
-      for (const url of urls.current) URL.revokeObjectURL(url);
+      revokePreviewUrls(urls.current);
       urls.current = [];
     };
   }, []);
 
   const clearBlobPreviews = useCallback(() => {
-    for (const url of objectUrls.current) URL.revokeObjectURL(url);
+    revokePreviewUrls(objectUrls.current);
     objectUrls.current = [];
   }, []);
 
   const reset = useCallback(() => {
+    persistenceAbort.current?.abort();
+    persistenceAbort.current = null;
     clearBlobPreviews();
     selectedFile.current = null;
     setPending(null);
@@ -251,8 +88,15 @@ export function useMediaUpload() {
     setError(null);
   }, [clearBlobPreviews]);
 
+  const cancelPersistence = useCallback(() => {
+    persistenceAbort.current?.abort();
+    persistenceAbort.current = null;
+    setUploading(false);
+    setResolving(false);
+  }, []);
+
   // Add only updates local composer state. It does not contact the server.
-  const uploadFile = useCallback(
+  const selectFile = useCallback(
     async (file: File): Promise<MediaResult> => {
       setError(null);
 
@@ -263,11 +107,10 @@ export function useMediaUpload() {
       }
 
       clearBlobPreviews();
-      const previewUrl = URL.createObjectURL(file);
-      objectUrls.current.push(previewUrl);
-      selectedFile.current = file;
-
-      const media = localFileMedia(file, previewUrl);
+      const selection = selectLocalFile(file);
+      objectUrls.current.push(selection.media.previewUrl as string);
+      selectedFile.current = selection.file;
+      const media = selection.media;
       setPending(media);
       setProgress(0);
       return { ok: true, media };
@@ -300,7 +143,7 @@ export function useMediaUpload() {
 
       clearBlobPreviews();
       selectedFile.current = null;
-      const media = localUrlMedia(url);
+      const media = createLocalUrlMedia(url);
       setPending(media);
       setProgress(0);
       return { ok: true, media };
@@ -314,6 +157,8 @@ export function useMediaUpload() {
       if (media.storageKey) return { ok: true, media };
 
       setError(null);
+      const controller = new AbortController();
+      persistenceAbort.current = controller;
 
       try {
         if (media.kind === "upload") {
@@ -322,7 +167,7 @@ export function useMediaUpload() {
 
           setUploading(true);
           setProgress(0);
-          const result = await postUpload(file, setProgress);
+           const result = await persistSelectedFile(file, setProgress, controller.signal);
           const persisted: ComposerMedia = {
             ...media,
             storageKey: result.storageKey,
@@ -340,7 +185,7 @@ export function useMediaUpload() {
         if (!media.sourceUrl) return { ok: false, message: INVALID_URL };
 
         setResolving(true);
-        const result = await resolveRemoteUrl(media.sourceUrl);
+         const result = await persistMediaUrl(media.sourceUrl, controller.signal);
         const persisted: ComposerMedia = {
           ...media,
           storageKey: result.storageKey,
@@ -355,10 +200,19 @@ export function useMediaUpload() {
         setPending(persisted);
         return { ok: true, media: persisted };
       } catch (cause) {
-        const message = cause instanceof Error ? cause.message : UPLOAD_FAILED;
+        if (cause instanceof DOMException && cause.name === "AbortError") {
+          return { ok: false, message: "Publishing cancelled." };
+        }
+        const message =
+          cause instanceof Error
+            ? cause.message
+            : "We couldn't upload this file. Check your connection and try again.";
         setError(message);
         return { ok: false, message };
       } finally {
+        if (persistenceAbort.current === controller) {
+          persistenceAbort.current = null;
+        }
         setUploading(false);
         setResolving(false);
       }
@@ -372,9 +226,10 @@ export function useMediaUpload() {
     uploading,
     resolving,
     error,
-    uploadFile,
+    selectFile,
     addFromUrl,
     persistPendingMedia,
+    cancelPersistence,
     reset,
   };
 }

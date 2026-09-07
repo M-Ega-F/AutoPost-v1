@@ -4,8 +4,13 @@ import { serverConfig } from "@/lib/env";
 import { AppError } from "@/lib/errors";
 import { getServiceSupabase } from "@/lib/auth/service";
 import { logger } from "@/lib/logger";
+import { MAX_UPLOAD_BYTES } from "@/lib/validation/limits";
 
 export const SIGNED_URL_TTL_SECONDS = 60 * 60;
+export const MEDIA_BUCKET_FILE_SIZE_LIMIT = MAX_UPLOAD_BYTES;
+const MEDIA_TOO_LARGE_MESSAGE = `This file is too large. Maximum size is ${Math.round(
+  MAX_UPLOAD_BYTES / (1024 * 1024),
+)} MB.`;
 
 export type StoredObject = {
   storageKey: string;
@@ -28,7 +33,33 @@ export async function ensureMediaBucket(): Promise<void> {
   const supabase = getServiceSupabase();
   const { data, error } = await supabase.storage.getBucket(bucket());
 
-  if (!error && data) return;
+  if (!error && data) {
+    // An existing bucket may have been created with Supabase's small default
+    // limit. Keep the bucket aligned with the app's 100 MiB validation limit.
+    if ((data.file_size_limit ?? 0) < MEDIA_BUCKET_FILE_SIZE_LIMIT) {
+      const { error: updateError } = await supabase.storage.updateBucket(
+        bucket(),
+        {
+          public: false,
+          fileSizeLimit: MEDIA_BUCKET_FILE_SIZE_LIMIT,
+        },
+      );
+
+      if (updateError) {
+        logger.error("media bucket limit update failed", {
+          bucket: bucket(),
+          status: updateError.status ?? null,
+          name: updateError.name ?? null,
+          message: updateError.message,
+        });
+        throw new AppError(
+          "server_error",
+          "We couldn't prepare media storage. Try again.",
+        );
+      }
+    }
+    return;
+  }
 
   if (error) {
     logger.warn("media bucket lookup failed", {
@@ -39,9 +70,19 @@ export async function ensureMediaBucket(): Promise<void> {
     });
   }
 
+  const bucketMissing =
+    error?.status === 404 || /bucket not found/i.test(error?.message ?? "");
+
+  if (!bucketMissing) {
+    throw new AppError(
+      "server_error",
+      "We couldn't prepare media storage. Try again.",
+    );
+  }
+
   const { error: createError } = await supabase.storage.createBucket(bucket(), {
     public: false,
-    fileSizeLimit: "100MB",
+    fileSizeLimit: MEDIA_BUCKET_FILE_SIZE_LIMIT,
   });
 
   if (createError && !/already exists/i.test(createError.message)) {
@@ -77,6 +118,9 @@ export async function uploadMediaObject(
 
   if (error) {
     logger.error("media upload failed", { userId, message: error.message });
+    if (/maximum allowed size|exceeded/i.test(error.message)) {
+      throw new AppError("media_too_large", MEDIA_TOO_LARGE_MESSAGE);
+    }
     throw new AppError(
       "server_error",
       "We couldn't upload this file. Check your connection and try again.",

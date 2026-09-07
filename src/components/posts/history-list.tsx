@@ -3,8 +3,10 @@
 import { History, Loader2, SquarePen } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Fragment, useEffect, useState } from "react";
+import { Fragment, useEffect, useState, useTransition } from "react";
+import { toast } from "sonner";
 
+import { CancelPostButton } from "@/components/posts/cancel-post-button";
 import { PostDetailPanel } from "@/components/posts/post-detail";
 import { EmptyState } from "@/components/shared/empty-state";
 import { PlatformBadge } from "@/components/shared/platform-badge";
@@ -29,6 +31,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { usePolling } from "@/hooks/use-polling";
+import { cancelPostAction } from "@/lib/actions/posts";
 import type {
   PostDetail as PostDetailData,
   PostSummary,
@@ -67,6 +70,8 @@ export function HistoryList({
 }) {
   const router = useRouter();
   const [isCompact, setIsCompact] = useState(false);
+  const [cancellingPostId, setCancellingPostId] = useState<string | null>(null);
+  const [isCancelling, startCancelTransition] = useTransition();
 
   const { gaveUp } = usePolling({
     enabled: isPublishing(posts) || (detail ? isPublishing([detail]) : false),
@@ -83,6 +88,25 @@ export function HistoryList({
 
   const showInlineDetail = !isCompact && detail !== null;
   const showDetailDialog = isCompact && detail !== null;
+
+  function cancelProcessingPost(postId: string) {
+    setCancellingPostId(postId);
+    startCancelTransition(async () => {
+      try {
+        const result = await cancelPostAction(postId);
+        if (result.ok) {
+          toast.success("Publishing cancelled.");
+          router.refresh();
+        } else {
+          toast.error(result.message);
+        }
+      } catch {
+        toast.error("Couldn't cancel this post. Try again.");
+      } finally {
+        setCancellingPostId(null);
+      }
+    });
+  }
 
   return (
     <div className="space-y-4">
@@ -177,17 +201,30 @@ export function HistoryList({
                               </div>
                             </TableCell>
                             <TableCell className="px-4 py-3 text-right">
-                              <Button variant="ghost" size="sm" asChild>
-                                <Link
-                                  href={
-                                    isSelected
-                                      ? "/history"
-                                      : `/history?post=${post.id}`
-                                  }
-                                >
-                                  {isSelected ? "Hide" : "View"}
-                                </Link>
-                              </Button>
+                              <div className="flex justify-end gap-1">
+                                {post.status === "processing" ? (
+                                  <CancelPostButton
+                                    title="Cancel publishing?"
+                                    description="We will stop this post if publishing has not started yet."
+                                    keepLabel="Keep publishing"
+                                    disabled={
+                                      isCancelling && cancellingPostId === post.id
+                                    }
+                                    onConfirm={() => cancelProcessingPost(post.id)}
+                                  />
+                                ) : null}
+                                <Button variant="ghost" size="sm" asChild>
+                                  <Link
+                                    href={
+                                      isSelected
+                                        ? "/history"
+                                        : `/history?post=${post.id}`
+                                    }
+                                  >
+                                    {isSelected ? "Hide" : "View"}
+                                  </Link>
+                                </Button>
+                              </div>
                             </TableCell>
                           </TableRow>
 
@@ -249,6 +286,18 @@ export function HistoryList({
                         </div>
                       </div>
 
+                      {post.status === "processing" ? (
+                        <CancelPostButton
+                          className="w-full"
+                          title="Cancel publishing?"
+                          description="We will stop this post if publishing has not started yet."
+                          keepLabel="Keep publishing"
+                          disabled={
+                            isCancelling && cancellingPostId === post.id
+                          }
+                          onConfirm={() => cancelProcessingPost(post.id)}
+                        />
+                      ) : null}
                       <Button
                         variant="ghost"
                         size="sm"
