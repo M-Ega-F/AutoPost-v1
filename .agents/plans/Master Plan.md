@@ -1,3442 +1,3262 @@
-# TASK: AUTOPOST PHASE 4 — CALENDAR &amp; SCHEDULE MANAGEMENT
-
-Project:
-
-AutoPost-v1
-
-Repository root:
+Anda bekerja pada repository:
 
 C:\Users\aldis\Documents\Codex\AutoPost-v1
 
-PRIMARY GOAL:
+Tugas Anda adalah mengimplementasikan:
 
-Implement a complete Calendar and Schedule Management system for AutoPost.
+# PHASE 16A — CONTENT APPROVAL & REVIEW WORKFLOW
 
-The Calendar must use REAL post data from the existing system.
-
-DO NOT create fake calendar data.
-
-DO NOT create a second scheduling system.
-
-DO NOT duplicate existing post lifecycle logic.
-
-The Calendar must integrate with:
-
-- Auth
-
-- Posts
-
-- Draft System
-
-- Existing scheduling
-
-- Existing Service Layer
-
-- Internal API
-
-- Dashboard
-
-- Connected Accounts
-
-- Media architecture
-
-- Queue
-
-- Worker
-
-- Timezone handling
-
-IMPORTANT:
-
-FIRST audit the existing repository.
-
-FIRST understand the real post lifecycle.
-
-FIRST inspect existing scheduling architecture.
-
-THEN design.
-
-THEN implement.
-
-DO NOT make a git commit.
+Implementasi harus disesuaikan dengan arsitektur AutoPost-v1 yang sudah selesai sampai Phase 15.
 
 ==================================================
-
-CURRENT VERIFIED PROJECT STATUS
-
+1. KONTEKS PRODUK
 ==================================================
 
-Repository:
+AutoPost-v1 adalah SaaS Multi-Social Auto Poster.
 
-C:\Users\aldis\Documents\Codex\AutoPost-v1
+Tujuan utama:
 
-Repository validation:
+Upload konten sekali
+→ pilih beberapa platform
+→ publish sekarang atau schedule
+→ background worker memproses
+→ user melihat hasil.
 
-npm run lint
+Produk sekarang sudah berkembang menjadi workspace-based SaaS dengan:
 
-PASS
+- Multi workspace
+- Team collaboration
+- Roles & permissions
+- Draft system
+- Templates
+- Calendar
+- Scheduling
+- Media Library
+- Analytics
+- Notifications
+- Queue reliability
+- Webhooks
 
-npm run typecheck
+Phase 16A bertujuan menambahkan:
 
-PASS
+CONTENT APPROVAL & REVIEW WORKFLOW
 
-npm test
+Agar content tidak langsung:
 
-PASS — 255/255
+Draft
+→ Published
 
-npm run test:integration
+Tetapi dapat melalui proses:
 
-PASS — 74/74
-
-npm run build
-
-PASS
-
-git diff --check
-
-PASS
-
-==================================================
-
-COMPLETED PHASES
-
-==================================================
-
-PHASE 1 — INTERNAL API
-
-COMPLETE
-
-Existing architecture includes:
-
-Posts API
-
-GET /api/posts
-
-POST /api/posts
-
-GET /api/posts/:id
-
-POST /api/posts/:id/cancel
-
-POST /api/posts/:id/retry
-
-Accounts API
-
-GET /api/accounts
-
-GET /api/accounts/:id
-
-DELETE /api/accounts/:id
-
-Dashboard API
-
-GET /api/dashboard
-
-Architecture:
-
-- Session authentication
-
-- Ownership checks
-
-- Safe DTO responses
-
-- Validation
-
-- Rate limiting
-
-- Service Layer
-
-Never expose:
-
-- Access tokens
-
-- Refresh tokens
-
-- Provider secrets
-
-- OAuth secrets
-
-- Encrypted credentials
-
-- Service role keys
-
-==================================================
-
-PHASE 2 — DASHBOARD
-
-==================================================
-
-COMPLETE
-
-Dashboard currently includes:
-
-- Real statistics
-
-- Scheduled posts
-
-- Publishing posts
-
-- Published posts
-
-- Failed posts
-
-- Upcoming posts
-
-- Recent activity
-
-- Failed posts
-
-- Retry actions
-
-- Connected accounts summary
-
-- Quick actions
-
-Dashboard architecture:
-
-UI
-
+Draft
 ↓
-
-Dashboard Service
-
+In Review
 ↓
-
-Domain / Data
-
-DO NOT make Calendar bypass Service Layer if the
-
-existing architecture does not do that.
-
-==================================================
-
-PHASE 2.5 — REPOSITORY HEALTH
-
-==================================================
-
-COMPLETE
-
-Repository root verified.
-
-Nested unrelated worktree is excluded from:
-
-- ESLint
-
-- TypeScript
-
-- Build tooling
-
-Full repository validation works.
-
-DO NOT reintroduce nested repository scanning.
-
-==================================================
-
-PHASE 3 — DRAFT SYSTEM
-
-==================================================
-
-COMPLETE
-
-Draft architecture:
-
-Draft uses:
-
-posts.status = "draft"
-
-No new Draft table.
-
-No migration required.
-
-Draft capabilities:
-
-- Create Draft
-
-- Empty Draft
-
-- Save Draft
-
-- Edit Draft
-
-- Continue Draft
-
-- Update Draft
-
-- Delete Draft
-
-- Publish Draft
-
-- Schedule Draft
-
-Draft routes:
-
-/drafts
-
-/drafts/[id]
-
-Draft API:
-
-/api/drafts
-
-/api/drafts/[id]
-
-/api/drafts/[id]/publish
-
-IMPORTANT:
-
-Publish Draft keeps the SAME postId.
-
-Example:
-
-Create Draft
-
-postId = abc
-
-Edit Draft
-
-postId = abc
-
-Publish Draft
-
-postId = abc
-
-DO NOT create a new Post when publishing a Draft.
-
-Composer:
-
-Existing Create Post composer is reused.
-
-DO NOT duplicate the composer.
-
-==================================================
-
-CURRENT POST LIFECYCLE
-
-==================================================
-
-IMPORTANT:
-
-Do not assume statuses blindly.
-
-Audit actual code first.
-
-The known architecture includes at minimum:
-
-draft
-
-scheduled
-
-publishing
-
-published
-
-failed
-
-There may also be:
-
-cancelled
-
-or other lifecycle states.
-
-FIRST inspect:
-
-src/lib/domain/posts.ts
-
-Also inspect:
-
-- Database schema
-
-- Migrations
-
-- Post services
-
-- Queue
-
-- Worker
-
-- Retry
-
-- Cancellation
-
-- Schedule logic
-
-Document the REAL lifecycle before implementation.
-
-==================================================
-
-CURRENT MEDIA ARCHITECTURE
-
-==================================================
-
-CRITICAL — DO NOT REGRESS
-
-Media selection:
-
-Select File
-
+Approved
 ↓
-
-Browser Memory
-
+Scheduled / Publishing
 ↓
+Published
 
-URL.createObjectURL()
+Atau:
 
+Draft
 ↓
-
-Local Preview
-
+In Review
 ↓
-
-NO Storage Request
-
-Storage persistence only occurs during:
-
-Save Draft
-
-Publish
-
-Schedule
-
-IMPORTANT:
-
-Selecting media MUST NOT upload.
-
-Calendar media display must use persisted media
-
-references only.
-
-Calendar must NEVER trigger:
-
-/api/media/upload
-
-just because a Calendar item is rendered.
-
-Do not load full-size media unnecessarily.
-
-==================================================
-
-CURRENT PUBLISHING ARCHITECTURE
-
-==================================================
-
-Existing architecture includes:
-
-- Queue
-
-- Worker
-
-- Retry
-
-- Cancellation
-
-- Idempotency
-
-- Partial failure handling
-
-DO NOT:
-
-Create another queue.
-
-Create another worker.
-
-Create another scheduling system.
-
-Duplicate publish logic.
-
-Duplicate retry logic.
-
-Calendar must consume existing lifecycle.
-
-Architecture:
-
-Calendar Action
-
+Changes Requested
 ↓
-
-Posts / Schedule Service
-
+Draft
 ↓
-
-Existing Domain Logic
-
-↓
-
-Existing Queue / Worker
-
-NOT:
-
-Calendar
-
-↓
-
-New Schedule Table
-
-↓
-
-New Queue
-
-↓
-
-New Worker
-
-unless the audit proves such architecture already exists.
+In Review
 
 ==================================================
-
-PHASE 4 PRIMARY GOAL
-
+2. KONDISI REPOSITORY SAAT INI
 ==================================================
 
-Implement:
+Repository sudah memiliki:
 
-CALENDAR
+PHASE 1
+Internal API dan service layer.
 
-+
+PHASE 2
+Dashboard.
 
-SCHEDULE MANAGEMENT
+PHASE 3
+Draft System.
 
-The user must be able to:
+PHASE 4
+Calendar & Schedule Management.
 
-1. Open Calendar
+PHASE 5
+History.
 
-2. View scheduled posts
+PHASE 6
+Content Reuse, Duplicate & Templates.
 
-3. Navigate dates
+PHASE 7
+Connected Accounts & Account Health.
 
-4. View posts by date
+PHASE 8
+Threads integration.
 
-5. View scheduled time
+PHASE 9
+User Settings & Preferences.
 
-6. View platforms/accounts
+PHASE 10
+Media Library.
 
-7. View post status
+PHASE 11
+Analytics.
 
-8. Open post details
+PHASE 12A
+Workspace isolation.
 
-9. Continue Draft when appropriate
+PHASE 12B
+Roles & Permissions.
 
-10. Cancel scheduled post when supported
+PHASE 12C
+Team Invitations & Member Management.
 
-11. Retry failed post when supported
+PHASE 12D
+Workspace Management.
 
-12. Navigate to editing flow
+PHASE 13
+Notification System.
 
-13. Understand timezone correctly
+PHASE 14
+Reliability & Observability.
 
-The Calendar must display REAL application data.
+PHASE 15
+External Webhooks.
 
-==================================================
-
-CORE USER FLOW
-
-==================================================
-
-USER
-
-↓
-
-Dashboard
-
-↓
-
-View Calendar
-
-↓
-
-Calendar
-
-USER CAN:
-
-Navigate Month
-
-Navigate Week
-
-Navigate Day
-
-↓
-
-See Scheduled Posts
-
-↓
-
-Click Post
-
-↓
-
-View Details
-
-Then:
-
-Edit
-
-or
-
-Cancel
-
-or
-
-Retry
-
-or
-
-Continue Draft
-
-depending on the actual lifecycle and permissions.
+JANGAN merusak implementasi yang sudah ada.
 
 ==================================================
-
-CALENDAR DATA
-
+3. ARSITEKTUR EXISTING YANG HARUS DIPERTAHANKAN
 ==================================================
 
-Calendar must use existing Post data.
+Gunakan pola existing.
 
-Possible statuses:
+Domain:
 
-draft
+src/lib/domain/
 
-scheduled
+Authorization:
 
-publishing
+src/lib/auth/permissions.ts
 
-published
-
-failed
-
-cancelled
-
-DO NOT automatically display every status.
-
-Define Calendar visibility based on actual product behavior.
-
-Recommended behavior:
-
-SCHEDULED
-
-Appears on Calendar
-
-PUBLISHING
-
-May appear if currently relevant
-
-PUBLISHED
-
-May appear in history/calendar depending on current
-
-product architecture
-
-FAILED
-
-May appear with failure indicator if relevant
-
-DRAFT
-
-Does NOT occupy a calendar time unless scheduled
-
-UNSCHEDULED DRAFTS
-
-May appear in:
-
-Sidebar
-
-or
-
-Dedicated section
-
-but must not pretend to have a schedule.
-
-==================================================
-
-REQUIRED AUDIT BEFORE IMPLEMENTATION
-
-==================================================
-
-FIRST inspect:
-
-DATABASE
-
-- posts table
-
-- post status
-
-- scheduled timestamp fields
-
-- timezone fields
-
-- publish jobs
-
-- media tables
-
-- connected account relationships
-
-POST DOMAIN
-
-Inspect:
-
-src/lib/domain/posts.ts
-
-Also inspect:
-
-- Post types
-
-- Status types
-
-- Lifecycle transitions
-
-- Create Post
-
-- Publish
-
-- Schedule
-
-- Cancel
-
-- Retry
-
-SERVICE LAYER
-
-Inspect:
-
-- Posts Service
-
-- Dashboard Service
-
-- Existing DTOs
-
-- Existing query methods
-
-API
-
-Inspect:
-
-GET /api/posts
-
-POST /api/posts
-
-GET /api/posts/:id
-
-POST /api/posts/:id/cancel
-
-POST /api/posts/:id/retry
-
-Also inspect Draft APIs.
-
-SCHEDULING
-
-Find the actual code responsible for:
-
-- Schedule creation
-
-- Schedule validation
-
-- Scheduled timestamps
-
-- Queue/job creation
-
-- Worker execution
-
-TIMEZONE
-
-Find:
-
-- default timezone
-
-- timezone storage
-
-- timezone conversion
-
-- UTC usage
-
-- display formatting
-
-UI
-
-Inspect:
-
-- Existing Calendar route if any
-
-- Dashboard Calendar quick action
-
-- Post History
-
-- Draft List
-
-- Create Post
-
-- Post cards
-
-- Design system
-
-==================================================
-
-ARCHITECTURE DECISION
-
-==================================================
-
-Before implementation determine:
-
-1.
-
-Where Calendar data should come from.
-
-Possible:
-
-Posts Service
-
-Calendar Service
-
-Existing Dashboard aggregation
-
-Internal API
-
-DO NOT create duplicate query logic.
-
-Preferred architecture:
-
-UI
-
-↓
-
-Calendar Service / Existing Service Layer
-
-↓
-
-Posts Domain
-
-↓
-
-Database
-
-OR:
-
-UI
-
-↓
-
-Internal API
-
-↓
-
-Service Layer
-
-↓
-
-Domain
-
-Follow the existing architecture.
-
-==================================================
-
-CALENDAR SERVICE
-
-==================================================
-
-If Calendar-specific aggregation is needed:
-
-Create a Calendar Service ONLY if it adds clear
-
-domain separation.
-
-Possible conceptual responsibilities:
-
-getCalendarRange()
-
-getCalendarMonth()
-
-getCalendarWeek()
-
-getCalendarDay()
-
-getUnscheduledDrafts()
-
-BUT:
-
-Do not blindly create these methods.
-
-Follow repository conventions.
-
-Avoid:
-
-Calendar UI
-
-↓
-
-Direct Supabase query
-
-if existing application architecture uses Service Layer.
-
-==================================================
-
-CALENDAR ROUTE
-
-==================================================
-
-Determine existing routing convention.
-
-Preferred route:
-
-/calendar
-
-If it already exists:
-
-Extend it.
-
-Do not create duplicate Calendar routes.
-
-Dashboard Quick Action:
-
-View Calendar
-
-must navigate to the real Calendar.
-
-==================================================
-
-CALENDAR VIEWS
-
-==================================================
-
-Implement at minimum:
-
-MONTH VIEW
-
-Example:
-
-September 2026
-
-MON  TUE  WED  THU  FRI  SAT  SUN
-
-31   1    2    3    4    5    6
-
-7    8    9    10   11   12   13
-
-14   15   16   17   18   19   20
-
-21   22   23   24   25   26   27
-
-28   29   30
-
-Each day may show:
-
-Scheduled Posts
-
-Platform indicators
-
-Time
-
-Post preview
-
-==================================================
-
-WEEK VIEW
-
-==================================================
-
-Implement Week View if compatible with current UI
-
-scope without excessive complexity.
-
-Example:
-
-Monday
-
-09:00
-
-Facebook Post
-
-14:00
-
-Instagram Post
-
-19:00
-
-Facebook + Instagram
-
-Week View must use REAL scheduled times.
-
-==================================================
-
-DAY VIEW
-
-==================================================
-
-Implement Day View only if it fits naturally with
-
-existing Calendar architecture.
-
-DO NOT over-engineer.
-
-Priority order:
-
-1. Month View
-
-2. Week View
-
-3. Day View
-
-Month View is REQUIRED.
-
-==================================================
-
-DATE NAVIGATION
-
-==================================================
-
-Support:
-
-Previous
-
-Next
-
-Today
-
-Examples:
-
-Previous Month
-
-Next Month
-
-Today
-
-Week View:
-
-Previous Week
-
-Next Week
-
-Today
-
-Do not reload unnecessary data.
-
-Use efficient range queries.
-
-==================================================
-
-DATE RANGE QUERY
-
-==================================================
-
-Calendar must NOT load:
-
-All Posts
-
-and filter them in browser.
-
-Instead:
-
-Calendar Range
-
-↓
-
-Server-side range query
-
-↓
-
-Only relevant Posts
-
-Example:
-
-Month:
-
-2026-09-01
-
-through
-
-2026-10-01
-
-Use correct inclusive/exclusive range logic.
-
-Avoid:
-
-N+1 queries.
-
-==================================================
-
-TIMEZONE — CRITICAL
-
-==================================================
-
-Calendar timezone must be audited before implementation.
-
-Determine:
-
-Where schedule timestamp is stored.
-
-Possible:
-
-UTC
-
-or:
-
-Timezone-aware timestamp
-
-or:
-
-Local time + timezone
-
-DO NOT guess.
-
-Preferred conceptual flow:
-
-DATABASE
-
-UTC
-
-↓
-
-SERVER
-
-Normalize
-
-↓
-
-USER TIMEZONE
-
-↓
-
-CALENDAR DISPLAY
-
-Example:
+src/lib/auth/authorization.ts
 
 Database:
 
-2026-09-10T09:00:00Z
+src/lib/db/schema.ts
 
-User timezone:
+Drizzle migrations:
 
-Asia/Jakarta
+drizzle/
 
-Calendar:
+Supabase RLS:
 
-2026-09-10 16:00 WIB
+supabase/migrations/
 
-But use actual project conventions.
+API:
 
-==================================================
+src/app/api/
 
-TIMEZONE REQUIREMENTS
+Components:
 
-==================================================
+src/components/
 
-Calendar must:
+Notifications:
 
-Display correct local date.
+gunakan sistem Phase 13.
 
-Display correct local time.
+Queue:
 
-Handle month boundary correctly.
+BullMQ existing.
 
-Handle day boundary correctly.
+Worker:
 
-Example:
+src/workers/
 
-UTC:
+Workspace:
 
-September 30 18:00
+workspace-aware.
 
-Asia/Jakarta:
+Semua resource harus tetap:
 
-October 1 01:00
+workspace-scoped
 
-This must appear on:
+dan
 
-October 1
-
-not:
-
-September 30.
+server-authorized.
 
 ==================================================
-
-DEFAULT TIMEZONE
-
+4. TUJUAN PHASE 16A
 ==================================================
 
-Existing project previously used:
+Tambahkan workflow approval agar workspace dapat melakukan review content sebelum publish.
 
-Asia/Jakarta
-
-Audit actual implementation.
-
-DO NOT hardcode Asia/Jakarta everywhere.
-
-Use:
-
-User preference
-
-or:
-
-Existing default timezone architecture.
-
-==================================================
-
-TIMEZONE TESTS
-
-==================================================
-
-Add tests for:
-
-UTC → local conversion.
-
-Month boundary.
-
-Day boundary.
-
-Calendar range.
-
-Scheduled post appears on correct date.
-
-Do not rely only on manual testing.
-
-==================================================
-
-CALENDAR POST CARD
-
-==================================================
-
-Each Calendar item should show concise information.
-
-Possible:
-
-Time
-
-Platform icon
-
-Caption preview
-
-Status
-
-Example:
-
-09:00
-
-Facebook
-
-Launching our new feature...
-
-Do not render full caption unnecessarily.
-
-==================================================
-
-CALENDAR MEDIA
-
-==================================================
-
-Optional media preview:
-
-Use:
-
-Small thumbnail
-
-only if existing persisted media architecture supports it.
-
-DO NOT:
-
-Load full media.
-
-Trigger upload.
-
-Create object URL.
-
-Access browser-selected files.
-
-Calendar only uses persisted media.
-
-==================================================
-
-PLATFORM DISPLAY
-
-==================================================
-
-Reuse existing Connected Account abstraction.
-
-Do not hardcode:
-
-Facebook
-
-Instagram
-
-Calendar should work with future providers.
-
-Display conceptually:
-
-Facebook
-
-Instagram
-
-TikTok
-
-Threads
-
-etc.
-
-Use existing platform enum/type.
-
-==================================================
-
-MULTI-ACCOUNT POSTS
-
-==================================================
-
-A Post may target multiple accounts.
-
-Calendar must represent this correctly.
-
-Example:
-
-09:00
-
-Facebook + Instagram
-
-Do not duplicate the same Post visually if one Post
-
-targets multiple accounts.
-
-Preferred:
-
-One Calendar Item
-
-↓
-
-Multiple platform indicators
-
-unless existing product architecture represents
-
-platform publishing separately.
-
-Audit first.
-
-==================================================
-
-CALENDAR STATUS DISPLAY
-
-==================================================
-
-Use clear state.
-
-SCHEDULED
-
-Scheduled
-
-PUBLISHING
-
-Publishing
-
-PUBLISHED
-
-Published
-
-FAILED
-
-Failed
+Workflow dasar:
 
 DRAFT
 
-Draft
+↓
 
-CANCELLED
-
-Cancelled
-
-Use existing status naming conventions.
-
-Do not invent new lifecycle names.
-
-==================================================
-
-UNSCHEDULED DRAFTS
-
-==================================================
-
-Drafts without schedule must not occupy a fake
-
-calendar slot.
-
-Implement one of:
-
-Option A:
-
-Unscheduled Draft Sidebar
-
-Option B:
-
-Draft Section
-
-Option C:
-
-Link to Drafts page
-
-Choose based on existing UI architecture.
-
-Preferred:
-
-Small sidebar/section:
-
-Unscheduled Drafts
-
-Example:
-
-Product Launch
-
-Edited 10 minutes ago
-
-Continue Editing
-
-Do not load excessive Draft data.
-
-==================================================
-
-CALENDAR POST CLICK
-
-==================================================
-
-Click Calendar Post.
-
-Behavior should follow status.
-
-SCHEDULED:
-
-Open Post Detail
-
-or
-
-Schedule Management
-
-DRAFT:
-
-Continue Editing
-
-FAILED:
-
-Open Post Detail
-
-PUBLISHED:
-
-Open Post Detail / History
-
-Do not create duplicate detail pages if Phase 5 has not
-
-implemented them yet.
-
-If a full detail page does not exist:
-
-Use existing routes/actions safely.
-
-Do not build Phase 5 prematurely.
-
-==================================================
-
-SCHEDULE MANAGEMENT
-
-==================================================
-
-Calendar must integrate with existing schedule
-
-management.
-
-Users should be able to safely perform existing
-
-actions.
-
-Possible actions:
-
-Cancel Scheduled Post
-
-Retry Failed Post
-
-Continue Editing Draft
-
-View Post
-
-DO NOT implement actions that existing lifecycle
-
-does not support.
-
-==================================================
-
-CANCEL SCHEDULE
-
-==================================================
-
-Existing API includes:
-
-POST /api/posts/:id/cancel
-
-Audit what it actually supports.
-
-If it supports scheduled post cancellation:
-
-Calendar may expose:
-
-Cancel
-
-Flow:
-
-Calendar
+IN REVIEW
 
 ↓
 
-Cancel Action
+APPROVED
 
 ↓
 
-Existing API / Service
+SCHEDULED
 
 ↓
 
-Existing lifecycle
-
-Do not create:
-
-/api/calendar/cancel
-
-unless existing architecture explicitly requires it.
-
-==================================================
-
-RETRY
-
-==================================================
-
-Existing API includes:
-
-POST /api/posts/:id/retry
-
-Audit supported statuses.
-
-Calendar may expose Retry only when valid.
-
-Do not show Retry for:
-
-Draft
-
-Published
-
-unless actual architecture supports it.
-
-Reuse existing retry logic.
-
-==================================================
-
-RESCHEDULE
-
-==================================================
-
-IMPORTANT:
-
-Do NOT blindly implement rescheduling.
-
-First audit whether existing architecture supports:
-
-Scheduled Post
+PUBLISHING
 
 ↓
 
-Change Schedule Time
+PUBLISHED
 
-If it already exists:
 
-Reuse it.
+Alternative flow:
 
-If it does NOT exist:
-
-Do not silently implement a second scheduling system.
-
-Reschedule may be:
-
-OUT OF SCOPE
-
-unless safely supported through existing Posts Service.
-
-If implemented:
-
-Must update:
-
-- Schedule timestamp
-
-- Queue/job
-
-- Existing lifecycle
-
-atomically.
-
-Avoid:
-
-Calendar shows new time
-
-but worker still publishes old time.
-
-==================================================
-
-NO DRAG AND DROP BY DEFAULT
-
-==================================================
-
-Drag and Drop scheduling is NOT required.
-
-Do NOT implement drag/drop unless existing project
-
-already supports it.
-
-Reason:
-
-Drag/drop rescheduling can introduce:
-
-- timezone bugs
-
-- stale queue jobs
-
-- duplicate jobs
-
-- lifecycle inconsistencies
-
-Phase 4 priority is correct scheduling visibility and
-
-safe management.
-
-==================================================
-
-SCHEDULE DATA CONSISTENCY
-
-==================================================
-
-Calendar must reflect source of truth.
-
-Avoid:
-
-Calendar has cached schedule:
-
-10:00
-
-Database has:
-
-12:00
-
-Always define source of truth.
-
-Prefer:
-
-Posts Service / existing domain state.
-
-==================================================
-
-REAL-TIME
-
-==================================================
-
-Realtime Calendar updates are OUT OF SCOPE.
-
-Do not add:
-
-Supabase Realtime
-
-WebSockets
-
-Polling loops
-
-unless existing architecture already uses them and the
-
-Calendar can safely reuse them.
-
-Normal refresh/navigation is sufficient.
-
-==================================================
-
-DASHBOARD INTEGRATION
-
-==================================================
-
-Existing Dashboard includes:
-
-Upcoming Posts
-
-Calendar should be consistent with it.
-
-Same scheduled Post should show consistent:
-
-- Date
-
-- Time
-
-- Status
-
-- Platform
-
-Do not implement separate date conversion logic in:
-
-Dashboard
-
-Calendar
-
-Reuse shared formatting/helper/service if appropriate.
-
-==================================================
-
-CALENDAR ↔ DASHBOARD
-
-==================================================
-
-Flow:
-
-Dashboard
+DRAFT
 
 ↓
 
-View Calendar
+IN REVIEW
 
 ↓
 
-Calendar
-
-Calendar
+CHANGES REQUESTED
 
 ↓
 
-Click Post
+DRAFT
 
 ↓
 
-Existing Post/Draft flow
+IN REVIEW
 
-No dead links.
 
-==================================================
+Approval workflow harus:
 
-INTERNAL API
-
-==================================================
-
-Determine whether Calendar requires a new API endpoint.
-
-Possible:
-
-GET /api/calendar
-
-with:
-
-start
-
-end
-
-timezone
-
-BUT:
-
-DO NOT create endpoint automatically.
-
-If existing:
-
-GET /api/posts
-
-can safely support:
-
-status filtering
-
-date range
-
-then reuse it if architecture allows.
-
-However:
-
-Do not expose database query complexity directly
-
-to client.
-
-API design must follow existing conventions.
+- workspace-aware
+- role-aware
+- permission-based
+- notification-aware
+- audit-friendly
+- aman terhadap race condition
+- tidak merusak queue existing
+- tidak mengubah publish worker secara tidak perlu
 
 ==================================================
-
-POSSIBLE CALENDAR API
-
+5. PENTING — JANGAN LANGSUNG MENGUBAH posts.status
 ==================================================
 
-ONLY IF REQUIRED.
+Audit terlebih dahulu status post existing.
 
-Example:
+Cari:
 
-GET /api/calendar?start=...&amp;end=...
+posts.status
 
-Server must:
+dan seluruh state yang sudah digunakan.
 
-Authenticate user.
+Contoh kemungkinan existing:
 
-Resolve ownership server-side.
+draft
+scheduled
+processing
+published
+failed
+partial_failure
+cancelled
 
-Validate date range.
+JANGAN asal menambahkan status baru jika:
 
-Validate timezone if accepted.
+status existing memiliki dependency pada:
 
-Limit maximum range.
+- worker
+- queue
+- dashboard
+- analytics
+- history
+- calendar
+- retry
+- cancel
+- webhook
+- notification
 
-Return safe DTO.
+Tentukan arsitektur paling aman.
 
-Never expose:
+Prioritas:
 
-tokens
-
-credentials
-
-raw media storage internals
-
-provider secrets
-
-==================================================
-
-DATE RANGE SECURITY
-
-==================================================
-
-Prevent abuse.
-
-Do not allow:
-
-start = 1900
-
-end = 2100
-
-without limit.
-
-Validate range.
-
-Example concept:
-
-Maximum Calendar range:
-
-reasonable application range.
-
-Do not choose arbitrary limit without considering UI.
+JANGAN merusak lifecycle publishing existing.
 
 ==================================================
-
-CALENDAR DTO
-
+6. REKOMENDASI ARSITEKTUR APPROVAL
 ==================================================
 
-Use safe Calendar DTO.
+Gunakan approval state terpisah dari publishing status.
 
-Possible fields:
+Contoh:
 
-id
+posts.status
 
-status
+tetap menangani publishing lifecycle.
 
-scheduledAt
+Tambahkan:
 
-captionPreview
+approval_status
 
-platforms
+atau
 
-mediaPreview
+review_status
 
-createdAt
+Contoh:
 
-updatedAt
+draft
 
-DO NOT expose:
+in_review
 
-accessToken
+changes_requested
 
-refreshToken
+approved
 
-credentials
+approval_not_required
 
-encryptedToken
 
-storage internals
+Tentukan nama yang paling konsisten dengan existing codebase.
 
-provider secrets
+Tujuan:
 
-Follow existing API DTO patterns.
+Publishing lifecycle:
 
-==================================================
+draft
+scheduled
+processing
+published
+failed
 
-OWNERSHIP
+tetap terpisah dari:
 
-==================================================
+review lifecycle:
 
-CRITICAL.
+draft
+in_review
+changes_requested
+approved
 
-Calendar only returns current user's Posts.
-
-Never trust:
-
-userId from query
-
-Use:
-
-Authenticated session
-
-↓
-
-Current user
-
-↓
-
-Ownership scoped query
-
-User A must NOT see:
-
-User B Calendar
-
-User B Drafts
-
-User B Scheduled Posts
-
-User B Failed Posts
+Jangan mencampur dua state machine jika tidak diperlukan.
 
 ==================================================
-
-RLS
-
+7. APPROVAL STATE MACHINE
 ==================================================
 
-Audit existing RLS.
+Implementasikan state machine eksplisit.
 
-Do not weaken it.
+Contoh:
 
-Calendar database/service query must remain
+DRAFT
 
-ownership-safe.
+→ submit_for_review
 
-If new query or migration is required:
+IN_REVIEW
 
-verify RLS behavior.
 
-No migration should be added unless necessary.
+IN_REVIEW
+
+→ approve
+
+APPROVED
+
+
+IN_REVIEW
+
+→ request_changes
+
+CHANGES_REQUESTED
+
+
+CHANGES_REQUESTED
+
+→ edit
+
+DRAFT
+
+
+APPROVED
+
+→ content modified
+
+DRAFT
+
+atau
+
+APPROVAL_INVALIDATED
+
+Tentukan behavior yang paling aman.
 
 ==================================================
-
-NO DATABASE REDESIGN
-
+8. CONTENT MODIFICATION RULE
 ==================================================
 
-Phase 4 should primarily be:
+Ini sangat penting.
 
-Read + Presentation
+Jika content sudah:
+
+APPROVED
+
+kemudian diubah:
+
+caption
+media
+accounts
+platform
+schedule
+
+Approval harus dipertimbangkan kembali.
+
+Implementasikan behavior yang aman.
+
+Rekomendasi:
+
+APPROVED
 
 +
 
-Existing lifecycle actions.
+content modification
 
-DO NOT redesign:
+↓
 
-posts table
+DRAFT
 
-queue
+atau:
 
-worker
+APPROVAL INVALIDATED
 
-media
+↓
 
-OAuth
+DRAFT
 
-accounts
 
-unless audit proves a minimal change is required.
+Jangan membiarkan content yang sudah berubah tetap approved.
 
-==================================================
+Contoh:
 
-CALENDAR UI REQUIREMENTS
+Reviewer approve:
 
-==================================================
+Caption A
 
-Use existing:
+Kemudian editor mengubah menjadi:
 
-- Design system
+Caption B
 
-- Components
+Post tidak boleh tetap:
 
-- Cards
-
-- Buttons
-
-- Dialogs
-
-- Alerts
-
-- Typography
-
-- Spacing
-
-DO NOT introduce a second design system.
+approved.
 
 ==================================================
-
-MONTH VIEW UI
-
+9. REVIEW REQUEST
 ==================================================
 
-Required:
+Tambahkan kemampuan:
 
-Header:
+Submit for Review.
 
-Month
+Editor dapat:
 
-Year
+Draft
 
-Controls:
+↓
 
-Previous
+Submit for Review.
 
-Today
+Review request harus menyimpan:
 
-Next
+- post_id
+- workspace_id
+- requester
+- requested_at
 
-Calendar Grid:
+Jika perlu reviewer dapat ditentukan.
 
-7 days
+Namun Phase 16A harus tetap simple.
 
-Each day:
+Minimum:
 
-Date
+review request terbuka kepada user yang memiliki permission review.
 
-Calendar Items
+Optional:
 
-Current day:
+assign reviewer.
 
-Visually identifiable using existing design patterns.
-
-Do not hardcode colors unless existing design system
-
-already defines them.
-
-==================================================
-
-CALENDAR RESPONSIVENESS
+Jangan membuat assignment system terlalu kompleks jika belum diperlukan.
 
 ==================================================
-
-Desktop:
-
-Full Month Grid
-
-Tablet:
-
-Compact Grid
-
-Mobile:
-
-Usable Calendar
-
-Do not simply shrink desktop UI until unreadable.
-
-Possible mobile behavior:
-
-Agenda/List presentation
-
-or:
-
-Horizontally usable grid
-
-Follow existing responsive patterns.
-
+10. REVIEWER
 ==================================================
 
-MOBILE PRIORITY
+Reviewer adalah user yang memiliki permission:
+
+content:review
+
+atau permission equivalent.
+
+Tambahkan permission baru secara terpusat.
+
+Contoh:
+
+content:view
+
+content:create
+
+content:update
+
+content:delete
+
+content:submit_review
+
+content:review
+
+content:approve
+
+content:request_changes
+
+
+Namun jangan duplikasi permission yang sudah tersedia.
+
+Audit:
+
+permissions.ts
+
+terlebih dahulu.
+
+Tambahkan hanya permission yang diperlukan.
 
 ==================================================
-
-On mobile users must still be able to:
-
-Navigate dates.
-
-See scheduled posts.
-
-Open posts.
-
-Continue drafts.
-
-Cancel valid scheduled posts.
-
-Retry failed posts.
-
-Do not hide critical actions permanently.
-
+11. ROLE MATRIX
 ==================================================
 
-CALENDAR EMPTY STATE
+Gunakan existing role:
+
+owner
+
+admin
+
+editor
+
+viewer
+
+
+Rekomendasi default:
+
+OWNER
+
+- create
+- edit
+- submit review
+- review
+- approve
+- request changes
+- publish
+- schedule
+
+
+ADMIN
+
+- create
+- edit
+- submit review
+- review
+- approve
+- request changes
+- publish
+- schedule
+
+
+EDITOR
+
+- create
+- edit
+- submit review
+
+Tidak boleh:
+
+- approve own review jika policy melarang
+- approve content lain jika tidak memiliki permission
+
+
+VIEWER
+
+- view only
 
 ==================================================
+12. SELF APPROVAL POLICY
+==================================================
 
-If no scheduled posts:
+Implementasikan policy secara eksplisit.
 
-No posts scheduled for this period.
+Tentukan apakah:
+
+Editor boleh approve content sendiri.
+
+Rekomendasi default:
+
+SELF APPROVAL = FALSE
+
+Artinya:
+
+user yang membuat review request
+
+tidak boleh approve request tersebut sendiri.
+
+Namun:
+
+Owner/Admin dapat override.
+
+Atau implementasikan setting policy sederhana.
+
+Jangan membuat workspace configuration terlalu besar.
+
+Minimum:
+
+server-side enforcement.
+
+Jangan hanya menyembunyikan tombol UI.
+
+==================================================
+13. REVIEW COMMENTS
+==================================================
+
+Tambahkan reviewer comment.
+
+Saat:
+
+Request Changes
+
+reviewer dapat memberikan:
+
+comment.
+
+Contoh:
+
+"Tolong perbaiki caption bagian CTA."
+
+Data harus:
+
+- persistent
+- workspace-aware
+- ownership-safe
+
+Tambahkan tabel jika diperlukan.
+
+Contoh:
+
+content_reviews
+
+atau:
+
+post_reviews
+
+
+Struktur kemungkinan:
+
+id
+
+workspace_id
+
+post_id
+
+action
+
+comment
+
+actor_id
+
+created_at
+
 
 Action:
+
+submitted
+
+approved
+
+changes_requested
+
+resubmitted
+
+
+Audit trail sangat direkomendasikan.
+
+==================================================
+14. REVIEW HISTORY
+==================================================
+
+Setiap action review harus dapat dilihat.
+
+Contoh:
+
+Muhammad
+
+Submitted for review
+
+14 Sep 2026
+
+
+Admin
+
+Requested changes
+
+"Tolong perbaiki CTA"
+
+14 Sep 2026
+
+
+Muhammad
+
+Resubmitted
+
+15 Sep 2026
+
+
+Admin
+
+Approved
+
+15 Sep 2026
+
+
+Implementasikan timeline.
+
+Jangan expose:
+
+- internal token
+- secret
+- credential
+- stack trace
+
+==================================================
+15. DATABASE DESIGN
+==================================================
+
+Audit schema existing terlebih dahulu.
+
+Jangan membuat migration tanpa alasan.
+
+Tentukan desain minimal.
+
+Kemungkinan:
+
+A.
+
+Tambah field pada posts:
+
+approval_status
+
+review_requested_at
+
+approved_at
+
+approved_by
+
+
+dan tabel:
+
+post_review_events
+
+
+ATAU:
+
+B.
+
+Tabel approval terpisah.
+
+Pilih berdasarkan arsitektur existing.
+
+Prioritas:
+
+- sederhana
+- normalized
+- mudah di-query
+- audit-friendly
+- workspace-aware
+
+==================================================
+16. REKOMENDASI DATABASE
+==================================================
+
+Kemungkinan desain:
+
+posts
+
+approval_status
+
+
+post_review_events
+
+id
+
+workspace_id
+
+post_id
+
+actor_id
+
+action
+
+comment
+
+created_at
+
+
+Action:
+
+submitted
+
+approved
+
+changes_requested
+
+resubmitted
+
+approval_invalidated
+
+
+Jika menggunakan enum PostgreSQL:
+
+pastikan migration aman.
+
+Jika codebase menggunakan text + validation:
+
+ikuti existing convention.
+
+Jangan memperkenalkan pattern database baru tanpa alasan.
+
+==================================================
+17. WORKSPACE ISOLATION
+==================================================
+
+Semua approval resource harus memiliki:
+
+workspace_id
+
+atau ownership relationship yang dapat diverifikasi.
+
+Tidak boleh:
+
+Workspace A
+
+mengakses review:
+
+Workspace B.
+
+Semua domain query harus memverifikasi:
+
+workspace membership.
+
+==================================================
+18. AUTHORIZATION
+==================================================
+
+Gunakan:
+
+permissions.ts
+
+authorization.ts
+
+Jangan membuat authorization logic tersebar.
+
+Contoh:
+
+requireWorkspacePermission()
+
+atau helper existing.
+
+Semua API harus server-side authorized.
+
+UI permission check hanya tambahan UX.
+
+==================================================
+19. SUBMIT FOR REVIEW
+==================================================
+
+Tambahkan API.
+
+Contoh:
+
+POST
+
+/api/posts/:id/submit-review
+
+
+Behavior:
+
+1.
+
+Authenticate user.
+
+2.
+
+Resolve active workspace.
+
+3.
+
+Verify post belongs workspace.
+
+4.
+
+Verify permission.
+
+5.
+
+Verify post editable.
+
+6.
+
+Verify post belum:
+
+scheduled
+processing
+published
+
+7.
+
+Verify review state valid.
+
+8.
+
+Create review event.
+
+9.
+
+Update approval status.
+
+10.
+
+Create notification.
+
+11.
+
+Emit webhook event jika registry Phase 15 mendukung.
+
+12.
+
+Return safe response.
+
+==================================================
+20. APPROVE
+==================================================
+
+Tambahkan:
+
+POST
+
+/api/posts/:id/approve
+
+
+Behavior:
+
+1.
+
+Authenticate.
+
+2.
+
+Resolve workspace.
+
+3.
+
+Verify permission.
+
+4.
+
+Verify post status.
+
+5.
+
+Verify approval status:
+
+in_review.
+
+6.
+
+Verify self approval policy.
+
+7.
+
+Atomic update.
+
+8.
+
+Create review event.
+
+9.
+
+Create notification.
+
+10.
+
+Emit webhook event.
+
+11.
+
+Return result.
+
+==================================================
+21. REQUEST CHANGES
+==================================================
+
+API:
+
+POST
+
+/api/posts/:id/request-changes
+
+
+Payload:
+
+comment
+
+
+Validation:
+
+comment wajib.
+
+Trim whitespace.
+
+Maximum length.
+
+Gunakan schema validation existing.
+
+Behavior:
+
+in_review
+
+↓
+
+changes_requested
+
+Create review event.
+
+Notify requester.
+
+Webhook event.
+
+==================================================
+22. RESUBMIT
+==================================================
+
+Editor dapat:
+
+changes_requested
+
+↓
+
+edit
+
+↓
+
+submit review
+
+Gunakan API submit review existing jika memungkinkan.
+
+Jangan membuat endpoint duplicate tanpa alasan.
+
+Review event:
+
+resubmitted.
+
+==================================================
+23. EDITING DURING REVIEW
+==================================================
+
+Tentukan policy eksplisit.
+
+Rekomendasi:
+
+Jika:
+
+in_review
+
+Editor tidak boleh mengubah content langsung.
+
+Atau:
+
+Editing otomatis menarik content kembali menjadi:
+
+draft.
+
+Saya merekomendasikan:
+
+Edit
+
+saat:
+
+in_review
+
+↓
+
+approval invalidated
+
+↓
+
+draft
+
+
+Dengan review event:
+
+review_cancelled_by_edit
+
+atau:
+
+approval_invalidated.
+
+Namun audit existing composer terlebih dahulu.
+
+Jangan membuat UX membingungkan.
+
+==================================================
+24. APPROVED CONTENT
+==================================================
+
+Jika:
+
+approved
+
+maka content dapat:
+
+Publish
+
+atau
+
+Schedule.
+
+Tentukan apakah approval wajib.
+
+Phase 16A sebaiknya:
+
+tidak langsung memaksa approval untuk semua workspace.
+
+Karena existing user flow sudah:
+
+Draft
+
+→ Publish
+
+Harus tetap compatible.
+
+==================================================
+25. APPROVAL MODE
+==================================================
+
+Implementasikan default compatibility:
+
+Approval workflow tidak wajib secara global.
+
+Contoh:
+
+approval_status:
+
+not_required
+
+draft
+
+in_review
+
+changes_requested
+
+approved
+
+
+Existing post:
+
+not_required
+
+Dengan demikian:
+
+existing Publish
+
+tetap bekerja.
+
+Content yang masuk workflow:
+
+harus approved sebelum:
+
+Schedule
+
+atau Publish.
+
+==================================================
+26. PUBLISH GUARD
+==================================================
+
+Jika post menggunakan approval workflow:
+
+approval_status != approved
+
+maka:
+
+Publish
+
+harus ditolak.
+
+Schedule
+
+harus ditolak.
+
+Error aman:
+
+"This post must be approved before publishing."
+
+atau equivalent.
+
+Enforcement harus:
+
+server-side.
+
+Jangan hanya UI.
+
+==================================================
+27. APPROVAL ENABLEMENT
+==================================================
+
+Jangan langsung membuat workspace settings besar.
+
+Implementasikan cara minimal.
+
+Kemungkinan:
+
+approval workflow digunakan ketika user:
+
+Submit for Review.
+
+Jika belum pernah submit:
+
+approval_status = not_required.
+
+Jika submit:
+
+approval becomes required.
+
+Ini menjaga backward compatibility.
+
+==================================================
+28. CREATE POST COMPATIBILITY
+==================================================
+
+Existing flow harus tetap:
 
 Create Post
 
-or:
+→ Publish Now
 
-Create Draft
+→ Success
 
-Follow existing UX.
 
-==================================================
+dan:
 
-UNSCHEDULED DRAFT EMPTY STATE
+Create Post
 
-==================================================
+→ Schedule
 
-If no Drafts:
+→ Success
 
-No drafts to continue.
 
-Do not render empty broken sidebar.
+tanpa approval wajib.
 
-==================================================
-
-LOADING STATE
+Approval adalah workflow tambahan.
 
 ==================================================
-
-Calendar navigation should show proper loading.
-
-Examples:
-
-Loading calendar...
-
-Skeleton
-
-Existing loading components
-
-Do not freeze UI.
-
+29. DRAFT INTEGRATION
 ==================================================
 
-ERROR STATE
+Integrasikan dengan Phase 3 Draft.
+
+Draft dapat:
+
+Save Draft.
+
+Kemudian:
+
+Submit for Review.
+
+Review request harus menggunakan:
+
+postId existing.
+
+Jangan membuat post baru.
 
 ==================================================
-
-Use safe error messages.
-
-Examples:
-
-We couldn't load your calendar.
-
-We couldn't update this post.
-
-We couldn't cancel this scheduled post.
-
-We couldn't load posts for this date range.
-
-Do not expose:
-
-SQL
-
-Supabase internals
-
-Stack traces
-
-Queue internals
-
-Provider raw responses
-
+30. TEMPLATE INTEGRATION
 ==================================================
 
-CANCEL CONFIRMATION
+Template:
 
-==================================================
-
-If Calendar exposes Cancel:
-
-Require confirmation if existing UI pattern supports it.
-
-Example:
-
-Cancel scheduled post?
-
-This prevents accidental cancellation.
-
-Do not implement destructive action without reasonable
-
-UX protection.
-
-==================================================
-
-RETRY CONFIRMATION
-
-==================================================
-
-Retry may execute provider work.
-
-Use existing UX conventions.
-
-Do not create duplicate retry flow.
-
-==================================================
-
-ACCESSIBILITY
-
-==================================================
-
-Ensure:
-
-Keyboard navigation.
-
-Semantic buttons.
-
-Accessible labels.
-
-Calendar controls have labels.
-
-Screen-reader readable dates.
-
-Status indicators have text or aria labels.
-
-Focus management for dialogs.
-
-No critical icon-only action without accessible label.
-
-==================================================
-
-PERFORMANCE
-
-==================================================
-
-Calendar must not:
-
-Load all Posts.
-
-Load all media.
-
-Load all connected accounts.
-
-Run N+1 queries.
-
-Use:
-
-Date range queries.
-
-Ownership scope.
-
-Efficient aggregation.
-
-Small DTOs.
-
-Lazy media where appropriate.
-
-==================================================
-
-CAPTION PREVIEW
-
-==================================================
-
-Calendar item should show limited caption.
-
-Example:
-
-First 50-100 characters
-
-Use existing text truncation patterns.
-
-Do not send huge post content if Calendar does not
-
-need it.
-
-==================================================
-
-MEDIA PREVIEW PERFORMANCE
-
-==================================================
-
-If thumbnail supported:
-
-Use thumbnail.
-
-Do not load original video.
-
-Do not autoplay video.
-
-Do not preload all media.
-
-Calendar must remain fast.
-
-==================================================
-
-FAILED POSTS
-
-==================================================
-
-Decide based on UX.
-
-Possible:
-
-Failed posts shown on original scheduled date.
-
-With:
-
-Failed indicator.
-
-Action:
-
-Retry
-
-Do not invent failure data.
-
-Use existing failure lifecycle.
-
-==================================================
-
-PUBLISHED POSTS
-
-==================================================
-
-Decide based on existing Calendar scope.
-
-Possible:
-
-Show published posts historically.
-
-Or:
-
-Calendar only shows schedule lifecycle.
-
-Do not overload Phase 4.
-
-Priority:
-
-Scheduled management.
-
-==================================================
-
-CALENDAR FILTERS
-
-==================================================
-
-Optional filters:
-
-Status
-
-Platform
-
-Only implement if:
-
-Existing data abstraction makes it simple.
-
-UI benefits clearly.
-
-Do NOT build a complex analytics filter system.
-
-Possible:
-
-All
-
-Scheduled
-
-Published
-
-Failed
-
-Platform:
-
-All Platforms
-
-Facebook
-
-Instagram
-
-Use existing platform abstraction.
-
-==================================================
-
-FILTER SECURITY
-
-==================================================
-
-Filters must never bypass ownership.
-
-Example:
-
-status=scheduled
-
-still:
-
-current user only.
-
-==================================================
-
-FILTER URL STATE
-
-==================================================
-
-If filters implemented:
-
-Consider URL state.
-
-Example:
-
-/calendar?view=month
-
-Do not create excessive URL complexity.
-
-Keep navigation predictable.
-
-==================================================
-
-CALENDAR STATE
-
-==================================================
-
-Preferred concepts:
-
-Current Date
-
-View
-
-Date Range
-
-Filters
-
-Avoid storing server data unnecessarily in global state.
-
-Follow existing React/Next architecture.
-
-==================================================
-
-NEXT.JS ARCHITECTURE
-
-==================================================
-
-Audit current Next.js patterns.
-
-Use:
-
-Server Components
-
-Server Actions
-
-Route Handlers
-
-according to existing architecture.
-
-Do not introduce client-side database access.
-
-Do not expose privileged server logic to browser.
-
-==================================================
-
-NO DIRECT SUPABASE FROM UI
-
-==================================================
-
-Calendar UI should NOT suddenly bypass architecture
-
-and directly query Supabase.
-
-Preferred:
-
-UI
+Use Template
 
 ↓
 
-Service/API
+Draft
 
 ↓
 
-Domain
+optional Submit for Review.
 
-↓
+Template sendiri tidak membutuhkan approval.
 
-Supabase
+Jangan menambahkan approval ke:
 
-Follow actual repository architecture.
+content_templates
 
-==================================================
-
-TESTING REQUIREMENTS
+kecuali benar-benar diperlukan.
 
 ==================================================
-
-Add comprehensive tests.
-
-Do not reduce existing tests.
-
+31. DUPLICATE INTEGRATION
 ==================================================
 
-TEST: CALENDAR RANGE
+Duplicate post:
+
+harus menghasilkan:
+
+Draft.
+
+Approval:
+
+not_required
+
+atau reset.
+
+Jangan copy:
+
+approved state.
+
+Jangan copy:
+
+review history.
 
 ==================================================
-
-Verify:
-
-Correct Posts returned for date range.
-
-Outside range not returned.
-
-Ownership preserved.
-
-No unnecessary statuses.
-
-Correct boundaries.
-
+32. MEDIA INTEGRATION
 ==================================================
 
-TEST: MONTH VIEW
+Media Library existing harus tetap.
+
+Jika approved content media berubah:
+
+approval invalidated.
+
+Pastikan media reference tetap aman.
 
 ==================================================
-
-Verify:
-
-Scheduled post appears on correct day.
-
-Month navigation changes range.
-
-Previous month.
-
-Next month.
-
-Today.
-
-Month boundary.
-
+33. SCHEDULE INTEGRATION
 ==================================================
 
-TEST: TIMEZONE
+Schedule behavior:
+
+NOT_REQUIRED
+
+→ existing behavior.
+
+APPROVED
+
+→ boleh schedule.
+
+IN_REVIEW
+
+→ reject.
+
+CHANGES_REQUESTED
+
+→ reject.
+
+DRAFT
+
+→ reject jika approval workflow aktif.
+
+Server-side guard.
 
 ==================================================
-
-Verify:
-
-UTC conversion.
-
-Asia/Jakarta or actual default timezone.
-
-Day boundary.
-
-Month boundary.
-
-Correct display date.
-
-Correct display time.
-
+34. CALENDAR
 ==================================================
 
-TEST: OWNERSHIP
+Calendar existing tidak perlu menampilkan review sebagai schedule event.
+
+Namun jika berguna:
+
+tambahkan indicator pada detail.
+
+Contoh:
+
+Approval:
+
+Approved
+
+atau:
+
+In Review.
+
+Jangan memasukkan:
+
+draft review
+
+sebagai calendar event.
 
 ==================================================
-
-User A creates Scheduled Post.
-
-User B requests Calendar.
-
-User B must NOT see User A Post.
-
+35. HISTORY
 ==================================================
 
-TEST: DRAFT
+History existing harus tetap.
+
+Detail post dapat menampilkan:
+
+Approval status.
+
+Contoh:
+
+Approval
+
+Approved
+
+by Admin
+
+15 Sep 2026
+
+
+Review timeline.
+
+Jangan membuat History utama terlalu kompleks.
 
 ==================================================
-
-Unscheduled Draft:
-
-Does NOT occupy scheduled Calendar slot.
-
-Draft can appear in Draft section if implemented.
-
-Continue Draft action points to correct Draft.
-
+36. DASHBOARD
 ==================================================
 
-TEST: SCHEDULED POST
+Tambahkan approval summary secara minimal.
+
+Contoh:
+
+Pending Review
+
+3
+
+Changes Requested
+
+2
+
+
+Hanya jika data tersedia dengan query efisien.
+
+Jangan membuat dashboard query mengambil semua post.
+
+Gunakan aggregation server-side.
 
 ==================================================
-
-Scheduled Post:
-
-Appears in Calendar.
-
-Correct time.
-
-Correct date.
-
-Correct platform.
-
-Correct status.
-
+37. NOTIFICATION INTEGRATION
 ==================================================
 
-TEST: MULTI ACCOUNT
+Gunakan Phase 13 notification system.
+
+Tambahkan event:
+
+CONTENT_SUBMITTED_FOR_REVIEW
+
+CONTENT_APPROVED
+
+CONTENT_CHANGES_REQUESTED
+
+CONTENT_RESUBMITTED
+
+APPROVAL_INVALIDATED
+
+
+Notification recipients harus sesuai role dan context.
 
 ==================================================
-
-One Post.
-
-Multiple accounts/platforms.
-
-Verify:
-
-One logical Calendar Item.
-
-Correct platform indicators.
-
-No accidental duplicate visual data.
-
-Follow actual domain model.
-
+38. NOTIFICATION RECIPIENTS
 ==================================================
 
-TEST: CANCEL
+Submit Review:
+
+notify users yang memiliki:
+
+content:review
+
+dalam workspace.
+
+Approved:
+
+notify requester / creator.
+
+Changes Requested:
+
+notify requester.
+
+Resubmitted:
+
+notify reviewer jika reviewer assigned.
+
+Jika reviewer tidak assigned:
+
+hindari spam seluruh workspace jika memungkinkan.
+
+Gunakan recipient resolution aman.
 
 ==================================================
-
-If Calendar exposes Cancel:
-
-Scheduled Post
-
-↓
-
-Cancel
-
-Verify:
-
-Existing cancel service reused.
-
-Correct lifecycle.
-
-Calendar updates.
-
-No duplicate cancel logic.
-
+39. NOTIFICATION DEDUPLICATION
 ==================================================
 
-TEST: RETRY
+Gunakan deduplication Phase 13.
+
+Jangan membuat notification setiap polling.
+
+Tidak ada polling event baru.
+
+Hanya event action.
 
 ==================================================
-
-If Calendar exposes Retry:
-
-Failed Post
-
-↓
-
-Retry
-
-Verify:
-
-Existing retry service reused.
-
-Correct lifecycle.
-
-No duplicate retry architecture.
-
+40. WEBHOOK INTEGRATION
 ==================================================
 
-TEST: API SECURITY
+Gunakan Phase 15 event registry.
+
+Tambahkan event:
+
+post.review_requested
+
+post.approved
+
+post.changes_requested
+
+post.resubmitted
+
+post.approval_invalidated
+
+
+Payload harus aman.
+
+Contoh:
+
+event_id
+
+event_type
+
+workspace_id
+
+post_id
+
+actor_id
+
+timestamp
+
+
+Jangan expose:
+
+caption
+
+media URL
+
+token
+
+secret
+
+credential
+
+stack trace.
 
 ==================================================
-
-Verify Calendar response never exposes:
-
-Access tokens.
-
-Refresh tokens.
-
-OAuth secrets.
-
-Encrypted credentials.
-
-Service role keys.
-
-Provider secrets.
-
-Raw database errors.
-
+41. WEBHOOK DELIVERY
 ==================================================
 
-TEST: EMPTY STATE
+Jangan membuat webhook queue baru jika Phase 15:
+
+deliver-webhook
+
+sudah generic.
+
+Gunakan event registry existing.
 
 ==================================================
-
-No Posts.
-
-Calendar shows valid Empty State.
-
-No crash.
-
+42. QUEUE INTEGRATION
 ==================================================
 
-TEST: PERFORMANCE / QUERY
+Approval action sendiri tidak membutuhkan BullMQ.
+
+Jangan memasukkan approval request ke queue tanpa alasan.
+
+Queue hanya digunakan jika existing architecture membutuhkan background processing.
+
+Approval harus:
+
+transactional / synchronous domain action.
+
+Publish queue tetap:
+
+existing.
 
 ==================================================
-
-Where testable verify:
-
-Date range query used.
-
-Ownership scope.
-
-No unbounded all-post loading.
-
-No N+1 obvious regression.
-
+43. WORKER SAFETY
 ==================================================
 
-TEST: DASHBOARD CONSISTENCY
+Publish worker harus memverifikasi:
+
+approval requirement.
+
+Defense in depth.
+
+Jika post somehow masuk queue tetapi:
+
+approval belum valid,
+
+worker tidak boleh publish.
+
+Namun jangan merusak existing posts:
+
+approval_status = not_required.
 
 ==================================================
-
-If same scheduled Post appears in:
-
-Dashboard Upcoming Posts
-
-and:
-
-Calendar
-
-Verify consistent:
-
-Date.
-
-Time.
-
-Status.
-
-Timezone.
-
+44. RACE CONDITION
 ==================================================
 
-REGRESSION PROTECTION
+Tangani concurrency.
+
+Contoh:
+
+Reviewer A
+
+approve.
+
+Reviewer B
+
+request changes.
+
+Secara bersamaan.
+
+Gunakan:
+
+conditional update
+
+atau transaction.
+
+Transition hanya valid jika:
+
+current status sesuai.
+
+Contoh:
+
+UPDATE
+
+WHERE:
+
+approval_status = in_review.
+
+
+Jika zero rows:
+
+return conflict.
+
+Gunakan HTTP:
+
+409 Conflict.
 
 ==================================================
+45. IDEMPOTENCY
+==================================================
 
-DO NOT BREAK:
+Submit review harus aman terhadap duplicate request.
 
-AUTH
+Approve harus tidak menghasilkan:
 
-Login.
+multiple review events.
 
-Signup.
+Gunakan state transition guard.
 
-Session.
+Jangan mengandalkan frontend.
 
-Ownership.
+==================================================
+46. REVIEW EVENT SECURITY
+==================================================
 
-MEDIA
+User tidak boleh:
 
-Select File
+mengubah actor_id.
 
-↓
+workspace_id.
 
-Browser Memory
+created_at.
 
-↓
+Action harus ditentukan server.
 
-Object URL
+==================================================
+47. API ENDPOINTS
+==================================================
 
-↓
+Implementasikan minimal:
 
-Preview
+GET
 
-↓
+/api/posts/:id/review
 
-NO Storage Request
 
-Storage only:
+POST
+
+/api/posts/:id/submit-review
+
+
+POST
+
+/api/posts/:id/approve
+
+
+POST
+
+/api/posts/:id/request-changes
+
+
+Opsional:
+
+POST
+
+/api/posts/:id/withdraw-review
+
+
+Hanya implement jika diperlukan oleh UX.
+
+==================================================
+48. GET REVIEW
+==================================================
+
+Response:
+
+approval status.
+
+review history.
+
+requested by.
+
+timestamps.
+
+comment.
+
+permission hints jika diperlukan.
+
+Jangan expose unnecessary internal data.
+
+==================================================
+49. API RESPONSE
+==================================================
+
+Ikuti format API existing.
+
+Audit:
+
+API-INTERNAL.md.
+
+Gunakan:
+
+consistent error format.
+
+Contoh:
+
+401
+
+Unauthorized.
+
+403
+
+Permission denied.
+
+404
+
+Post not found.
+
+409
+
+Invalid review state.
+
+422
+
+Validation failed.
+
+==================================================
+50. API DOCUMENTATION
+==================================================
+
+Update:
+
+docs/API-INTERNAL.md
+
+Tambahkan:
+
+approval endpoints.
+
+permissions.
+
+state transition.
+
+example response.
+
+error response.
+
+security notes.
+
+==================================================
+51. UI ROUTE
+==================================================
+
+Jangan membuat page baru jika tidak diperlukan.
+
+Integrasikan approval ke:
+
+Draft detail.
+
+Create Post editor.
+
+History detail.
+
+Post detail existing.
+
+Namun jika UX membutuhkan:
+
+gunakan component reusable.
+
+==================================================
+52. COMPOSER UI
+==================================================
+
+Tambahkan action:
 
 Save Draft
+
+Submit for Review
 
 Publish
 
 Schedule
 
-POSTS
 
-Create Post.
+Action visibility berdasarkan:
 
-Save Draft.
+approval status
+
+permission.
+
+Contoh:
+
+EDITOR
+
+Draft
+
+→ Save Draft
+
+→ Submit for Review.
+
+
+ADMIN
+
+In Review
+
+→ Approve
+
+→ Request Changes.
+
+==================================================
+53. REVIEW PANEL
+==================================================
+
+Buat component reusable.
+
+Contoh:
+
+src/components/posts/review/
+
+review-panel.tsx
+
+review-status-badge.tsx
+
+review-timeline.tsx
+
+review-actions.tsx
+
+
+Ikuti naming convention existing.
+
+==================================================
+54. REVIEW STATUS UI
+==================================================
+
+Tampilkan:
+
+Draft
+
+In Review
+
+Changes Requested
+
+Approved
+
+Not Required
+
+
+Gunakan badge existing.
+
+Jangan membuat design system baru.
+
+Gunakan:
+
+shadcn/ui
+
+existing Tailwind convention.
+
+==================================================
+55. REQUEST CHANGES UI
+==================================================
+
+Gunakan dialog.
+
+Textarea:
+
+Comment.
+
+Validation client:
+
+minimum.
+
+Validation server:
+
+authoritative.
+
+Jangan mengirim empty comment.
+
+==================================================
+56. APPROVE UI
+==================================================
+
+Approve dapat:
+
+langsung action.
+
+Atau confirmation kecil.
+
+Tidak perlu dialog besar.
+
+Setelah success:
+
+refresh state.
+
+Notification:
+
+server generated.
+
+==================================================
+57. REVIEW TIMELINE UI
+==================================================
+
+Contoh:
+
+● Submitted for review
+
+Muhammad
+
+14 Sep 2026 14:00
+
+
+● Changes requested
+
+Admin
+
+"Tolong perbaiki CTA."
+
+14 Sep 2026 14:20
+
+
+● Resubmitted
+
+Muhammad
+
+15 Sep 2026 10:00
+
+
+● Approved
+
+Admin
+
+15 Sep 2026 10:15
+
+==================================================
+58. EDITOR EXPERIENCE
+==================================================
+
+Jika:
+
+changes_requested.
+
+Tampilkan:
+
+review comment.
+
+CTA:
 
 Edit Draft.
 
+Setelah edit:
+
+Save Draft.
+
+Kemudian:
+
+Submit for Review.
+
+==================================================
+59. REVIEWER EXPERIENCE
+==================================================
+
+Reviewer melihat:
+
+content preview.
+
+caption.
+
+selected platforms.
+
+accounts.
+
+media.
+
+schedule information.
+
+Review history.
+
+Actions:
+
+Approve.
+
+Request Changes.
+
+==================================================
+60. SECURITY UI
+==================================================
+
+Jangan mengandalkan UI.
+
+Semua endpoint:
+
+server authorization.
+
+UI hanya menyembunyikan action.
+
+==================================================
+61. RLS
+==================================================
+
+Tambahkan Supabase RLS.
+
+Semua tabel baru:
+
+workspace membership aware.
+
+User hanya dapat:
+
+SELECT
+
+review resource dalam workspace.
+
+INSERT:
+
+server/domain policy sesuai membership.
+
+UPDATE:
+
+sesuai authorization.
+
+Namun ingat:
+
+complex role permission biasanya di server.
+
+RLS minimal harus:
+
+mencegah cross-workspace access.
+
+==================================================
+62. RLS MIGRATION
+==================================================
+
+Buat migration:
+
+supabase/migrations/
+
+dengan nomor sesuai repository.
+
+Jangan hardcode nomor.
+
+Audit migration terakhir.
+
+==================================================
+63. DRIZZLE MIGRATION
+==================================================
+
+Buat migration baru.
+
+Gunakan:
+
+npm run db:generate
+
+jika existing workflow menggunakan Drizzle generate.
+
+Jangan edit migration lama.
+
+==================================================
+64. EXISTING DATABASE
+==================================================
+
+Pastikan migration:
+
+compatible existing data.
+
+Existing posts harus tetap bekerja.
+
+Default:
+
+approval_status = not_required
+
+atau equivalent.
+
+Jangan membuat existing post menjadi:
+
+in_review.
+
+==================================================
+65. BACKFILL
+==================================================
+
+Migration harus menangani:
+
+existing rows.
+
+Gunakan safe default.
+
+Jika column:
+
+NOT NULL,
+
+pastikan existing data dapat dimigrate.
+
+==================================================
+66. INDEXES
+==================================================
+
+Tambahkan index hanya jika diperlukan.
+
+Kemungkinan:
+
+workspace_id + approval_status
+
+post_id + created_at
+
+workspace_id + created_at
+
+Jangan over-index.
+
+==================================================
+67. DOMAIN LAYER
+==================================================
+
+Tambahkan domain module.
+
+Contoh:
+
+src/lib/domain/reviews.ts
+
+atau:
+
+src/lib/domain/post-approvals.ts
+
+
+Gunakan naming sesuai existing code.
+
+Domain menangani:
+
+submit.
+
+approve.
+
+request changes.
+
+get history.
+
+state transition.
+
+authorization integration.
+
+notification event.
+
+webhook event.
+
+==================================================
+68. JANGAN TARUH LOGIC DI ROUTE
+==================================================
+
+API route hanya:
+
+authenticate.
+
+parse input.
+
+call domain/service.
+
+return response.
+
+Business logic:
+
+domain layer.
+
+==================================================
+69. STATE TRANSITION HELPER
+==================================================
+
+Implementasikan state transition explicit.
+
+Contoh conceptual:
+
+canTransitionReviewState()
+
+submitForReview()
+
+approveReview()
+
+requestChanges()
+
+invalidateApproval()
+
+
+Jangan menggunakan:
+
+if chain besar tersebar di banyak file.
+
+==================================================
+70. VALIDATION
+==================================================
+
+Gunakan validation schemas existing.
+
+Tambahkan:
+
+submitReviewSchema
+
+requestChangesSchema
+
+
+Comment:
+
+trim.
+
+min length.
+
+max length.
+
+Reject:
+
+empty whitespace.
+
+==================================================
+71. CONTENT SNAPSHOT
+==================================================
+
+Pertimbangkan review snapshot.
+
+Namun jangan membuat kompleksitas tidak perlu.
+
+Minimum requirement:
+
+approval invalidated jika content berubah.
+
+Optional:
+
+content hash.
+
+Jika implement hash:
+
+harus deterministic.
+
+Jangan menyimpan media binary.
+
+Jika tidak diperlukan:
+
+gunakan update hooks/domain transition.
+
+==================================================
+72. CONTENT CHANGE DETECTION
+==================================================
+
+Audit semua jalur edit post:
+
+Create Post composer.
+
+Draft edit.
+
+Duplicate.
+
+Template.
+
+API.
+
+Schedule.
+
+Pastikan perubahan content utama dapat:
+
+invalidate approval.
+
+==================================================
+73. FIELDS YANG INVALIDATE APPROVAL
+==================================================
+
+Minimum:
+
+caption.
+
+media.
+
+platform.
+
+account.
+
+schedule.
+
+content data.
+
+Jangan invalidate hanya karena:
+
+analytics update.
+
+notification update.
+
+publish result.
+
+internal metadata.
+
+==================================================
+74. APPROVAL + SCHEDULE
+==================================================
+
+Jika post approved:
+
+Schedule.
+
+Setelah schedule:
+
+approval tetap:
+
+approved.
+
+Jangan reset approval hanya karena scheduling.
+
+Namun jika schedule/content diubah:
+
+tentukan policy.
+
+Rekomendasi:
+
+schedule time sendiri merupakan workflow change.
+
+Jika reviewer approval termasuk schedule:
+
+invalidate.
+
+Jika tidak:
+
+tetap approved.
+
+Untuk Phase 16A:
+
+pilih policy eksplisit dan konsisten.
+
+Dokumentasikan.
+
+==================================================
+75. CANCEL
+==================================================
+
+Existing cancel harus tetap.
+
+Cancel scheduled post tidak mengubah review history.
+
+Approval dapat tetap:
+
+approved.
+
+Atau reset sesuai policy.
+
+Jangan menghapus review history.
+
+==================================================
+76. RETRY
+==================================================
+
+Retry publish existing harus tetap.
+
+Jika previously approved post gagal:
+
+Retry tidak perlu approval ulang.
+
+Karena content sama.
+
+==================================================
+77. PARTIAL FAILURE
+==================================================
+
+Approval tidak berubah karena:
+
+partial failure.
+
+Retry tetap existing.
+
+==================================================
+78. ACCOUNT DISCONNECT
+==================================================
+
+Phase 7 behavior tetap.
+
+Approval tidak boleh bypass:
+
+account health.
+
+==================================================
+79. DASHBOARD AGGREGATION
+==================================================
+
+Jika menambahkan:
+
+Pending Review.
+
+Gunakan server aggregation.
+
+Jangan:
+
+fetch all posts client-side.
+
+Filter:
+
+active workspace.
+
+==================================================
+80. NOTIFICATION EVENT REGISTRY
+==================================================
+
+Audit Phase 13 event architecture.
+
+Tambahkan event tanpa duplicate.
+
+Gunakan naming consistent.
+
+==================================================
+81. WEBHOOK EVENT REGISTRY
+==================================================
+
+Audit Phase 15 registry.
+
+Tambahkan:
+
+review events.
+
+Pastikan payload:
+
+versionable.
+
+safe.
+
+minimal.
+
+==================================================
+82. RELIABILITY
+==================================================
+
+Approval tidak membutuhkan monitoring queue.
+
+Namun jika publish guard worker menolak:
+
+unapproved post,
+
+error harus:
+
+safe.
+
+observable.
+
+Tidak expose:
+
+caption.
+
+token.
+
+media URL.
+
+==================================================
+83. AUDIT LOG
+==================================================
+
+Review history berfungsi sebagai audit log.
+
+Setiap event:
+
+actor.
+
+action.
+
+timestamp.
+
+comment jika ada.
+
+Jangan membuat audit system kedua.
+
+==================================================
+84. DELETE POST
+==================================================
+
+Jika post deleted:
+
+Review events harus:
+
+cascade
+
+atau existing cleanup strategy.
+
+Audit foreign key behavior.
+
+Jangan meninggalkan orphan.
+
+==================================================
+85. WORKSPACE DELETE
+==================================================
+
+Review resources harus ikut cleanup workspace.
+
+Gunakan existing workspace delete strategy.
+
+==================================================
+86. MEMBER REMOVE
+==================================================
+
+Review history tetap.
+
+Actor yang sudah keluar workspace:
+
+historical identity tetap dapat direferensikan secara aman.
+
+Jangan menghapus review history.
+
+==================================================
+87. TRANSFER OWNERSHIP
+==================================================
+
+Tidak memengaruhi review state.
+
+Permission resolution harus menggunakan role baru.
+
+==================================================
+88. INVITATION
+==================================================
+
+Tidak memengaruhi review state.
+
+Jangan menambah approval logic ke invitation.
+
+==================================================
+89. API RATE LIMIT
+==================================================
+
+Audit existing rate limit.
+
+Tambahkan protection jika perlu:
+
+submit review.
+
+approve.
+
+request changes.
+
+Jangan membuat rate limit berlebihan.
+
+Gunakan existing helper.
+
+==================================================
+90. CSRF / AUTH
+==================================================
+
+Ikuti API security existing.
+
+Jangan membuat auth bypass.
+
+==================================================
+91. ERROR SAFETY
+==================================================
+
+Jangan expose:
+
+database errors.
+
+SQL.
+
+stack trace.
+
+internal IDs jika existing API tidak expose.
+
+Gunakan safe error.
+
+==================================================
+92. LOGGING
+==================================================
+
+Jangan log:
+
+caption.
+
+media URL.
+
+token.
+
+credential.
+
+secret.
+
+Log hanya:
+
+event type.
+
+workspace context jika existing logging aman.
+
+post identifier hanya jika existing policy mengizinkan.
+
+==================================================
+93. TESTING — UNIT
+==================================================
+
+Tambahkan test.
+
+Minimum:
+
+Review state transition.
+
+Draft → In Review.
+
+In Review → Approved.
+
+In Review → Changes Requested.
+
+Changes Requested → Draft / Resubmit.
+
+Approved modification invalidation.
+
+Invalid transition rejected.
+
+==================================================
+94. TESTING — AUTHORIZATION
+==================================================
+
+Test:
+
+Owner.
+
+Admin.
+
+Editor.
+
+Viewer.
+
+
+Verify:
+
+Editor submit.
+
+Viewer reject.
+
+Editor approve reject jika policy.
+
+Admin approve.
+
+Owner approve.
+
+Cross workspace reject.
+
+==================================================
+95. TESTING — SELF APPROVAL
+==================================================
+
+Test:
+
+Creator submit review.
+
+Creator attempts approve.
+
+Expected:
+
+403
+
+atau policy error.
+
+Admin other user approve:
+
+success.
+
+==================================================
+96. TESTING — OWNERSHIP
+==================================================
+
+Workspace A:
+
+post.
+
+Workspace B:
+
+review request.
+
+Expected:
+
+404 atau 403 sesuai existing security convention.
+
+Tidak boleh leak existence.
+
+==================================================
+97. TESTING — RACE CONDITION
+==================================================
+
+Test conceptual concurrency.
+
+Contoh:
+
+Approve.
+
+Request Changes.
+
+Current state berubah.
+
+Second transition:
+
+409.
+
+==================================================
+98. TESTING — IDEMPOTENCY
+==================================================
+
+Submit review dua kali.
+
+Tidak boleh menghasilkan:
+
+duplicate review event.
+
+Approve dua kali.
+
+Tidak boleh menghasilkan:
+
+duplicate approval event.
+
+==================================================
+99. TESTING — PUBLISH GUARD
+==================================================
+
+Post:
+
+in_review.
+
+Attempt Publish.
+
+Expected reject.
+
+Attempt Schedule.
+
+Expected reject.
+
+Post:
+
+approved.
+
+Publish allowed.
+
+Post:
+
+not_required.
+
+Existing publish allowed.
+
+==================================================
+100. TESTING — EDIT INVALIDATION
+==================================================
+
+Approved post.
+
+Edit caption.
+
+Expected:
+
+approval invalidated.
+
+Approved post.
+
+Edit media.
+
+Expected:
+
+approval invalidated.
+
+Approved post.
+
+Change account.
+
+Expected policy result.
+
+==================================================
+101. TESTING — NOTIFICATIONS
+==================================================
+
+Test:
+
+Submit review notification.
+
+Approval notification.
+
+Changes requested notification.
+
+Dedup behavior jika applicable.
+
+No duplicate spam.
+
+==================================================
+102. TESTING — WEBHOOK
+==================================================
+
+Test:
+
+review requested event.
+
+approved event.
+
+changes requested event.
+
+Payload safe.
+
+Webhook queue existing digunakan.
+
+==================================================
+103. TESTING — RLS
+==================================================
+
+Test atau verify:
+
+Workspace A cannot read review:
+
+Workspace B.
+
+Workspace member access sesuai policy.
+
+==================================================
+104. TESTING — REGRESSION
+==================================================
+
+Pastikan existing:
+
+Draft.
+
 Publish.
 
 Schedule.
 
-DRAFT
+Calendar.
 
-Create.
+History.
 
-Update.
+Retry.
 
-Delete.
+Cancel.
 
-Publish.
+Template.
 
-Schedule.
+Duplicate.
 
-Same postId.
+Media.
 
-PUBLISHING
+Analytics.
+
+Notifications.
+
+Webhooks.
+
+Workspace.
+
+Accounts.
+
+OAuth.
 
 Queue.
 
 Worker.
 
-Retry.
-
-Cancellation.
-
-Idempotency.
-
-Partial failure.
-
-OAUTH
-
-Facebook.
-
-Instagram.
-
-Connected Accounts.
-
-API
-
-Existing endpoints.
-
-DASHBOARD
-
-Statistics.
-
-Upcoming.
-
-Recent Activity.
-
-Failed Posts.
-
-Retry.
-
-Connected Accounts.
+tetap bekerja.
 
 ==================================================
-
-OUT OF SCOPE
-
+105. UI TESTING
 ==================================================
 
-DO NOT IMPLEMENT:
+Jika project memiliki component test:
 
-Drag and Drop scheduling.
+tambahkan:
 
-Automatic rescheduling unless existing architecture
+Review status.
 
-already safely supports it.
+Submit button.
 
-Calendar realtime.
+Approve button permission.
 
-WebSockets.
+Request changes dialog.
 
-Supabase Realtime.
+Timeline rendering.
 
-Polling loops.
+==================================================
+106. TYPE SAFETY
+==================================================
 
-Auto-save.
+Jangan gunakan:
 
-New Draft architecture.
+any
 
-New queue.
+tanpa alasan.
 
-New worker.
+Gunakan inferred types.
 
-New publishing system.
+Drizzle types.
 
-New scheduling system.
+Schema validation.
 
-Analytics dashboard.
+==================================================
+107. FILE ORGANIZATION
+==================================================
 
-Templates.
+Kemungkinan struktur:
 
-Public API.
+src/lib/domain/
+
+reviews.ts
+
+
+src/lib/validation/
+
+review-schemas.ts
+
+
+src/components/posts/review/
+
+review-panel.tsx
+
+review-status-badge.tsx
+
+review-timeline.tsx
+
+review-actions.tsx
+
+
+src/app/api/posts/[id]/
+
+review/
+
+submit-review/
+
+approve/
+
+request-changes/
+
+
+Sesuaikan dengan existing route convention.
+
+Jangan duplicate architecture.
+
+==================================================
+108. DOKUMENTASI
+==================================================
+
+Buat:
+
+docs/PHASE-16A-CONTENT-APPROVAL-WORKFLOW.md
+
+
+Dokumentasi harus menjelaskan:
+
+Architecture.
+
+State machine.
+
+Permissions.
+
+API.
+
+Database.
+
+RLS.
+
+Notifications.
 
 Webhooks.
 
-Team collaboration.
+Security.
 
-Approval workflows.
+Approval invalidation.
 
-Phase 5 full Post Detail redesign.
+Backward compatibility.
 
-Phase 4 is:
-
-CALENDAR
-
-+
-
-SCHEDULE MANAGEMENT
+Known limitations.
 
 ==================================================
-
-DATABASE RULE
-
+109. API DOCS
 ==================================================
 
-Do not add migration unless necessary.
+Update:
 
-Before migration answer internally:
+docs/API-INTERNAL.md
 
-1.
+Tambahkan:
 
-Can existing scheduled timestamp be queried?
+GET review.
 
-2.
+Submit review.
 
-Can existing posts status support Calendar?
+Approve.
 
-3.
+Request changes.
 
-Can existing account relationships provide platforms?
+Errors.
 
-4.
+Permissions.
 
-Can existing media references provide thumbnails?
-
-5.
-
-Can existing Services provide required data?
-
-If YES:
-
-No migration.
-
-If migration required:
-
-Keep minimal.
-
-Preserve:
-
-Existing data.
-
-RLS.
-
-Indexes.
-
-Post lifecycle.
-
-Queue.
-
-Document exactly why.
+State rules.
 
 ==================================================
-
-FULL FINAL AUDIT
-
+110. MASTER PLAN
 ==================================================
 
-Before finishing verify:
+Jangan mengubah:
 
-ARCHITECTURE
+Master Plan
 
-1. Calendar uses real data.
+kecuali user secara eksplisit meminta.
 
-2. No fake Calendar data.
+Master Plan dianggap:
 
-3. Existing Service Layer reused.
-
-4. No direct database logic duplication.
-
-5. Existing schedule logic reused.
-
-6. Existing cancel logic reused.
-
-7. Existing retry logic reused.
-
-8. No second queue.
-
-9. No second worker.
-
-10. One source of truth.
-
-CALENDAR
-
-11. Month View works.
-
-12. Date navigation works.
-
-13. Today works.
-
-14. Correct Posts displayed.
-
-15. Correct statuses displayed.
-
-16. Correct platforms displayed.
-
-17. Correct time displayed.
-
-18. Correct timezone.
-
-19. Empty state works.
-
-20. Mobile usable.
-
-DRAFT
-
-21. Draft does not occupy fake Calendar slot.
-
-22. Draft access remains available.
-
-23. Continue Draft works.
-
-SCHEDULE
-
-24. Scheduled Post appears.
-
-25. Cancel works if supported.
-
-26. Retry works if supported.
-
-27. No duplicate scheduling logic.
-
-28. No queue duplication.
-
-MEDIA
-
-29. Calendar does not upload media.
-
-30. Calendar does not call /api/media/upload.
-
-31. Calendar only uses persisted media.
-
-32. Large media not unnecessarily loaded.
-
-SECURITY
-
-33. Authentication enforced.
-
-34. Ownership enforced.
-
-35. RLS preserved.
-
-36. Tokens hidden.
-
-37. Secrets hidden.
-
-38. Safe errors.
-
-PERFORMANCE
-
-39. Server-side date range.
-
-40. No all-post loading.
-
-41. No obvious N+1.
-
-42. Efficient DTO.
-
-REGRESSION
-
-43. Create Post works.
-
-44. Save Draft works.
-
-45. Publish works.
-
-46. Schedule works.
-
-47. Dashboard works.
-
-48. Media Preview works.
-
-49. Internal API works.
-
-50. OAuth/Accounts unaffected.
+planning document.
 
 ==================================================
-
-VALIDATION
-
+111. MIGRATION SAFETY
 ==================================================
 
-Run ALL commands from:
+Sebelum migration:
 
-C:\Users\aldis\Documents\Codex\AutoPost-v1
+Audit migration terakhir.
 
-Verify root:
+Gunakan nomor berikutnya.
 
-git rev-parse --show-toplevel
+Jangan rename migration lama.
 
-Then run:
-
-npm run lint
-
-npm run typecheck
-
-npm test
-
-npm run test:integration
-
-npm run build
-
-git diff --check
-
-IMPORTANT:
-
-Do not claim PASS without actually running command.
-
-Do not use scoped validation instead of full validation.
-
-All commands must run from actual repository root.
+Jangan edit applied migration.
 
 ==================================================
-
-VALIDATION FAILURE
-
+112. LIVE DATABASE
 ==================================================
 
-If any validation fails report:
+Jika:
 
-1. Command.
+db:migrate
 
-2. Exact error.
+gagal karena:
 
-3. File.
+environment.
 
-4. Pre-existing or introduced.
+sandbox.
 
-5. Relation to Phase 4.
+connection.
 
-6. Attempted fix.
+Jangan mengklaim migration sudah diterapkan live.
 
-7. Final status.
+Laporkan:
 
-Do not hide failures.
+- migration generated
+- local/PGlite validation
+- live migration status
 
-==================================================
-
-FINAL REPORT
-
-==================================================
-
-Provide the following.
+secara jujur.
 
 ==================================================
-
-## 1. CALENDAR ARCHITECTURE
-
-Explain:
-
-Where Calendar data comes from.
-
-Which Service/API is used.
-
-Why this architecture was chosen.
-
-How duplicate queries were avoided.
-
+113. JANGAN MELAKUKAN INI
 ==================================================
 
-## 2. REAL POST LIFECYCLE
+Jangan:
 
-List actual statuses discovered.
-
-Show which statuses appear in Calendar.
-
-Example:
-
-Draft
-
-↓
-
-Not scheduled
-
-Scheduled
-
-↓
-
-Calendar
-
-Publishing
-
-↓
-
-Optional active display
-
-Published
-
-↓
-
-Historical display if implemented
-
-Failed
-
-↓
-
-Failure indicator / Retry
-
-Use actual implementation.
+- rewrite seluruh posts domain
+- rewrite worker
+- rewrite queue
+- rewrite notification system
+- rewrite webhook system
+- mengganti permission architecture
+- mengganti database ORM
+- mengubah RLS existing tanpa alasan
+- membuat approval system terpisah dari workspace
+- menyimpan token
+- expose credential
+- membuat approval wajib untuk existing post
+- membuat frontend authorization sebagai satu-satunya protection
+- membuat status publishing baru jika approval state terpisah lebih aman
 
 ==================================================
-
-## 3. USER FLOW
-
-Show:
-
-Dashboard
-
-↓
-
-View Calendar
-
-↓
-
-Calendar
-
-↓
-
-Navigate Date
-
-↓
-
-View Scheduled Post
-
-↓
-
-Open Post
-
-Then possible actions.
-
-Also show:
-
-Draft
-
-↓
-
-Draft Section
-
-↓
-
-Continue Editing
-
+114. IMPLEMENTATION ORDER
 ==================================================
 
-## 4. CALENDAR VIEWS
+Kerjakan dengan urutan:
 
-State:
+STEP 1
 
-Month View.
+Audit existing:
 
-Week View.
+posts.
 
-Day View.
+draft.
 
-Clearly mark:
+permissions.
 
-Implemented.
+authorization.
 
-Not implemented.
+workspace.
 
-Reason.
+notifications.
 
-==================================================
+webhooks.
 
-## 5. DATE NAVIGATION
+queue.
 
-Explain:
+worker.
 
-Previous.
+schema.
 
-Next.
+migrations.
 
-Today.
 
-Date range query.
+STEP 2
 
-==================================================
+Tentukan:
 
-## 6. TIMEZONE
+approval architecture.
 
-Explain:
 
-Database timezone.
+STEP 3
 
-Application timezone.
+Implement:
 
-Default timezone.
+database schema.
 
-Calendar conversion.
 
-Month boundary behavior.
+STEP 4
 
-Day boundary behavior.
+Generate:
 
-==================================================
+Drizzle migration.
 
-## 7. SCHEDULE MANAGEMENT
 
-Explain:
+STEP 5
 
-Existing schedule architecture reused.
+Implement:
 
-Cancel.
+Supabase RLS.
 
-Retry.
 
-Reschedule.
+STEP 6
 
-Clearly state:
+Implement:
 
-Implemented.
+permissions.
 
-Not implemented.
 
-Reason.
+STEP 7
 
-==================================================
+Implement:
 
-## 8. DRAFT INTEGRATION
+state machine.
 
-Explain:
 
-How unscheduled Drafts behave.
+STEP 8
 
-Where they appear.
+Implement:
 
-How Continue Editing works.
+domain layer.
 
-==================================================
 
-## 9. DASHBOARD INTEGRATION
+STEP 9
 
-Explain:
+Integrate:
 
-View Calendar Quick Action.
+post edit invalidation.
 
-Upcoming Post consistency.
 
-Date/time consistency.
+STEP 10
 
-==================================================
+Implement:
 
-## 10. MEDIA
+publish guard.
 
-Explain:
 
-Calendar media preview.
+STEP 11
 
-Persisted media only.
+Implement:
 
-No browser blob dependency.
+API.
 
-No upload during Calendar rendering.
 
-==================================================
+STEP 12
 
-## 11. API
+Integrate:
 
-List:
+notifications.
 
-New endpoints.
 
-Modified endpoints.
+STEP 13
 
-Reused endpoints.
+Integrate:
 
-For each explain:
+webhooks.
 
-Authentication.
 
-Ownership.
+STEP 14
+
+Integrate:
+
+worker defense.
+
+
+STEP 15
+
+Implement:
+
+UI.
+
+
+STEP 16
+
+Add:
+
+Dashboard summary jika efisien.
+
+
+STEP 17
+
+Testing.
+
+
+STEP 18
 
 Validation.
 
-Safe DTO.
-
+==================================================
+115. VALIDATION WAJIB
 ==================================================
 
-## 12. DATABASE
-
-Explicitly state:
-
-Migration:
-
-YES / NO
-
-Tables:
-
-Changed / Not Changed
-
-Columns:
-
-Changed / Not Changed
-
-Enums:
-
-Changed / Not Changed
-
-Indexes:
-
-Changed / Not Changed
-
-RLS:
-
-Changed / Not Changed
-
-Explain any changes.
-
-==================================================
-
-## 13. SECURITY
-
-Explain:
-
-Authentication.
-
-Ownership.
-
-Calendar isolation.
-
-RLS.
-
-Token protection.
-
-Secret protection.
-
-Safe errors.
-
-==================================================
-
-## 14. PERFORMANCE
-
-Explain:
-
-Date range query.
-
-Pagination if any.
-
-Media optimization.
-
-N+1 prevention.
-
-DTO optimization.
-
-==================================================
-
-## 15. TESTS
-
-List:
-
-New Unit Tests.
-
-New Integration Tests.
-
-Calendar Range Tests.
-
-Timezone Tests.
-
-Ownership Tests.
-
-Schedule Tests.
-
-Draft Tests.
-
-Cancel Tests.
-
-Retry Tests.
-
-Report totals.
-
-==================================================
-
-## 16. VALIDATION
-
-Show actual results:
+Jalankan:
 
 npm run lint
 
@@ -3446,130 +3266,369 @@ npm test
 
 npm run test:integration
 
+atau:
+
+npm run test:all
+
+sesuai repository.
+
+
+Jalankan:
+
 npm run build
+
+
+Jalankan:
 
 git diff --check
 
-==================================================
 
-## 17. FILES CREATED
+Jika tersedia:
 
-List every file.
+npm run db:generate
 
-==================================================
-
-## 18. FILES MODIFIED
-
-List every file.
-
-Explain why.
+Jalankan migration validation existing.
 
 ==================================================
-
-## 19. OUT OF SCOPE
-
-Explicitly confirm not implemented:
-
-Drag and Drop.
-
-Realtime.
-
-New Queue.
-
-New Worker.
-
-New Publish System.
-
-New Schedule System.
-
-Analytics.
-
-Templates.
-
-Public API.
-
+116. JIKA VALIDATION GAGAL
 ==================================================
 
-## 20. NEXT PHASE
+Jangan langsung mengubah unrelated code.
 
-Do not implement.
+Identifikasi:
 
-Next Phase:
+apakah error:
 
-PHASE 5
+baru
 
-POST DETAIL &amp; MANAGEMENT
+atau:
 
-Possible scope:
+pre-existing.
 
-Post Detail.
+Perbaiki hanya error yang disebabkan Phase 16A.
 
-Post Status.
+Jika error pre-existing:
 
-Post Result.
-
-Provider Result.
-
-Media.
-
-Platform Result.
-
-Cancel.
-
-Retry.
-
-Management.
-
-DO NOT implement Phase 5.
+laporkan.
 
 ==================================================
-
-## 21. GIT
-
-State:
-
-Commit created:
-
-YES / NO
-
-Expected:
-
-NO
-
+117. COMMIT
 ==================================================
 
-FINAL CRITICAL RULE
+JANGAN:
+
+git commit.
+
+JANGAN:
+
+git push.
+
+Kecuali user meminta.
 
 ==================================================
+118. FINAL REPORT
+==================================================
 
-DO NOT over-engineer Calendar.
+Setelah selesai laporkan:
 
-Audit first.
+# PHASE 16A COMPLETE
 
-Use real Post data.
+Dengan struktur:
 
-Reuse existing Service Layer.
+1.
 
-Reuse existing scheduling.
+SUMMARY
 
-Reuse existing queue.
 
-Reuse existing worker.
+2.
 
-Do not duplicate lifecycle.
+APPROVAL ARCHITECTURE
 
-Do not upload media when rendering Calendar.
 
-Do not break browser media preview.
+3.
 
-Do not weaken security.
+DATABASE CHANGES
 
-Do not weaken RLS.
 
-Do not create fake Calendar data.
+4.
 
-Do not hide validation failures.
+STATE MACHINE
 
-Validate from the real repository root.
 
-DO NOT MAKE A GIT COMMIT.
+5.
+
+PERMISSIONS
+
+
+6.
+
+API
+
+
+7.
+
+UI
+
+
+8.
+
+NOTIFICATIONS
+
+
+9.
+
+WEBHOOKS
+
+
+10.
+
+QUEUE / WORKER SAFETY
+
+
+11.
+
+RLS
+
+
+12.
+
+SECURITY
+
+
+13.
+
+TESTS
+
+
+14.
+
+VALIDATION
+
+
+15.
+
+MIGRATION STATUS
+
+
+16.
+
+FILES CHANGED
+
+
+17.
+
+BACKWARD COMPATIBILITY
+
+
+18.
+
+KNOWN LIMITATIONS
+
+
+19.
+
+GIT STATUS
+
+
+==================================================
+119. SUCCESS CRITERIA
+==================================================
+
+Phase 16A dianggap berhasil jika:
+
+Draft dapat:
+
+Submit for Review.
+
+
+Reviewer dapat:
+
+Approve.
+
+
+Reviewer dapat:
+
+Request Changes.
+
+
+Editor dapat:
+
+Edit.
+
+Resubmit.
+
+
+Approved content dapat:
+
+Publish.
+
+Schedule.
+
+
+Unapproved content:
+
+tidak dapat publish jika approval workflow aktif.
+
+
+Existing posts:
+
+tetap publish tanpa approval.
+
+
+Approval invalidated ketika content berubah.
+
+
+Permissions:
+
+server-side enforced.
+
+
+Workspace isolation:
+
+aman.
+
+
+Notifications:
+
+berfungsi.
+
+
+Webhook events:
+
+berfungsi.
+
+
+Worker:
+
+defense in depth.
+
+
+No secret leakage.
+
+
+No cross-workspace access.
+
+
+No duplicate review events.
+
+
+Race conditions ditangani.
+
+
+Lint:
+
+PASS.
+
+
+Typecheck:
+
+PASS.
+
+
+Tests:
+
+PASS.
+
+
+Build:
+
+PASS.
+
+
+git diff --check:
+
+PASS.
+
+
+Tidak ada commit.
+
+Tidak ada push.
+
+
+==================================================
+120. PRIORITAS UTAMA
+==================================================
+
+Prioritas implementasi:
+
+1.
+
+Security
+
+
+2.
+
+Workspace isolation
+
+
+3.
+
+Correct state machine
+
+
+4.
+
+Backward compatibility
+
+
+5.
+
+Server authorization
+
+
+6.
+
+Approval invalidation
+
+
+7.
+
+Publish guard
+
+
+8.
+
+Audit history
+
+
+9.
+
+Notifications
+
+
+10.
+
+Webhooks
+
+
+11.
+
+UI
+
+
+12.
+
+Dashboard enhancement
+
+
+Jangan mengorbankan arsitektur existing demi fitur cepat.
+
+Audit terlebih dahulu sebelum implementasi.
+
+Gunakan pola existing AutoPost-v1.
+
+Implementasikan Phase 16A secara production-oriented,
+minimal,
+aman,
+workspace-aware,
+dan extensible untuk:
+
+PHASE 16B
+
+Content Pipeline / Kanban Workflow
+
+dan:
+
+PHASE 16C
+
+Automation Rules Engine.

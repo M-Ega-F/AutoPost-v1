@@ -114,7 +114,12 @@ export async function claimPlatformForPublish(
     const [accountRow] = await tx
       .select()
       .from(socialAccounts)
-      .where(eq(socialAccounts.id, claimedRow.socialAccountId))
+      .where(
+        and(
+          eq(socialAccounts.id, claimedRow.socialAccountId),
+          eq(socialAccounts.workspaceId, post.workspaceId),
+        ),
+      )
       .limit(1);
 
     if (!accountRow) {

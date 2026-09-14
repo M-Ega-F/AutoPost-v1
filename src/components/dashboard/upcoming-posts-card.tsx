@@ -9,7 +9,13 @@ import { Separator } from "@/components/ui/separator";
 import type { PostSummary } from "@/lib/domain/types";
 import { formatDateTime } from "@/lib/time";
 
-export function UpcomingPostsCard({ posts }: { posts: PostSummary[] }) {
+export function UpcomingPostsCard({
+  posts,
+  timeZone,
+}: {
+  posts: PostSummary[];
+  timeZone: string;
+}) {
   return (
     <Card className="rounded-lg border-primary/15">
       <CardHeader>
@@ -42,8 +48,7 @@ export function UpcomingPostsCard({ posts }: { posts: PostSummary[] }) {
                     {post.contentText}
                   </p>
                   <p className="text-xs text-muted-foreground tabular-nums">
-                    {formatDateTime(post.scheduledAt, post.timezone)} ·{" "}
-                    {post.timezone}
+                    {formatDateTime(post.scheduledAt, timeZone)} · {timeZone}
                   </p>
                   <div className="flex flex-wrap gap-1">
                     {post.platforms.map((target) => (

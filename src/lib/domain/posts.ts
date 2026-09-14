@@ -1,14 +1,18 @@
 import "server-only";
 
-import { and, asc, desc, eq, gte, inArray, lt, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, exists, gte, inArray, lt, or, sql } from "drizzle-orm";
 
 import { db } from "@/lib/db";
 import {
+  contentTemplates,
+  mediaAssets,
   postExecutions,
   postMedia,
   postPlatforms,
   posts,
+  postReviewEvents,
   socialAccounts,
+  workspaces,
   type Post,
   type PostPlatform,
 } from "@/lib/db/schema";
@@ -23,6 +27,7 @@ import {
   getAccountRecord,
   listAccountSummaries,
 } from "@/lib/domain/accounts";
+import { getAnalyticsOverview, getPostAnalyticsDetail } from "@/lib/domain/analytics";
 import { MAX_ATTEMPTS } from "@/lib/domain/executions";
 import type {
   DashboardData,
@@ -32,8 +37,16 @@ import type {
   PlatformTarget,
   PostDetail,
   PostSummary,
+  HistoryQuery,
+  PaginatedPosts,
 } from "@/lib/domain/types";
 import type { MediaAsset } from "@/providers/social/types";
+import { zonedTimeToUtc } from "@/lib/time";
+import { getActiveWorkspaceId } from "@/lib/domain/workspaces";
+import { requireWorkspacePermission } from "@/lib/auth/authorization";
+import { hasPermission } from "@/lib/auth/permissions";
+import { notifyContentReviewEvent, notifyPostEvent } from "@/lib/domain/notifications";
+import { emitWebhookEventSafely } from "@/lib/webhooks/events";
 
 export type CreatePostMedia = {
   storageKey: string | null;
@@ -101,6 +114,8 @@ function assertMediaOwnership(userId: string, media: CreatePostMedia | null): vo
 export async function createPost(
   input: CreatePostInput,
 ): Promise<{ postId: string; status: PostStatus }> {
+  const authorization = await requireWorkspacePermission(input.userId, "posts:create");
+  const workspaceId = authorization.workspaceId;
   assertMediaOwnership(input.userId, input.media);
   if (input.targets.length === 0) {
     throw new AppError(
@@ -147,18 +162,21 @@ export async function createPost(
     }
   }
 
-  const isScheduled = input.scheduledAt !== null;
-  const initialStatus: PostStatus = isScheduled ? "scheduled" : "processing";
+  const requiresApproval = authorization.workspace.approvalRequired;
+  const isScheduled = input.scheduledAt !== null && !requiresApproval;
+  const initialStatus: PostStatus = requiresApproval ? "draft" : isScheduled ? "scheduled" : "processing";
 
   const created = await db.transaction(async (tx) => {
     const [post] = await tx
       .insert(posts)
       .values({
         userId: input.userId,
+        workspaceId,
         contentText: input.contentText,
         timezone: input.timezone,
-        scheduledAt: input.scheduledAt,
+        scheduledAt: requiresApproval ? null : input.scheduledAt,
         status: initialStatus,
+        approvalStatus: requiresApproval ? "draft" : "not_required",
       })
       .returning({ id: posts.id });
 
@@ -192,8 +210,10 @@ export async function createPost(
   });
 
   // Enqueue outside the transaction: a Redis hiccup must not roll back the post.
+  void emitWebhookEventSafely({ workspaceId, type: "post.created", data: { postId: created.postId, status: initialStatus } });
+  if (initialStatus === "processing") void emitWebhookEventSafely({ workspaceId, type: "post.publishing", data: { postId: created.postId, status: initialStatus } });
   const now = Date.now();
-  for (const target of created.targets) {
+  for (const target of initialStatus === "draft" ? [] : created.targets) {
     const delayMs = input.scheduledAt
       ? Math.max(0, input.scheduledAt.getTime() - now)
       : 0;
@@ -221,13 +241,23 @@ export async function createPost(
     }
   }
 
+  if (initialStatus === "scheduled") {
+    await notifyPostEvent(created.postId, "POST_SCHEDULED").catch((error) => {
+      logger.warn("scheduled post notification failed", {
+        postId: created.postId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    });
+  }
+
   return { postId: created.postId, status: initialStatus };
 }
 
-async function cleanupUnreferencedMedia(
+export async function cleanupUnreferencedMedia(
   userId: string,
   storageKeys: readonly (string | null)[],
 ): Promise<void> {
+  const workspaceId = await getActiveWorkspaceId(userId);
   for (const storageKey of new Set(storageKeys.filter(Boolean))) {
     if (!storageKey || !storageKey.startsWith(`${userId}/`)) continue;
 
@@ -235,10 +265,32 @@ async function cleanupUnreferencedMedia(
       .select({ id: postMedia.id })
       .from(postMedia)
       .innerJoin(posts, eq(posts.id, postMedia.postId))
-      .where(and(eq(posts.userId, userId), eq(postMedia.storageKey, storageKey)))
+      .where(and(eq(posts.userId, userId), eq(posts.workspaceId, workspaceId), eq(postMedia.storageKey, storageKey)))
       .limit(1);
 
-    if (!reference) await removeMediaObject(storageKey);
+    if (reference) continue;
+
+    const [templateReference] = await db
+      .select({ id: contentTemplates.id })
+      .from(contentTemplates)
+      .where(
+        and(
+          eq(contentTemplates.userId, userId),
+          eq(contentTemplates.workspaceId, workspaceId),
+          eq(contentTemplates.mediaStorageKey, storageKey),
+        ),
+      )
+      .limit(1);
+
+    if (templateReference) continue;
+
+    const [libraryReference] = await db
+      .select({ id: mediaAssets.id })
+      .from(mediaAssets)
+      .where(and(eq(mediaAssets.userId, userId), eq(mediaAssets.workspaceId, workspaceId), eq(mediaAssets.storageKey, storageKey)))
+      .limit(1);
+
+    if (!libraryReference) await removeMediaObject(storageKey);
   }
 }
 
@@ -292,6 +344,8 @@ async function replaceDraftChildren(
 export async function saveDraft(
   input: DraftInput,
 ): Promise<{ postId: string; status: "draft" }> {
+  await requireWorkspacePermission(input.userId, input.postId ? "drafts:update" : "drafts:create");
+  const workspaceId = await getActiveWorkspaceId(input.userId);
   assertMediaOwnership(input.userId, input.media);
   const uniquePlatforms = new Set(input.targets.map((target) => target.platform));
   if (uniquePlatforms.size !== input.targets.length) {
@@ -299,19 +353,29 @@ export async function saveDraft(
   }
 
   const result = await db.transaction(async (tx) => {
+    const [workspace] = await tx.select({ approvalRequired: workspaces.approvalRequired }).from(workspaces).where(eq(workspaces.id, workspaceId)).limit(1);
+    if (!workspace) throw new AppError("not_found", "Workspace not found.");
     let postId = input.postId;
+    let invalidatedEventId: string | null = null;
     if (postId) {
       const [existing] = await tx
-        .select({ id: posts.id, status: posts.status })
+        .select({ id: posts.id, status: posts.status, approvalStatus: posts.approvalStatus })
         .from(posts)
-        .where(and(eq(posts.id, postId), eq(posts.userId, input.userId)))
+        .where(and(eq(posts.id, postId), eq(posts.userId, input.userId), eq(posts.workspaceId, workspaceId)))
         .limit(1);
 
       if (!existing) throw new AppError("not_found", "We couldn't find that draft.");
       if (existing.status !== "draft") {
         throw new AppError("validation_failed", "This post is no longer a draft.");
       }
+      if (existing.approvalStatus === "in_review") {
+        throw new AppError("conflict", "This post is currently waiting for review.");
+      }
 
+      if (existing.approvalStatus === "approved") {
+        const [event] = await tx.insert(postReviewEvents).values({ postId, workspaceId, action: "invalidated", actorId: input.userId }).returning({ id: postReviewEvents.id });
+        invalidatedEventId = event?.id ?? null;
+      }
       await tx
         .update(posts)
         .set({
@@ -319,6 +383,10 @@ export async function saveDraft(
           timezone: input.timezone,
           scheduledAt: null,
           status: "draft",
+          approvalStatus: workspace.approvalRequired ? "draft" : "not_required",
+          approvedBy: null,
+          approvedAt: null,
+          lastReviewComment: null,
           cancelledAt: null,
           updatedAt: new Date(),
         })
@@ -328,10 +396,12 @@ export async function saveDraft(
         .insert(posts)
         .values({
           userId: input.userId,
+          workspaceId,
           contentText: input.contentText,
           timezone: input.timezone,
           scheduledAt: null,
           status: "draft",
+          approvalStatus: workspace.approvalRequired ? "draft" : "not_required",
         })
         .returning({ id: posts.id });
       postId = created.id;
@@ -344,10 +414,15 @@ export async function saveDraft(
       input.targets,
     );
 
-    return { postId, oldStorageKeys };
+    return { postId, oldStorageKeys, invalidatedEventId };
   });
 
   await cleanupUnreferencedMedia(input.userId, result.oldStorageKeys);
+  if (result.invalidatedEventId) {
+    await notifyContentReviewEvent({ postId: result.postId, workspaceId, actorId: input.userId, action: "invalidated", eventId: result.invalidatedEventId });
+    void emitWebhookEventSafely({ workspaceId, type: "post.approval_invalidated", eventId: result.invalidatedEventId, data: { postId: result.postId, actorId: input.userId, reviewStatus: "draft", reviewEventId: result.invalidatedEventId } });
+  }
+
   return { postId: result.postId, status: "draft" };
 }
 
@@ -359,6 +434,14 @@ export async function saveDraft(
 export async function publishDraft(
   input: PublishDraftInput,
 ): Promise<{ postId: string; status: PostStatus }> {
+  const authorization = await requireWorkspacePermission(input.userId, "posts:publish");
+  if (input.scheduledAt) await requireWorkspacePermission(input.userId, "posts:schedule");
+  const workspaceId = authorization.workspaceId;
+  const [currentPost] = await db.select({ approvalStatus: posts.approvalStatus }).from(posts).where(and(eq(posts.id, input.postId), eq(posts.userId, input.userId), eq(posts.workspaceId, workspaceId), eq(posts.status, "draft"))).limit(1);
+  if (!currentPost) throw new AppError("validation_failed", "This post is no longer a draft.");
+  if (authorization.workspace.approvalRequired && currentPost.approvalStatus !== "approved") {
+    throw new AppError("conflict", "This post must be approved before it can be published.");
+  }
   assertMediaOwnership(input.userId, input.media);
   if (!input.media) throw new AppError("validation_failed", "Add media before publishing.");
   if (input.targets.length === 0) {
@@ -413,6 +496,7 @@ export async function publishDraft(
         and(
           eq(posts.id, input.postId),
           eq(posts.userId, input.userId),
+          eq(posts.workspaceId, workspaceId),
           eq(posts.status, "draft"),
         ),
       )
@@ -435,6 +519,8 @@ export async function publishDraft(
   });
 
   await cleanupUnreferencedMedia(input.userId, result.oldStorageKeys);
+
+  void emitWebhookEventSafely({ workspaceId, type: "post.publishing", data: { postId: result.postId, status: initialStatus } });
 
   for (const target of result.targets) {
     const delayMs = input.scheduledAt
@@ -465,10 +551,11 @@ export async function publishDraft(
 }
 
 export async function listDrafts(userId: string): Promise<DraftSummary[]> {
+  const workspaceId = await getActiveWorkspaceId(userId);
   const rows = await db
     .select()
     .from(posts)
-    .where(and(eq(posts.userId, userId), eq(posts.status, "draft")))
+    .where(and(eq(posts.userId, userId), eq(posts.workspaceId, workspaceId), eq(posts.status, "draft")))
     .orderBy(desc(posts.updatedAt))
     .limit(100);
 
@@ -491,11 +578,13 @@ export async function getDraftDetail(
 }
 
 export async function deleteDraft(userId: string, postId: string): Promise<void> {
+  await requireWorkspacePermission(userId, "drafts:delete");
+  const workspaceId = await getActiveWorkspaceId(userId);
   const result = await db.transaction(async (tx) => {
     const [draft] = await tx
       .select({ id: posts.id })
       .from(posts)
-      .where(and(eq(posts.id, postId), eq(posts.userId, userId), eq(posts.status, "draft")))
+      .where(and(eq(posts.id, postId), eq(posts.userId, userId), eq(posts.workspaceId, workspaceId), eq(posts.status, "draft")))
       .limit(1);
     if (!draft) throw new AppError("not_found", "We couldn't find that draft.");
 
@@ -608,10 +697,11 @@ async function summarize(postRows: Post[]): Promise<PostSummary[]> {
 }
 
 export async function listScheduledPosts(userId: string): Promise<PostSummary[]> {
+  const workspaceId = await getActiveWorkspaceId(userId);
   const rows = await db
     .select()
     .from(posts)
-    .where(and(eq(posts.userId, userId), eq(posts.status, "scheduled")))
+    .where(and(eq(posts.userId, userId), eq(posts.workspaceId, workspaceId), eq(posts.status, "scheduled")))
     .orderBy(asc(posts.scheduledAt))
     .limit(100);
 
@@ -623,6 +713,7 @@ export async function listCalendarPosts(
   userId: string,
   range: { start: Date; end: Date },
 ): Promise<CalendarPost[]> {
+  const workspaceId = await getActiveWorkspaceId(userId);
   if (range.start.getTime() >= range.end.getTime()) return [];
 
   const rows = await db
@@ -631,6 +722,7 @@ export async function listCalendarPosts(
     .where(
       and(
         eq(posts.userId, userId),
+        eq(posts.workspaceId, workspaceId),
         inArray(posts.status, ["scheduled", "processing", "failed", "partial_failure"]),
         gte(posts.scheduledAt, range.start),
         lt(posts.scheduledAt, range.end),
@@ -679,44 +771,146 @@ export async function listCalendarPosts(
   });
 }
 
+function nextDate(date: string): string {
+  const value = new Date(`${date}T00:00:00Z`);
+  value.setUTCDate(value.getUTCDate() + 1);
+  return value.toISOString().slice(0, 10);
+}
+
+async function historyConditions(
+  userId: string,
+  query: HistoryQuery,
+  timezone: string,
+) {
+  const authorization = await requireWorkspacePermission(userId, "posts:view");
+  const workspaceId = authorization.workspaceId;
+  const conditions = [eq(posts.workspaceId, workspaceId)];
+  if (!hasPermission(authorization.role, "content:review")) conditions.push(eq(posts.userId, userId));
+
+  if (query.status) conditions.push(eq(posts.status, query.status));
+
+  if (query.platform) {
+    conditions.push(
+      exists(
+        db
+          .select({ id: postPlatforms.id })
+          .from(postPlatforms)
+          .where(
+            and(
+              eq(postPlatforms.postId, posts.id),
+              eq(postPlatforms.platform, query.platform),
+            ),
+          ),
+      ),
+    );
+  }
+
+  if (query.accountId) {
+    conditions.push(
+      exists(
+        db
+          .select({ id: postPlatforms.id })
+          .from(postPlatforms)
+          .innerJoin(
+            socialAccounts,
+            eq(socialAccounts.id, postPlatforms.socialAccountId),
+          )
+          .where(
+            and(
+              eq(postPlatforms.postId, posts.id),
+              eq(postPlatforms.socialAccountId, query.accountId),
+              eq(socialAccounts.userId, userId),
+              eq(socialAccounts.workspaceId, workspaceId),
+            ),
+          ),
+      ),
+    );
+  }
+
+  if (query.search) {
+    const term = `%${query.search}%`;
+    conditions.push(sql`${posts.contentText} ilike ${term}`);
+  }
+
+  const activityDate = sql`coalesce(${posts.publishedAt}, ${posts.scheduledAt}, ${posts.createdAt})`;
+  if (query.from) {
+    conditions.push(gte(activityDate, zonedTimeToUtc(query.from, "00:00", timezone)));
+  }
+  if (query.to) {
+    conditions.push(lt(activityDate, zonedTimeToUtc(nextDate(query.to), "00:00", timezone)));
+  }
+
+  return conditions;
+}
+
+export async function listHistoryPostsPage(
+  userId: string,
+  query: HistoryQuery,
+  timezone = "UTC",
+): Promise<PaginatedPosts> {
+  const conditions = await historyConditions(userId, query, timezone);
+  const where = and(...conditions);
+  const sortColumn =
+    query.sort === "scheduled"
+      ? sql`coalesce(${posts.scheduledAt}, ${posts.createdAt})`
+      : query.sort === "published"
+        ? sql`coalesce(${posts.publishedAt}, ${posts.createdAt})`
+        : posts.createdAt;
+  const order = query.sort === "oldest" ? asc(sortColumn) : desc(sortColumn);
+
+  const [countRows, rows] = await Promise.all([
+    db
+      .select({ count: sql<number>`count(*)` })
+      .from(posts)
+      .where(where),
+    db
+      .select()
+      .from(posts)
+      .where(where)
+      .orderBy(order, desc(posts.createdAt))
+      .limit(query.pageSize)
+      .offset((query.page - 1) * query.pageSize),
+  ]);
+
+  const total = Number(countRows[0]?.count ?? 0);
+  const totalPages = Math.max(1, Math.ceil(total / query.pageSize));
+  const items = await summarize(rows);
+
+  return {
+    items,
+    page: query.page,
+    pageSize: query.pageSize,
+    total,
+    totalPages,
+  };
+}
+
+/** Compatibility helper for existing dashboard/API callers that need an array. */
 export async function listHistoryPosts(
   userId: string,
   search?: string,
 ): Promise<PostSummary[]> {
-  const conditions = [
-    eq(posts.userId, userId),
-    inArray(posts.status, [
-      "processing",
-      "published",
-      "partial_failure",
-      "failed",
-      "cancelled",
-    ]),
-  ];
+  const result = await listHistoryPostsPage(userId, {
+    page: 1,
+    pageSize: 100,
+    search: search?.trim() || undefined,
+    sort: "newest",
+  });
 
-  if (search && search.trim().length > 0) {
-    const term = `%${search.trim()}%`;
-    conditions.push(sql`${posts.contentText} ilike ${term}`);
-  }
-
-  const rows = await db
-    .select()
-    .from(posts)
-    .where(and(...conditions))
-    .orderBy(desc(sql`coalesce(${posts.publishedAt}, ${posts.createdAt})`))
-    .limit(100);
-
-  return summarize(rows);
+  return result.items;
 }
 
 export async function getPostSummary(
   userId: string,
   postId: string,
 ): Promise<PostSummary | null> {
+  const authorization = await requireWorkspacePermission(userId, "posts:view");
+  const workspaceId = authorization.workspaceId;
+  const ownerCondition = hasPermission(authorization.role, "content:review") ? eq(posts.workspaceId, workspaceId) : and(eq(posts.userId, userId), eq(posts.workspaceId, workspaceId));
   const [post] = await db
     .select()
     .from(posts)
-    .where(and(eq(posts.id, postId), eq(posts.userId, userId)))
+    .where(and(eq(posts.id, postId), ownerCondition))
     .limit(1);
 
   if (!post) return null;
@@ -769,6 +963,7 @@ export async function getPostDetail(
     .innerJoin(postPlatforms, eq(postPlatforms.id, postExecutions.postPlatformId))
     .where(eq(postPlatforms.postId, postId))
     .orderBy(asc(postExecutions.attemptNumber));
+  const analytics = await getPostAnalyticsDetail(userId, postId);
 
   return {
     ...summary,
@@ -779,25 +974,34 @@ export async function getPostDetail(
       status: row.post_executions.status,
       attemptNumber: row.post_executions.attemptNumber,
       externalPostId: row.post_executions.externalPostId,
-      errorMessage: row.post_executions.errorMessage,
+      errorMessage:
+        row.post_executions.status === "failed"
+          ? humanErrorMessage(
+              row.post_executions.platform,
+              row.post_executions.errorCode,
+            )
+          : null,
       startedAt: row.post_executions.startedAt,
       executedAt: row.post_executions.executedAt,
     })),
+    analytics,
   };
 }
 
 export async function getDashboardData(userId: string): Promise<DashboardData> {
+  const workspaceId = await getActiveWorkspaceId(userId);
   const [
     upcomingRows,
     recentRows,
     attentionRows,
     statusRows,
     connectedAccounts,
+    performanceOverview,
   ] = await Promise.all([
     db
       .select()
       .from(posts)
-      .where(and(eq(posts.userId, userId), eq(posts.status, "scheduled")))
+      .where(and(eq(posts.userId, userId), eq(posts.workspaceId, workspaceId), eq(posts.status, "scheduled")))
       .orderBy(asc(posts.scheduledAt))
       .limit(5),
     db
@@ -806,6 +1010,7 @@ export async function getDashboardData(userId: string): Promise<DashboardData> {
       .where(
         and(
           eq(posts.userId, userId),
+          eq(posts.workspaceId, workspaceId),
           inArray(posts.status, [
             "processing",
             "published",
@@ -822,6 +1027,7 @@ export async function getDashboardData(userId: string): Promise<DashboardData> {
       .where(
         and(
           eq(posts.userId, userId),
+          eq(posts.workspaceId, workspaceId),
           or(
             eq(posts.status, "failed"),
             eq(posts.status, "partial_failure"),
@@ -836,9 +1042,10 @@ export async function getDashboardData(userId: string): Promise<DashboardData> {
         count: sql<number>`count(*)`,
       })
       .from(posts)
-      .where(eq(posts.userId, userId))
+      .where(and(eq(posts.userId, userId), eq(posts.workspaceId, workspaceId)))
       .groupBy(posts.status),
     listAccountSummaries(userId),
+    getAnalyticsOverview(userId, { range: "30d" }),
   ]);
 
   const [upcoming, recent, attention] = await Promise.all([
@@ -883,6 +1090,17 @@ export async function getDashboardData(userId: string): Promise<DashboardData> {
     stats,
     connectedAccounts,
     failedTargets,
+    performance: {
+      metrics: performanceOverview.metrics,
+      available: performanceOverview.platforms.some(
+        (platform) => platform.status === "available",
+      ),
+      topPlatform:
+        performanceOverview.platforms
+          .filter((platform) => platform.status === "available")
+          .sort((a, b) => (b.metrics.views ?? 0) - (a.metrics.views ?? 0))[0]
+          ?.platform ?? null,
+    },
   };
 }
 
@@ -890,13 +1108,15 @@ export async function cancelScheduledPost(
   userId: string,
   postId: string,
 ): Promise<void> {
+  await requireWorkspacePermission(userId, "posts:cancel");
+  const workspaceId = await getActiveWorkspaceId(userId);
   const jobIds: Array<string | null> = [];
 
   await db.transaction(async (tx) => {
     const [post] = await tx
       .select()
       .from(posts)
-      .where(and(eq(posts.id, postId), eq(posts.userId, userId)))
+      .where(and(eq(posts.id, postId), eq(posts.userId, userId), eq(posts.workspaceId, workspaceId)))
       .limit(1);
 
     if (!post) throw new AppError("not_found", "We couldn't find that post.");
@@ -946,6 +1166,12 @@ export async function cancelScheduledPost(
   for (const jobId of jobIds) {
     await removePublishJob(jobId);
   }
+  await notifyPostEvent(postId, "POST_CANCELLED").catch((error) => {
+    logger.warn("cancelled post notification failed", {
+      postId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  });
 }
 
 /**
@@ -956,6 +1182,8 @@ export async function retryPlatform(
   userId: string,
   postPlatformId: string,
 ): Promise<void> {
+  await requireWorkspacePermission(userId, "posts:retry");
+  const workspaceId = await getActiveWorkspaceId(userId);
   const result = await db.transaction(async (tx) => {
     const [row] = await tx
       .select({
@@ -974,7 +1202,7 @@ export async function retryPlatform(
       .from(postPlatforms)
       .innerJoin(posts, eq(posts.id, postPlatforms.postId))
       .where(
-        and(eq(postPlatforms.id, postPlatformId), eq(posts.userId, userId)),
+        and(eq(postPlatforms.id, postPlatformId), eq(posts.userId, userId), eq(posts.workspaceId, workspaceId)),
       )
       .limit(1);
 
@@ -995,7 +1223,10 @@ export async function retryPlatform(
     }
 
     const [account] = await tx
-      .select({ status: socialAccounts.status })
+      .select({
+        status: socialAccounts.status,
+        tokenExpiresAt: socialAccounts.tokenExpiresAt,
+      })
       .from(socialAccounts)
       .where(eq(socialAccounts.id, row.socialAccountId))
       .limit(1);
@@ -1004,6 +1235,16 @@ export async function retryPlatform(
       throw new AppError(
         "validation_failed",
         humanErrorMessage(row.platform, "account_disconnected"),
+      );
+    }
+
+    if (
+      account?.status === "needs_reconnect" ||
+      (account?.tokenExpiresAt && account.tokenExpiresAt.getTime() <= Date.now())
+    ) {
+      throw new AppError(
+        "validation_failed",
+        humanErrorMessage(row.platform, "token_expired"),
       );
     }
 

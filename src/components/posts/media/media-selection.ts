@@ -9,8 +9,9 @@ export type MediaPreviewItem = {
 };
 
 export type ComposerMedia = MediaPreviewItem & {
-  kind: "upload" | "url";
+  kind: "upload" | "url" | "library";
   storageKey: string | null;
+  assetId?: string | null;
   sourceUrl: string | null;
   mimeType: string;
 };
@@ -119,6 +120,33 @@ export function createLocalUrlMedia(url: string): ComposerMedia {
     width: null,
     height: null,
     duration: null,
+  };
+}
+
+export function createLibraryMedia(input: {
+  id: string;
+  fileName: string;
+  previewUrl: string | null;
+  mediaType: "image" | "video";
+  mimeType: string;
+  fileSize: number | null;
+  width: number | null;
+  height: number | null;
+  duration: number | null;
+}): ComposerMedia {
+  return {
+    kind: "library",
+    storageKey: null,
+    assetId: input.id,
+    sourceUrl: null,
+    mimeType: input.mimeType,
+    fileName: input.fileName,
+    previewUrl: input.previewUrl,
+    mediaType: input.mediaType,
+    fileSize: input.fileSize,
+    width: input.width,
+    height: input.height,
+    duration: input.duration,
   };
 }
 

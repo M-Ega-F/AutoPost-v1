@@ -13,6 +13,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
+import { useWorkspacePermission } from "@/components/auth/workspace-permissions";
 
 /**
  * Two-step by design: the row never cancels on a single click. The parent owns
@@ -34,6 +35,8 @@ export function CancelPostButton({
   keepLabel?: string;
 }) {
   const [open, setOpen] = useState(false);
+  const canCancel = useWorkspacePermission("posts:cancel");
+  if (!canCancel) return null;
 
   return (
     <>

@@ -10,6 +10,7 @@ import { config } from "dotenv";
 import { ProviderError } from "@/lib/errors";
 import { logger } from "@/lib/logger";
 import type { PublishJobData } from "@/lib/queue/publish";
+import type { AnalyticsJobData } from "@/lib/queue/analytics";
 
 config({ path: ".env.local" });
 
@@ -52,12 +53,14 @@ async function assertConfigured(): Promise<void> {
 async function main(): Promise<void> {
   await assertConfigured();
 
-  const { PUBLISH_QUEUE_NAME, closeQueue, getRedisConnection } = await import(
+  const { ANALYTICS_QUEUE_NAME, PUBLISH_QUEUE_NAME, closeQueue, getRedisClient, getRedisConnection } = await import(
     "@/lib/queue"
   );
+  const { createWorkerHeartbeat } = await import("@/lib/reliability/health");
   const { executePublishJob } = await import("@/lib/publishing/execute");
   const { runRecoverySweep } = await import("@/lib/publishing/recovery");
   const { closeDb } = await import("@/lib/db");
+  const { syncPostPlatformAnalytics } = await import("@/lib/domain/analytics");
 
   const workerId = `publish-${hostname()}-${process.pid}-${randomUUID().slice(0, 8)}`;
   const log = logger.child({ workerId });
@@ -112,6 +115,33 @@ async function main(): Promise<void> {
     },
   );
 
+  const analyticsWorker = new Worker<AnalyticsJobData, void, string>(
+    ANALYTICS_QUEUE_NAME,
+    async (job: Job<AnalyticsJobData, void, string>) => {
+      const jobLog = logger.child({
+        workerId,
+        jobId: job.id ?? null,
+        bullmqJobId: job.id ?? null,
+        postPlatformId: job.data?.postPlatformId ?? null,
+        queue: ANALYTICS_QUEUE_NAME,
+      });
+      const startedAt = Date.now();
+      if (!job.data?.postPlatformId) {
+        throw new Error("Analytics job payload is missing postPlatformId.");
+      }
+      await syncPostPlatformAnalytics(job.data.postPlatformId);
+      jobLog.info("analytics sync finished", { durationMs: Date.now() - startedAt });
+    },
+    {
+      connection: getRedisConnection(),
+      concurrency: CONCURRENCY,
+      stalledInterval: 30_000,
+      maxStalledCount: 2,
+      lockDuration: 60_000,
+      autorun: false,
+    },
+  );
+
   worker.on("completed", (job) => {
     log.info("job completed", {
       jobId: job.id ?? null,
@@ -141,6 +171,16 @@ async function main(): Promise<void> {
   });
 
   let sweeping = false;
+  const heartbeat = createWorkerHeartbeat({
+    client: getRedisClient(),
+    workerId,
+    queues: [PUBLISH_QUEUE_NAME, ANALYTICS_QUEUE_NAME],
+    onError: (error) => {
+      log.warn("worker heartbeat failed", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    },
+  });
 
   const sweep = async (): Promise<void> => {
     if (sweeping) return;
@@ -172,7 +212,14 @@ async function main(): Promise<void> {
     clearInterval(sweepTimer);
 
     try {
+      await heartbeat?.stop();
+    } catch {
+      // Redis may already be unavailable during shutdown.
+    }
+
+    try {
       await worker.close();
+      await analyticsWorker.close();
     } catch (error) {
       log.error("worker close failed", {
         error: error instanceof Error ? error.message : String(error),
@@ -202,6 +249,9 @@ async function main(): Promise<void> {
   });
 
   await worker.waitUntilReady();
+  await analyticsWorker.waitUntilReady();
+
+  heartbeat.start();
 
   // `run()` owns the processing loop and only settles once the worker closes,
   // so it must not be awaited here.
@@ -210,9 +260,14 @@ async function main(): Promise<void> {
       error: error instanceof Error ? error.message : String(error),
     });
   });
+  analyticsWorker.run().catch((error: unknown) => {
+    log.error("analytics worker loop stopped", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  });
 
   log.info("worker started", {
-    queue: PUBLISH_QUEUE_NAME,
+    queues: [PUBLISH_QUEUE_NAME, ANALYTICS_QUEUE_NAME],
     concurrency: CONCURRENCY,
   });
 

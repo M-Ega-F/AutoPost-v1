@@ -521,6 +521,7 @@ export function sleep(ms: number): Promise<void> {
 
 export type SignedOAuthState = {
   userId: string;
+  workspaceId?: string;
   platform: Platform;
   nonce: string;
   /** The opaque state the caller asked for, carried through untouched. */
@@ -533,11 +534,13 @@ export type SignedOAuthState = {
  */
 export function signOAuthState(input: {
   userId: string;
+  workspaceId?: string;
   platform: Platform;
   state?: string;
 }): string {
   const payload: SignedOAuthState = {
     userId: input.userId,
+    ...(input.workspaceId ? { workspaceId: input.workspaceId } : {}),
     platform: input.platform,
     nonce: randomBytes(16).toString("base64url"),
     ...(input.state ? { sid: input.state } : {}),
@@ -572,7 +575,7 @@ export function verifyOAuthState(state: string): SignedOAuthState | null {
     const record = asRecord(parsed);
     if (!record) return null;
 
-    const { userId, platform, nonce, sid } = record;
+    const { userId, workspaceId, platform, nonce, sid } = record;
     if (typeof userId !== "string" || typeof nonce !== "string") return null;
     if (
       platform !== "instagram" &&
@@ -587,6 +590,7 @@ export function verifyOAuthState(state: string): SignedOAuthState | null {
 
     return {
       userId,
+      ...(typeof workspaceId === "string" ? { workspaceId } : {}),
       platform,
       nonce,
       ...(typeof sid === "string" ? { sid } : {}),

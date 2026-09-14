@@ -1,5 +1,9 @@
 import { encryptSecret } from "@/lib/crypto/tokens";
 import {
+  ensurePersonalWorkspace,
+  getActiveWorkspaceForUser,
+} from "@/lib/domain/workspaces";
+import {
   postMedia,
   postPlatforms,
   posts,
@@ -24,6 +28,7 @@ export async function setupTestDatabase(): Promise<void> {
   await initTestDatabase();
   await resetTestDatabase();
   await seedUser(USER_ID);
+  await seedUser(OTHER_USER_ID);
   resetQueue();
   resetProviders();
 }
@@ -49,10 +54,16 @@ export async function createAccount(
   } = {},
 ): Promise<string> {
   const db = getDb();
+  const userId = options.userId ?? USER_ID;
+  const workspace =
+    userId === USER_ID
+      ? (await getActiveWorkspaceForUser(userId)).workspace
+      : await ensurePersonalWorkspace(userId);
   const [row] = await db
     .insert(socialAccounts)
     .values({
-      userId: options.userId ?? USER_ID,
+      userId,
+      workspaceId: workspace.id,
       platform,
       platformAccountId: options.platformAccountId ?? `${platform}-1`,
       username: options.username ?? `${platform}_user`,
@@ -74,17 +85,25 @@ export async function insertPost(
     status?: "draft" | "scheduled" | "processing" | "published" | "partial_failure" | "failed" | "cancelled";
     scheduledAt?: Date | null;
     timezone?: string;
+    approvalStatus?: "not_required" | "draft" | "in_review" | "changes_requested" | "approved";
   } = {},
 ): Promise<string> {
   const db = getDb();
+  const userId = options.userId ?? USER_ID;
+  const workspace =
+    userId === USER_ID
+      ? (await getActiveWorkspaceForUser(userId)).workspace
+      : await ensurePersonalWorkspace(userId);
   const [row] = await db
     .insert(posts)
     .values({
-      userId: options.userId ?? USER_ID,
+      userId,
+      workspaceId: workspace.id,
       contentText: options.caption ?? "Test caption",
       timezone: options.timezone ?? "Asia/Jakarta",
       scheduledAt: options.scheduledAt ?? null,
       status: options.status ?? "processing",
+      approvalStatus: options.approvalStatus,
     })
     .returning({ id: posts.id });
 

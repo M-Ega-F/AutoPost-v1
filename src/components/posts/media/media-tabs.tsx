@@ -3,15 +3,19 @@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { MediaUploader } from "./media-uploader";
 import { MediaUrlInput } from "./media-url-input";
+import { MediaLibraryPicker } from "./media-library-picker";
+import type { ComposerMedia } from "./media-selection";
 
 export function MediaTabs({
   onFile,
   onUrl,
+  onLibrary,
   error,
   disabled = false,
 }: {
   onFile: (file: File) => void;
   onUrl: (url: string) => Promise<string | null>;
+  onLibrary: (media: ComposerMedia) => void;
   error?: string | null;
   disabled?: boolean;
 }) {
@@ -24,6 +28,9 @@ export function MediaTabs({
         <TabsTrigger value="url" className="flex-1 px-4 sm:flex-none">
           Paste URL
         </TabsTrigger>
+        <TabsTrigger value="library" className="flex-1 px-4 sm:flex-none">
+          Library
+        </TabsTrigger>
       </TabsList>
 
       <TabsContent value="upload">
@@ -32,6 +39,9 @@ export function MediaTabs({
 
       <TabsContent value="url">
         <MediaUrlInput onAdd={onUrl} disabled={disabled} />
+      </TabsContent>
+      <TabsContent value="library">
+        <MediaLibraryPicker onSelect={onLibrary} disabled={disabled} />
       </TabsContent>
     </Tabs>
   );

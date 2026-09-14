@@ -204,7 +204,7 @@ export const xProvider: SocialProvider = {
       client_id: clientId,
       redirect_uri: input.redirectUri,
       scope: SCOPES,
-      state: signOAuthState({ userId: input.userId, platform: PLATFORM, state: input.state }),
+      state: signOAuthState({ userId: input.userId, workspaceId: input.workspaceId, platform: PLATFORM, state: input.state }),
       code_challenge: pkceChallenge(verifier),
       code_challenge_method: "S256",
     }).toString()}`;

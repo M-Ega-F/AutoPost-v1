@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 
 import { PGlite } from "@electric-sql/pglite";
 import { drizzle } from "drizzle-orm/pglite";
@@ -15,7 +15,10 @@ import * as schema from "@/lib/db/schema";
  * `src/test/register.ts`, so no production code imports it.
  */
 
-const DDL_PATH = "drizzle/0000_loud_gwen_stacy.sql";
+const DDL_PATHS = readdirSync("drizzle")
+  .filter((file) => /^\d+_.*\.sql$/.test(file))
+  .sort()
+  .map((file) => `drizzle/${file}`);
 
 type Database = ReturnType<typeof drizzle<typeof schema>>;
 
@@ -36,10 +39,12 @@ export async function initTestDatabase(): Promise<void> {
       // Supabase provides this; the schema's foreign keys point at it.
       await pg.exec(`
         create schema if not exists auth;
-        create table if not exists auth.users (id uuid primary key);
+        create table if not exists auth.users (id uuid primary key, email text);
       `);
 
-      await pg.exec(readFileSync(DDL_PATH, "utf8"));
+      for (const ddlPath of DDL_PATHS) {
+        await pg.exec(readFileSync(ddlPath, "utf8"));
+      }
 
       database = drizzle(pg, { schema });
     })();
@@ -106,17 +111,19 @@ export async function resetTestDatabase(): Promise<void> {
   await initTestDatabase();
   await getClient().exec(`
     truncate table
-      post_executions, post_platforms, post_media, posts, social_accounts, auth.users
+      webhook_deliveries, webhooks, post_review_events, post_analytics_snapshots, post_executions, post_platforms, post_media, posts, content_templates,
+      social_accounts, user_preferences, media_assets, notifications, workspace_invitations, workspace_members, workspaces, auth.users
     restart identity cascade;
   `);
 }
 
 /** Inserts the auth user a foreign key will need, plus nothing else. */
-export async function seedUser(userId: string): Promise<void> {
+export async function seedUser(userId: string, email?: string): Promise<void> {
   await initTestDatabase();
-  await getClient().query("insert into auth.users (id) values ($1) on conflict do nothing", [
-    userId,
-  ]);
+  await getClient().query(
+    "insert into auth.users (id, email) values ($1, $2) on conflict (id) do update set email = excluded.email",
+    [userId, email ?? userId + "@example.com"],
+  );
 }
 
 export async function closeDb(): Promise<void> {

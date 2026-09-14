@@ -226,7 +226,7 @@ export const linkedinProvider: SocialProvider = {
       response_type: "code",
       client_id: clientId ?? "",
       redirect_uri: input.redirectUri,
-      state: signOAuthState({ userId: input.userId, platform: PLATFORM, state: input.state }),
+      state: signOAuthState({ userId: input.userId, workspaceId: input.workspaceId, platform: PLATFORM, state: input.state }),
       scope: SCOPES,
     }).toString()}`;
   },

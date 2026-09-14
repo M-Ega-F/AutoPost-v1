@@ -20,6 +20,7 @@ import {
   startExecution,
 } from "@/lib/domain/executions";
 import { recomputePostStatus } from "@/lib/domain/posts";
+import { notifyPostEvent } from "@/lib/domain/notifications";
 import {
   ProviderError,
   humanErrorMessage,
@@ -134,6 +135,12 @@ export async function executePublishJob(
     await markTargetCancelled(postPlatform.id, postPlatform.platform);
     log.info("job skipped", { reason: "post-cancelled" });
     return { status: "skipped", reason: "post-cancelled" };
+  }
+
+  if (post.approvalStatus !== "not_required" && post.approvalStatus !== "approved") {
+    await db.update(postPlatforms).set({ status: "pending", lockedAt: null, lockedBy: null, updatedAt: new Date() }).where(eq(postPlatforms.id, postPlatform.id));
+    log.info("job skipped", { reason: "approval-required", approvalStatus: post.approvalStatus });
+    return { status: "skipped", reason: "approval-required" };
   }
 
   try {
@@ -485,6 +492,27 @@ async function completePublished(
     .where(eq(postPlatforms.id, postPlatform.id));
 
   const postStatus = await safeRecompute(state);
+  try {
+    if (postStatus === "published") await notifyPostEvent(state.postPlatform.postId, "POST_PUBLISHED");
+    if (postStatus === "partial_failure") await notifyPostEvent(state.postPlatform.postId, "POST_PARTIAL_FAILURE");
+  } catch (notificationError) {
+    log.warn("post notification failed", { error: notificationError instanceof Error ? notificationError.message : String(notificationError) });
+  }
+  try {
+    const { ANALYTICS_INITIAL_DELAY_MS, enqueueAnalyticsJob } = await import(
+      "@/lib/queue/analytics"
+    );
+    await enqueueAnalyticsJob({
+      postPlatformId: postPlatform.id,
+      delayMs: ANALYTICS_INITIAL_DELAY_MS,
+    });
+  } catch (error) {
+    // Analytics is optional. A Redis outage must never turn a confirmed
+    // published target into a failed publish.
+    log.warn("analytics sync enqueue failed", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
   log.info("job completed", { externalPostId, postStatus });
 
   return {
@@ -514,6 +542,12 @@ async function failTarget(
     .where(eq(postPlatforms.id, state.postPlatform.id));
 
   const postStatus = await safeRecompute(state);
+  try {
+    if (postStatus === "failed") await notifyPostEvent(state.postPlatform.postId, "POST_FAILED");
+    if (postStatus === "partial_failure") await notifyPostEvent(state.postPlatform.postId, "POST_PARTIAL_FAILURE");
+  } catch (notificationError) {
+    state.log.warn("post notification failed", { error: notificationError instanceof Error ? notificationError.message : String(notificationError) });
+  }
   state.log.error("job failed", { code, postStatus });
 
   return {

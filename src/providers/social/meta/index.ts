@@ -415,6 +415,7 @@ function createMetaProvider(platform: Platform): SocialProvider {
     async getAuthorizationUrl(input): Promise<string> {
       return metaAuthorizationUrl({
         userId: input.userId,
+        workspaceId: input.workspaceId,
         platform,
         state: input.state,
         redirectUri: input.redirectUri,

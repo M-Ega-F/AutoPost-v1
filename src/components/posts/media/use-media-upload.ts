@@ -19,6 +19,7 @@ import {
 } from "./media-persistence";
 
 export type { ComposerMedia, LocalFileSelection, MediaPreviewItem } from "./media-selection";
+export { createLibraryMedia } from "./media-selection";
 
 export type MediaResult =
   | { ok: true; media: ComposerMedia }
@@ -154,6 +155,7 @@ export function useMediaUpload() {
   // Persistent storage is contacted only from the Publish/Schedule flow.
   const persistPendingMedia = useCallback(
     async (media: ComposerMedia): Promise<MediaResult> => {
+      if (media.kind === "library") return { ok: true, media };
       if (media.storageKey) return { ok: true, media };
 
       setError(null);

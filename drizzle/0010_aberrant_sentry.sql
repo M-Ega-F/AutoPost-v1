@@ -1,0 +1,2 @@
+ALTER TABLE "workspaces" DROP CONSTRAINT "workspaces_owner_personal_unique";--> statement-breakpoint
+CREATE UNIQUE INDEX "workspaces_owner_personal_unique" ON "workspaces" USING btree ("owner_id") WHERE "workspaces"."is_personal" = true;

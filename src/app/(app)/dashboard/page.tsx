@@ -5,6 +5,8 @@ import { ConnectedAccountsSummary } from "@/components/dashboard/connected-accou
 import { DashboardPolling } from "@/components/dashboard/dashboard-polling";
 import { DashboardQuickActions } from "@/components/dashboard/dashboard-quick-actions";
 import { DashboardStats } from "@/components/dashboard/dashboard-stats";
+import { DashboardPerformance } from "@/components/dashboard/dashboard-performance";
+import { PublishingHealthCard } from "@/components/dashboard/publishing-health-card";
 import { FailedPostsCard } from "@/components/dashboard/failed-posts-card";
 import { RecentActivityCard } from "@/components/dashboard/recent-activity-card";
 import { ReconnectBanner } from "@/components/dashboard/reconnect-banner";
@@ -12,11 +14,25 @@ import { UpcomingPostsCard } from "@/components/dashboard/upcoming-posts-card";
 import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { requireUserId } from "@/lib/auth/server";
+import { getActiveWorkspaceForUser } from "@/lib/domain/workspaces";
+import { getReliabilitySnapshot } from "@/lib/reliability/health";
 import { getDashboardService } from "@/lib/services/dashboard";
+import { getSettingsForUser } from "@/lib/services/settings";
+import { cookies } from "next/headers";
+import { normalizeTimeZone, TIMEZONE_COOKIE } from "@/lib/time";
 
 export default async function DashboardPage() {
   const userId = await requireUserId();
-  const data = await getDashboardService(userId);
+  const [data, cookieStore, activeWorkspace] = await Promise.all([
+    getDashboardService(userId),
+    cookies(),
+    getActiveWorkspaceForUser(userId),
+  ]);
+  const reliability = await getReliabilitySnapshot(activeWorkspace.workspace.id);
+  const settings = await getSettingsForUser(
+    userId,
+    normalizeTimeZone(cookieStore.get(TIMEZONE_COOKIE)?.value),
+  );
 
   // Only rows that are really in flight poll (Design 6.2): a scheduled post
   // waiting for its time has nothing to refresh.
@@ -55,6 +71,8 @@ export default async function DashboardPage() {
 
         <DashboardQuickActions />
         <DashboardStats stats={data.stats} />
+        <DashboardPerformance performance={data.performance} />
+        <PublishingHealthCard initialSnapshot={reliability} />
 
         <ReconnectBanner
           accounts={data.connectedAccounts.filter(
@@ -63,7 +81,7 @@ export default async function DashboardPage() {
         />
 
         <div className="grid gap-6 xl:grid-cols-2">
-          <UpcomingPostsCard posts={data.upcoming} />
+          <UpcomingPostsCard posts={data.upcoming} timeZone={settings.timezone} />
           <RecentActivityCard posts={data.recent} />
         </div>
 

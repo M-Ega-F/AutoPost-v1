@@ -4,17 +4,32 @@ import { useState } from "react";
 
 import { AppSidebar, SidebarNav } from "@/components/app-sidebar";
 import { AppHeader } from "@/components/app-header";
+import { WorkspacePermissionProvider } from "@/components/auth/workspace-permissions";
+import type { WorkspaceRole } from "@/lib/auth/permissions";
 import {
   Sheet,
   SheetContent,
   SheetTitle,
 } from "@/components/ui/sheet";
 
+type WorkspaceOption = {
+  id: string;
+  name: string;
+  slug: string;
+  isPersonal: boolean;
+  role: WorkspaceRole;
+  avatarUrl?: string | null;
+};
+
 export function AppShell({
   userEmail,
+  workspaces,
+  activeWorkspaceId,
   children,
 }: {
   userEmail: string | null;
+  workspaces: WorkspaceOption[];
+  activeWorkspaceId: string;
   children: React.ReactNode;
 }) {
   const [isMobileNavOpen, setMobileNavOpen] = useState(false);
@@ -35,14 +50,18 @@ export function AppShell({
       <div className="lg:pl-64">
         <AppHeader
           userEmail={userEmail}
+          workspaces={workspaces}
+          activeWorkspaceId={activeWorkspaceId}
           onOpenNavigation={() => setMobileNavOpen(true)}
         />
-        <main
-          id="content"
-          className="mx-auto w-full max-w-5xl scroll-mt-20 px-4 py-6 md:px-6 md:py-8 lg:px-8"
-        >
-          {children}
-        </main>
+        <WorkspacePermissionProvider role={workspaces.find((workspace) => workspace.id === activeWorkspaceId)?.role ?? "viewer"}>
+          <main
+            id="content"
+            className="mx-auto w-full max-w-5xl scroll-mt-20 px-4 py-6 md:px-6 md:py-8 lg:px-8"
+          >
+            {children}
+          </main>
+        </WorkspacePermissionProvider>
       </div>
 
       <Sheet open={isMobileNavOpen} onOpenChange={setMobileNavOpen}>

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
 
 import { getUserId } from "@/lib/auth/server";
 import { apiError, apiErrorFromUnknown, apiSuccess, apiValidationError } from "@/lib/api/response";
@@ -8,9 +9,12 @@ import {
   createPostForUser,
   getPostForUser,
   listPostsForUser,
+  listHistoryPostsForUser,
   type PostListScope,
 } from "@/lib/services/posts";
-import { createPostSchema } from "@/lib/validation/schemas";
+import { getSettingsForUser } from "@/lib/services/settings";
+import { createPostSchema, historyQuerySchema } from "@/lib/validation/schemas";
+import { normalizeTimeZone, TIMEZONE_COOKIE } from "@/lib/time";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -37,6 +41,37 @@ export async function GET(request: Request): Promise<Response> {
   }
 
   try {
+    if (scope === "history") {
+      const rawQuery = Object.fromEntries(url.searchParams.entries());
+      delete rawQuery.scope;
+      const parsedQuery = historyQuerySchema.safeParse(rawQuery);
+      if (!parsedQuery.success) {
+        return apiValidationError(
+          parsedQuery.error.issues[0]?.message ?? "Invalid history filters.",
+        );
+      }
+
+      const cookieStore = await cookies();
+      const settings = await getSettingsForUser(
+        userId,
+        normalizeTimeZone(cookieStore.get(TIMEZONE_COOKIE)?.value),
+      );
+      const result = await listHistoryPostsForUser(
+        userId,
+        parsedQuery.data,
+        settings.timezone,
+      );
+      return apiSuccess({
+        posts: result.items,
+        pagination: {
+          page: result.page,
+          pageSize: result.pageSize,
+          total: result.total,
+          totalPages: result.totalPages,
+        },
+      });
+    }
+
     const posts = await listPostsForUser(
       userId,
       scope,

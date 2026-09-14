@@ -18,6 +18,7 @@ import {
   listCalendarPosts,
   listDrafts,
   listHistoryPosts,
+  listHistoryPostsPage,
   listScheduledPosts,
   publishDraft,
   recomputePostStatus,
@@ -783,6 +784,53 @@ describe("ownership — a second user sees and changes nothing", () => {
 
     assert.deepEqual(await listHistoryPosts(OTHER_USER_ID), []);
     assert.equal((await listHistoryPosts(USER_ID)).length, 1);
+  });
+
+  test("listHistoryPostsPage paginates and filters by status, platform, account and caption", async () => {
+    const instagram = await createAccount("instagram", { username: "history_ig" });
+    const first = await insertPost({ status: "failed", caption: "Launch campaign" });
+    await insertTarget(first, instagram, "instagram", { status: "failed" });
+    await insertPost({ status: "published", caption: "Different platform" });
+
+    const result = await listHistoryPostsPage(USER_ID, {
+      page: 1,
+      pageSize: 1,
+      status: "failed",
+      platform: "instagram",
+      accountId: instagram,
+      search: "launch",
+      sort: "newest",
+    });
+
+    assert.equal(result.total, 1);
+    assert.equal(result.totalPages, 1);
+    assert.equal(result.items[0]?.id, first);
+  });
+
+  test("listHistoryPostsPage applies a user-timezone date range", async () => {
+    const scheduled = await insertPost({
+      status: "scheduled",
+      timezone: "UTC",
+      scheduledAt: new Date("2026-09-10T10:00:00.000Z"),
+      caption: "Inside range",
+    });
+    await insertPost({
+      status: "scheduled",
+      timezone: "UTC",
+      scheduledAt: new Date("2026-09-12T10:00:00.000Z"),
+      caption: "Outside range",
+    });
+
+    const result = await listHistoryPostsPage(USER_ID, {
+      page: 1,
+      pageSize: 20,
+      from: "2026-09-10",
+      to: "2026-09-10",
+      sort: "scheduled",
+    }, "UTC");
+
+    assert.equal(result.total, 1);
+    assert.equal(result.items[0]?.id, scheduled);
   });
 
   test("retryPlatform rejects a target that is not the caller's", async () => {

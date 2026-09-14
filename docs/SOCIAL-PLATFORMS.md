@@ -17,6 +17,36 @@ The new provider scopes are intentionally limited to publishing:
 - LinkedIn: `openid`, `profile`, `w_member_social`
 - X: `tweet.read`, `tweet.write`, `users.read`, `offline.access`
 
+## Analytics support
+
+Analytics is capability-based and currently unavailable for all connected
+platforms in this release. The existing OAuth grants are publish/profile grants
+and are not expanded automatically for analytics permissions. TikTok's video
+metrics query also requires the `video.list` scope, which is not part of the
+current consent set. The app therefore stores an explicit unavailable snapshot
+with nullable metrics instead of returning invented values. The provider
+interface is ready for a platform adapter once its approved analytics scope is
+added through an intentional reconnect.
+
+## Threads
+
+Threads uses the official OAuth flow at `threads.net/oauth/authorize`, then
+exchanges the authorization code server-side and upgrades the short-lived token
+to a long-lived token before reading `/me`. The resulting Threads profile ID is
+stored as the stable `platform_account_id`, so reconnecting the same profile
+updates its existing account row instead of creating a duplicate.
+
+The provider supports the existing single-media post flow for JPEG, PNG, WebP,
+MP4 and MOV content, subject to the shared Threads limits: 500-character
+captions, 100 MB media, and video duration between 1 and 300 seconds. Carousel
+and text-only posts are not part of this MVP because the shared composer stores
+one media asset per post.
+
+Publishing is performed by the existing queue and worker: the provider creates
+a Threads media container and then publishes it. Token errors are normalized to
+reconnect-required status, while rate limits remain retryable. No Threads token
+is returned by account APIs, placed in a queue payload, or written to logs.
+
 Add the exact callback URL for each provider to its developer console. The
 application reads these credentials only on the server. The X provider uses
 OAuth 2.0 PKCE and stores its verifier in an HttpOnly cookie during the OAuth

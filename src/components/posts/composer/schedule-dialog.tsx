@@ -63,18 +63,21 @@ function toDateString(date: Date): string {
 
 type ScheduleSlot = { date: Date; time: string; timezone: string };
 
-/** Today at 09:00, or tomorrow once that slot has passed. */
-function firstSlot(timezone: string): ScheduleSlot {
+/** Today at the saved default time, or tomorrow once that slot has passed. */
+function firstSlot(timezone: string, requestedTime: string): ScheduleSlot {
+  const defaultTime = TIME_OPTIONS.includes(requestedTime)
+    ? requestedTime
+    : DEFAULT_TIME;
   const today = startOfToday();
 
   try {
     const todayAtNine = zonedTimeToUtc(
       toDateString(today),
-      DEFAULT_TIME,
+      defaultTime,
       timezone,
     );
     if (todayAtNine.getTime() > Date.now()) {
-      return { date: today, time: DEFAULT_TIME, timezone };
+      return { date: today, time: defaultTime, timezone };
     }
   } catch {
     // Unresolvable zone: fall through to tomorrow.
@@ -82,19 +85,21 @@ function firstSlot(timezone: string): ScheduleSlot {
 
   const tomorrow = new Date(today);
   tomorrow.setDate(tomorrow.getDate() + 1);
-  return { date: tomorrow, time: DEFAULT_TIME, timezone };
+  return { date: tomorrow, time: defaultTime, timezone };
 }
 
 export function ScheduleDialog({
   open,
   onOpenChange,
   defaultTimezone,
+  defaultTime,
   pending,
   onConfirm,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   defaultTimezone: string;
+  defaultTime: string;
   pending: boolean;
   onConfirm: (schedule: ScheduleValue) => void;
 }) {
@@ -113,6 +118,7 @@ export function ScheduleDialog({
         {/* Remounts on every open, so the slot always starts fresh. */}
         <ScheduleFields
           defaultTimezone={defaultTimezone}
+          defaultTime={defaultTime}
           pending={pending}
           onConfirm={onConfirm}
           onCancel={() => onOpenChange(false)}
@@ -124,17 +130,19 @@ export function ScheduleDialog({
 
 function ScheduleFields({
   defaultTimezone,
+  defaultTime,
   pending,
   onConfirm,
   onCancel,
 }: {
   defaultTimezone: string;
+  defaultTime: string;
   pending: boolean;
   onConfirm: (schedule: ScheduleValue) => void;
   onCancel: () => void;
 }) {
   const now = useNow();
-  const [slot, setSlot] = useState(() => firstSlot(defaultTimezone));
+  const [slot, setSlot] = useState(() => firstSlot(defaultTimezone, defaultTime));
   const { date, time, timezone } = slot;
 
   const today = useMemo(() => startOfToday(), []);

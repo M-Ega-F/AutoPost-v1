@@ -6,6 +6,7 @@ import { useState } from "react";
 import { buttonVariants } from "@/components/ui/button";
 import type { Platform } from "@/lib/status";
 import { cn } from "@/lib/utils";
+import { useWorkspacePermission } from "@/components/auth/workspace-permissions";
 
 const FOCUS_RING =
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background";
@@ -21,11 +22,13 @@ export function ConnectButton({
   disabled = false,
 }: {
   platform: Platform;
-  label: "Connect" | "Reconnect";
+  label: "Connect" | "Reconnect" | "Connect another account";
   variant?: "default" | "outline";
   disabled?: boolean;
 }) {
   const [isConnecting, setConnecting] = useState(false);
+  const canConnect = useWorkspacePermission("accounts:connect");
+  disabled = disabled || !canConnect;
 
   return (
     <a

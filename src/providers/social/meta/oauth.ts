@@ -53,6 +53,7 @@ function requireCredentials(): { clientId: string; clientSecret: string } {
 
 export function metaAuthorizationUrl(input: {
   userId: string;
+  workspaceId?: string;
   platform: Platform;
   state: string;
   redirectUri: string;
@@ -69,6 +70,7 @@ export function metaAuthorizationUrl(input: {
     // readable user id through the browser.
     state: signOAuthState({
       userId: input.userId,
+      workspaceId: input.workspaceId,
       platform: input.platform,
       state: input.state,
     }),
@@ -88,7 +90,7 @@ export function metaAuthorizationUrl(input: {
 export function readMetaState(
   state: string,
   platform: Platform,
-): { userId: string } {
+): { userId: string; workspaceId?: string } {
   const parsed = verifyOAuthState(state);
   if (
     !parsed ||
@@ -100,7 +102,10 @@ export function readMetaState(
       retryable: false,
     });
   }
-  return { userId: parsed.userId };
+  return {
+    userId: parsed.userId,
+    ...(parsed.workspaceId ? { workspaceId: parsed.workspaceId } : {}),
+  };
 }
 
 type MetaTokenPayload = {

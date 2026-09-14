@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { getUserId } from "@/lib/auth/server";
+import { requireWorkspacePermission } from "@/lib/auth/authorization";
 import { AppError } from "@/lib/errors";
 import { logger } from "@/lib/logger";
 import { consumeRateLimit } from "@/lib/rate-limit";
@@ -53,6 +54,7 @@ export async function POST(request: Request): Promise<Response> {
     if (!userId) {
       return NextResponse.json({ message: MESSAGE_UNAUTHORIZED }, { status: 401 });
     }
+    await requireWorkspacePermission(userId, "media:create");
 
     const limited = consumeRateLimit("mediaUrl", userId);
     if (!limited.ok) {

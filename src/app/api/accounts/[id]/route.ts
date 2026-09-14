@@ -7,7 +7,7 @@ import {
 } from "@/lib/api/response";
 import {
   disconnectAccountForUser,
-  getAccountForUser,
+  getAccountManagementForUser,
 } from "@/lib/services/accounts";
 import { logger } from "@/lib/logger";
 
@@ -25,7 +25,7 @@ export async function GET(
   }
 
   try {
-    const account = await getAccountForUser(userId, id);
+    const account = await getAccountManagementForUser(userId, id);
     if (!account) {
       return apiError({ status: 404, code: "NOT_FOUND", message: "We couldn't find that account." });
     }

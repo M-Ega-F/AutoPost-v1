@@ -432,6 +432,7 @@ export const tiktokProvider: SocialProvider = {
       redirect_uri: input.redirectUri,
       state: signOAuthState({
         userId: input.userId,
+        workspaceId: input.workspaceId,
         platform: PLATFORM,
         state: input.state,
       }),

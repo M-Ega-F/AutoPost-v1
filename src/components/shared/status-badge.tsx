@@ -1,4 +1,4 @@
-import { Clock } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Clock, ShieldQuestion, Unlink, XCircle } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
@@ -14,6 +14,7 @@ import {
   type SocialAccountStatus,
   type StatusMeta,
 } from "@/lib/status";
+import type { AccountHealthStatus } from "@/lib/domain/types";
 
 /**
  * A spinner that degrades to a static clock when the user prefers reduced
@@ -92,6 +93,26 @@ export function AccountStatusBadge({
   className?: string;
 }) {
   return <StatusBadge meta={ACCOUNT_STATUS_META[status]} className={className} />;
+}
+
+const ACCOUNT_HEALTH_META: Record<AccountHealthStatus, StatusMeta> = {
+  healthy: { label: "Healthy", tone: "success", icon: CheckCircle2 },
+  expiring_soon: { label: "Expires soon", tone: "warning", icon: Clock },
+  expired: { label: "Expired", tone: "danger", icon: XCircle },
+  needs_reconnect: { label: "Needs reconnect", tone: "warning", icon: AlertTriangle },
+  disconnected: { label: "Not connected", tone: "neutral", icon: Unlink },
+  error: { label: "Connection problem", tone: "danger", icon: AlertTriangle },
+  unknown: { label: "Health unknown", tone: "neutral", icon: ShieldQuestion },
+};
+
+export function AccountHealthBadge({
+  status,
+  className,
+}: {
+  status: AccountHealthStatus;
+  className?: string;
+}) {
+  return <StatusBadge meta={ACCOUNT_HEALTH_META[status]} className={className} />;
 }
 
 export function ExecutionStatusBadge({

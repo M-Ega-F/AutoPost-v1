@@ -109,10 +109,26 @@ export type PublishStatusResult =
       errorCode: ErrorCode;
       message?: string;
       responseLog?: unknown;
-    };
+  };
+
+export type AnalyticsInput = {
+  account: SocialAccountRecord;
+  accessToken: string;
+  externalPostId: string;
+};
+
+export type AnalyticsResult = {
+  metrics: Partial<Record<
+    "views" | "likes" | "comments" | "shares" | "saves" | "reach" | "impressions",
+    number | null
+  >>;
+  rawMetrics?: unknown;
+  collectedAt?: Date;
+};
 
 export type OAuthStartInput = {
   userId: string;
+  workspaceId?: string;
   state: string;
   redirectUri: string;
   setCookie?: (cookie: { name: string; value: string; maxAge: number }) => void;
@@ -120,6 +136,7 @@ export type OAuthStartInput = {
 
 export type OAuthCallbackInput = {
   userId: string;
+  workspaceId?: string;
   code: string;
   state: string;
   redirectUri: string;
@@ -159,6 +176,9 @@ export interface SocialProvider {
   getPublishStatus?(
     input: PublishStatusInput,
   ): Promise<PublishStatusResult>;
+
+  /** Optional: only providers with approved analytics scopes implement this. */
+  getPostAnalytics?(input: AnalyticsInput): Promise<AnalyticsResult>;
 }
 
 export const VALIDATION_OK: ValidationResult = { ok: true };

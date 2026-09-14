@@ -7,6 +7,7 @@ import { useId, useState, useTransition } from "react";
 import { Button } from "@/components/ui/button";
 import { retryPlatformAction } from "@/lib/actions/posts";
 import { cn } from "@/lib/utils";
+import { useWorkspacePermission } from "@/components/auth/workspace-permissions";
 
 /**
  * Retries a single platform. The action takes the platform row id, never the
@@ -29,6 +30,7 @@ export function RetryButton({
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const reasonId = useId();
+  const canRetry = useWorkspacePermission("posts:retry");
 
   function retry() {
     setError(null);
@@ -51,7 +53,7 @@ export function RetryButton({
         variant="default"
         size="sm"
         className="h-11 md:h-8"
-        disabled={disabled || isPending}
+        disabled={disabled || isPending || !canRetry}
         aria-describedby={disabledReason ? reasonId : undefined}
         onClick={retry}
       >

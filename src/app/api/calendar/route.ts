@@ -4,6 +4,7 @@ import { getUserId } from "@/lib/auth/server";
 import { apiError, apiErrorFromUnknown, apiSuccess, apiValidationError } from "@/lib/api/response";
 import { toCalendarPostDto } from "@/lib/calendar";
 import { getCalendarForUser } from "@/lib/services/calendar";
+import { getSettingsForUser } from "@/lib/services/settings";
 import { isValidTimeZone, normalizeTimeZone, TIMEZONE_COOKIE } from "@/lib/time";
 import { logger } from "@/lib/logger";
 
@@ -39,9 +40,11 @@ export async function GET(request: Request): Promise<Response> {
   if (requestedTimezone && !isValidTimeZone(requestedTimezone)) {
     return apiValidationError("Choose a valid timezone.");
   }
-  const timezone = requestedTimezone
-    ? requestedTimezone
-    : normalizeTimeZone(cookieStore.get(TIMEZONE_COOKIE)?.value);
+  const settings = await getSettingsForUser(
+    userId,
+    normalizeTimeZone(cookieStore.get(TIMEZONE_COOKIE)?.value),
+  );
+  const timezone = requestedTimezone ?? settings.timezone;
 
   try {
     const posts = await getCalendarForUser(userId, { start, end });

@@ -6,7 +6,11 @@ import { decryptSecret, encryptSecret } from "@/lib/crypto/tokens";
 import { db } from "@/lib/db";
 import { postPlatforms, posts, socialAccounts } from "@/lib/db/schema";
 import type { Platform, SocialAccountStatus } from "@/lib/status";
-import type { AccountSummary } from "@/lib/domain/types";
+import type {
+  AccountHealthStatus,
+  AccountManagementSummary,
+  AccountSummary,
+} from "@/lib/domain/types";
 import type {
   ConnectedAccountDraft,
   RefreshResult,
@@ -17,6 +21,13 @@ import { removePublishJob } from "@/lib/queue/publish";
 import { derivePostStatus } from "@/lib/status";
 import { AppError, humanErrorMessage } from "@/lib/errors";
 import { logger } from "@/lib/logger";
+import { platformCapabilitiesFor } from "@/lib/platform-capabilities";
+import { getActiveWorkspaceId } from "@/lib/domain/workspaces";
+import { requireWorkspacePermission } from "@/lib/auth/authorization";
+import { notifyAccountEvent } from "@/lib/domain/notifications";
+import { emitWebhookEventSafely } from "@/lib/webhooks/events";
+
+const EXPIRING_SOON_MS = 7 * 24 * 60 * 60 * 1000;
 
 function toRecord(row: typeof socialAccounts.$inferSelect): SocialAccountRecord {
   return {
@@ -54,10 +65,11 @@ export function accountLabelFor(
 export async function listAccountSummaries(
   userId: string,
 ): Promise<AccountSummary[]> {
+  const workspaceId = await getActiveWorkspaceId(userId);
   const rows = await db
     .select()
     .from(socialAccounts)
-    .where(eq(socialAccounts.userId, userId));
+    .where(and(eq(socialAccounts.userId, userId), eq(socialAccounts.workspaceId, workspaceId)));
 
   const byPlatform = new Map<Platform, SocialAccountRecord>();
   for (const row of rows) {
@@ -104,27 +116,206 @@ export async function listAccountSummaries(
 }
 
 export async function listActiveAccounts(userId: string) {
+  const workspaceId = await getActiveWorkspaceId(userId);
   const rows = await db
     .select()
     .from(socialAccounts)
     .where(
       and(
         eq(socialAccounts.userId, userId),
+        eq(socialAccounts.workspaceId, workspaceId),
         eq(socialAccounts.status, "active"),
       ),
     );
   return rows.map(toRecord);
 }
 
-export async function getAccountRecord(
+type AccountUsage = {
+  scheduledPostCount: number;
+  processingPostCount: number;
+  pendingTargetCount: number;
+  lastSuccessfulPublishAt: Date | null;
+  lastFailedPublishAt: Date | null;
+};
+
+function emptyUsage(): AccountUsage {
+  return {
+    scheduledPostCount: 0,
+    processingPostCount: 0,
+    pendingTargetCount: 0,
+    lastSuccessfulPublishAt: null,
+    lastFailedPublishAt: null,
+  };
+}
+
+function latestDate(current: Date | null, candidate: Date | null): Date | null {
+  if (!candidate) return current;
+  if (!current || candidate > current) return candidate;
+  return current;
+}
+
+function healthFor(
+  row: typeof socialAccounts.$inferSelect,
+  now = Date.now(),
+): AccountHealthStatus {
+  if (row.status === "disconnected") return "disconnected";
+  if (row.status === "needs_reconnect") return "needs_reconnect";
+  if (row.lastErrorCode) return "error";
+  if (row.tokenExpiresAt && row.tokenExpiresAt.getTime() <= now) return "expired";
+  if (
+    row.tokenExpiresAt &&
+    row.tokenExpiresAt.getTime() <= now + EXPIRING_SOON_MS
+  ) {
+    return "expiring_soon";
+  }
+  return row.lastValidatedAt ? "healthy" : "unknown";
+}
+
+function accountManagementSummary(
+  row: typeof socialAccounts.$inferSelect,
+  usage: AccountUsage,
+): AccountManagementSummary {
+  return {
+    id: row.id,
+    platform: row.platform,
+    status: row.status,
+    healthStatus: healthFor(row),
+    username: row.username,
+    displayName: row.displayName,
+    avatarUrl: row.avatarUrl,
+    accountLabel: accountLabelFor(row),
+    configured: getProvider(row.platform).isConfigured(),
+    // This is the persisted first connection timestamp; updatedAt changes on
+    // token refresh and must not be presented as a new connection.
+    connectedAt: row.createdAt,
+    lastValidatedAt: row.lastValidatedAt,
+    tokenExpiresAt: row.tokenExpiresAt,
+    ...usage,
+    healthMessage: row.lastErrorCode
+      ? humanErrorMessage(row.platform, row.lastErrorCode)
+      : null,
+    capabilities: platformCapabilitiesFor(row.platform),
+  };
+}
+
+async function usageForAccounts(
+  accountIds: readonly string[],
+  userId: string,
+  workspaceId: string,
+): Promise<Map<string, AccountUsage>> {
+  const usage = new Map<string, AccountUsage>();
+  if (accountIds.length === 0) return usage;
+
+  const rows = await db
+    .select({
+      accountId: postPlatforms.socialAccountId,
+      postId: postPlatforms.postId,
+      targetStatus: postPlatforms.status,
+      targetPublishedAt: postPlatforms.publishedAt,
+      targetUpdatedAt: postPlatforms.updatedAt,
+      postStatus: posts.status,
+    })
+    .from(postPlatforms)
+    .innerJoin(posts, eq(posts.id, postPlatforms.postId))
+    .where(
+      and(
+        inArray(postPlatforms.socialAccountId, [...accountIds]),
+        eq(posts.userId, userId),
+        eq(posts.workspaceId, workspaceId),
+      ),
+    );
+
+  const scheduledPosts = new Map<string, Set<string>>();
+  const processingPosts = new Map<string, Set<string>>();
+
+  for (const row of rows) {
+    const current = usage.get(row.accountId) ?? emptyUsage();
+    if (row.targetStatus === "pending") current.pendingTargetCount += 1;
+    if (row.postStatus === "scheduled") {
+      const ids = scheduledPosts.get(row.accountId) ?? new Set<string>();
+      ids.add(row.postId);
+      scheduledPosts.set(row.accountId, ids);
+    }
+    if (row.postStatus === "processing" || row.targetStatus === "processing") {
+      const ids = processingPosts.get(row.accountId) ?? new Set<string>();
+      ids.add(row.postId);
+      processingPosts.set(row.accountId, ids);
+    }
+    if (row.targetStatus === "success") {
+      current.lastSuccessfulPublishAt = latestDate(
+        current.lastSuccessfulPublishAt,
+        row.targetPublishedAt,
+      );
+    }
+    if (row.targetStatus === "failed") {
+      current.lastFailedPublishAt = latestDate(
+        current.lastFailedPublishAt,
+        row.targetUpdatedAt,
+      );
+    }
+    usage.set(row.accountId, current);
+  }
+
+  for (const [accountId, ids] of scheduledPosts) {
+    const current = usage.get(accountId) ?? emptyUsage();
+    current.scheduledPostCount = ids.size;
+    usage.set(accountId, current);
+  }
+  for (const [accountId, ids] of processingPosts) {
+    const current = usage.get(accountId) ?? emptyUsage();
+    current.processingPostCount = ids.size;
+    usage.set(accountId, current);
+  }
+
+  return usage;
+}
+
+/** Returns every persisted account with safe health and usage data. */
+export async function listAccountManagementSummaries(
+  userId: string,
+): Promise<AccountManagementSummary[]> {
+  const workspaceId = await getActiveWorkspaceId(userId);
+  const rows = await db
+    .select()
+    .from(socialAccounts)
+    .where(and(eq(socialAccounts.userId, userId), eq(socialAccounts.workspaceId, workspaceId)));
+  const usage = await usageForAccounts(
+    rows.map((row) => row.id),
+    userId,
+    workspaceId,
+  );
+
+  return rows.map((row) => accountManagementSummary(row, usage.get(row.id) ?? emptyUsage()));
+}
+
+export async function getAccountManagementSummary(
   userId: string,
   accountId: string,
-): Promise<SocialAccountRecord | null> {
+): Promise<AccountManagementSummary | null> {
+  const workspaceId = await getActiveWorkspaceId(userId);
   const [row] = await db
     .select()
     .from(socialAccounts)
     .where(
-      and(eq(socialAccounts.id, accountId), eq(socialAccounts.userId, userId)),
+      and(eq(socialAccounts.id, accountId), eq(socialAccounts.userId, userId), eq(socialAccounts.workspaceId, workspaceId)),
+    )
+    .limit(1);
+  if (!row) return null;
+
+  const usage = await usageForAccounts([row.id], userId, workspaceId);
+  return accountManagementSummary(row, usage.get(row.id) ?? emptyUsage());
+}
+
+export async function getAccountRecord(
+  userId: string,
+  accountId: string,
+): Promise<SocialAccountRecord | null> {
+  const workspaceId = await getActiveWorkspaceId(userId);
+  const [row] = await db
+    .select()
+    .from(socialAccounts)
+    .where(
+      and(eq(socialAccounts.id, accountId), eq(socialAccounts.userId, userId), eq(socialAccounts.workspaceId, workspaceId)),
     )
     .limit(1);
 
@@ -133,11 +324,16 @@ export async function getAccountRecord(
 
 export async function getAccountRecordById(
   accountId: string,
+  workspaceId?: string,
 ): Promise<SocialAccountRecord | null> {
   const [row] = await db
     .select()
     .from(socialAccounts)
-    .where(eq(socialAccounts.id, accountId))
+    .where(
+      workspaceId
+        ? and(eq(socialAccounts.id, accountId), eq(socialAccounts.workspaceId, workspaceId))
+        : eq(socialAccounts.id, accountId),
+    )
     .limit(1);
 
   return row ? toRecord(row) : null;
@@ -160,7 +356,10 @@ export async function decryptRefreshToken(
 export async function saveConnectedAccounts(
   userId: string,
   drafts: ConnectedAccountDraft[],
+  workspaceId?: string,
 ): Promise<Platform[]> {
+  await requireWorkspacePermission(userId, "accounts:connect", workspaceId);
+  const resolvedWorkspaceId = workspaceId ?? (await getActiveWorkspaceId(userId));
   const saved: Platform[] = [];
 
   for (const draft of drafts) {
@@ -170,6 +369,7 @@ export async function saveConnectedAccounts(
       .where(
         and(
           eq(socialAccounts.userId, userId),
+          eq(socialAccounts.workspaceId, resolvedWorkspaceId),
           eq(socialAccounts.platform, draft.platform),
           eq(socialAccounts.platformAccountId, draft.platformAccountId),
         ),
@@ -178,6 +378,7 @@ export async function saveConnectedAccounts(
 
     const values = {
       userId,
+      workspaceId: resolvedWorkspaceId,
       platform: draft.platform,
       platformAccountId: draft.platformAccountId,
       username: draft.username ?? null,
@@ -190,22 +391,26 @@ export async function saveConnectedAccounts(
       tokenExpiresAt: draft.tokenExpiresAt ?? null,
       scopes: draft.scopes ?? null,
       status: "active" as const,
+      lastValidatedAt: new Date(),
       lastErrorCode: null,
       lastErrorMessage: null,
       metadata: draft.metadata ?? null,
       updatedAt: new Date(),
     };
 
+    let accountId = existing[0]?.id ?? null;
     if (existing.length > 0) {
       await db
         .update(socialAccounts)
         .set(values)
         .where(eq(socialAccounts.id, existing[0].id));
     } else {
-      await db.insert(socialAccounts).values(values);
+      const [created] = await db.insert(socialAccounts).values(values).returning({ id: socialAccounts.id });
+      accountId = created?.id ?? null;
     }
 
     saved.push(draft.platform);
+    if (accountId) void emitWebhookEventSafely({ workspaceId: resolvedWorkspaceId, type: "account.connected", data: { accountId } });
   }
 
   return saved;
@@ -247,6 +452,15 @@ export async function markAccountNeedsReconnect(
     .where(eq(socialAccounts.id, accountId));
 
   logger.warn("account needs reconnect", { accountId, code });
+  await notifyAccountEvent(
+    accountId,
+    code === "token_expired" ? "ACCOUNT_EXPIRED" : "ACCOUNT_RECONNECT_REQUIRED",
+  ).catch((error) => {
+    logger.warn("account notification failed", {
+      accountId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  });
 }
 
 /**
@@ -257,6 +471,8 @@ export async function disconnectAccount(
   userId: string,
   accountId: string,
 ): Promise<void> {
+  await requireWorkspacePermission(userId, "accounts:disconnect");
+  const workspaceId = await getActiveWorkspaceId(userId);
   const jobIds: Array<string | null> = [];
 
   await db.transaction(async (tx) => {
@@ -264,12 +480,32 @@ export async function disconnectAccount(
       .select()
       .from(socialAccounts)
       .where(
-        and(eq(socialAccounts.id, accountId), eq(socialAccounts.userId, userId)),
+        and(eq(socialAccounts.id, accountId), eq(socialAccounts.userId, userId), eq(socialAccounts.workspaceId, workspaceId)),
       )
       .limit(1);
 
     if (!account) {
       throw new AppError("not_found", "We couldn't find that account.");
+    }
+
+    const processing = await tx
+      .select({ id: postPlatforms.id })
+      .from(postPlatforms)
+      .innerJoin(posts, eq(posts.id, postPlatforms.postId))
+      .where(
+        and(
+          eq(postPlatforms.socialAccountId, accountId),
+          eq(posts.userId, userId),
+          eq(posts.workspaceId, workspaceId),
+          eq(postPlatforms.status, "processing"),
+        ),
+      );
+
+    if (processing.length > 0) {
+      throw new AppError(
+        "validation_failed",
+        "This account is currently being used to publish a post. Try again after publishing is complete.",
+      );
     }
 
     await tx
@@ -291,6 +527,7 @@ export async function disconnectAccount(
         and(
           eq(postPlatforms.socialAccountId, accountId),
           eq(posts.userId, userId),
+          eq(posts.workspaceId, workspaceId),
           inArray(postPlatforms.status, ["pending"]),
         ),
       );
@@ -311,8 +548,8 @@ export async function disconnectAccount(
       })
       .where(
         and(
-          eq(postPlatforms.socialAccountId, accountId),
-          inArray(postPlatforms.status, ["pending"]),
+          inArray(postPlatforms.id, pending.map((row) => row.id)),
+          eq(postPlatforms.status, "pending"),
         ),
       );
 
@@ -337,6 +574,9 @@ export async function disconnectAccount(
   for (const jobId of jobIds) {
     await removePublishJob(jobId);
   }
+  await notifyAccountEvent(accountId, "ACCOUNT_DISCONNECTED").catch((error) => {
+    logger.warn("account disconnect notification failed", { accountId, error: error instanceof Error ? error.message : String(error) });
+  });
 }
 
 export async function markAccountValidated(

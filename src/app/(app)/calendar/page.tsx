@@ -6,12 +6,17 @@ import { currentCalendarMonth, toCalendarDraftDto, toCalendarPostDto, calendarMo
 import { listDraftsForUser } from "@/lib/services/posts";
 import { getCalendarForUser } from "@/lib/services/calendar";
 import { requireUser } from "@/lib/auth/server";
+import { getSettingsForUser } from "@/lib/services/settings";
 import { normalizeTimeZone, TIMEZONE_COOKIE } from "@/lib/time";
 
 export default async function CalendarPage() {
   const user = await requireUser();
   const cookieStore = await cookies();
-  const timeZone = normalizeTimeZone(cookieStore.get(TIMEZONE_COOKIE)?.value);
+  const settings = await getSettingsForUser(
+    user.id,
+    normalizeTimeZone(cookieStore.get(TIMEZONE_COOKIE)?.value),
+  );
+  const timeZone = settings.timezone;
   const month = currentCalendarMonth(timeZone);
   const range = calendarMonthRange(month, timeZone);
   const [posts, drafts] = await Promise.all([

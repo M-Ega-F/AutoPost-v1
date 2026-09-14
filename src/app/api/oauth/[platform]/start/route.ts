@@ -6,8 +6,11 @@ import { getCurrentUser } from "@/lib/auth/server";
 import { loginUrlWithNext } from "@/lib/auth/redirect";
 import { isMissingConfigError, resolveAppUrl, serverConfig } from "@/lib/env";
 import { logger } from "@/lib/logger";
+import { consumeRateLimit } from "@/lib/rate-limit";
 import { getProvider } from "@/providers/social";
 import { PLATFORMS, type Platform } from "@/lib/status";
+import { getActiveWorkspaceForUser } from "@/lib/domain/workspaces";
+import { requireWorkspacePermission } from "@/lib/auth/authorization";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -78,7 +81,15 @@ export async function GET(
     );
   }
 
+  if (!consumeRateLimit("oauthStart", user.id).ok) {
+    const url = new URL("/connected-accounts", resolveAppUrl(origin));
+    url.searchParams.set("error", "unknown");
+    url.searchParams.set("platform", platform);
+    return NextResponse.redirect(url, 303);
+  }
+
   try {
+    await requireWorkspacePermission(user.id, "accounts:connect");
     const provider = getProvider(platform);
 
     if (!provider.isConfigured()) {
@@ -101,8 +112,10 @@ export async function GET(
     ).toString();
 
     const providerCookies: Array<{ name: string; value: string; maxAge: number }> = [];
+    const workspace = await getActiveWorkspaceForUser(user.id);
     const authorizationUrl = await provider.getAuthorizationUrl({
       userId: user.id,
+      workspaceId: workspace.workspace.id,
       state,
       redirectUri,
       setCookie: (cookie) => providerCookies.push(cookie),

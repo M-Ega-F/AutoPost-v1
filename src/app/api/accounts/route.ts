@@ -1,6 +1,6 @@
 import { getUserId } from "@/lib/auth/server";
 import { apiError, apiErrorFromUnknown, apiSuccess } from "@/lib/api/response";
-import { listAccountsForUser } from "@/lib/services/accounts";
+import { listAccountManagementForUser } from "@/lib/services/accounts";
 import { logger } from "@/lib/logger";
 
 export const runtime = "nodejs";
@@ -13,7 +13,7 @@ export async function GET(): Promise<Response> {
   }
 
   try {
-    return apiSuccess({ accounts: await listAccountsForUser(userId) });
+    return apiSuccess({ accounts: await listAccountManagementForUser(userId) });
   } catch (error) {
     logger.error("internal api account list failed", {
       error: error instanceof Error ? error.message : String(error),

@@ -2,10 +2,28 @@ import "server-only";
 
 import {
   disconnectAccount,
+  getAccountManagementSummary,
   getAccountRecord,
+  listAccountManagementSummaries,
   listAccountSummaries,
 } from "@/lib/domain/accounts";
-import type { AccountSummary } from "@/lib/domain/types";
+import type {
+  AccountManagementSummary,
+  AccountSummary,
+} from "@/lib/domain/types";
+
+export function listAccountManagementForUser(
+  userId: string,
+): Promise<AccountManagementSummary[]> {
+  return listAccountManagementSummaries(userId);
+}
+
+export function getAccountManagementForUser(
+  userId: string,
+  accountId: string,
+): Promise<AccountManagementSummary | null> {
+  return getAccountManagementSummary(userId, accountId);
+}
 
 export function listAccountsForUser(userId: string): Promise<AccountSummary[]> {
   return listAccountSummaries(userId);

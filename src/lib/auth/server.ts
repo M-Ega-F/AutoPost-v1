@@ -54,6 +54,10 @@ export async function getCurrentUser(): Promise<User | null> {
   const {
     data: { user },
   } = await supabase.auth.getUser();
+  if (user) {
+    const { ensurePersonalWorkspace } = await import("@/lib/domain/workspaces");
+    await ensurePersonalWorkspace(user.id);
+  }
   return user ?? null;
 }
 

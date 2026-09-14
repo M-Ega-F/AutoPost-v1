@@ -53,6 +53,9 @@ import { ScheduleDialog, type ScheduleValue } from "./schedule-dialog";
 import { MediaPreview } from "../media/media-preview";
 import { MediaTabs } from "../media/media-tabs";
 import { useMediaUpload } from "../media/use-media-upload";
+import { createLibraryMedia, type ComposerMedia } from "../media/media-selection";
+import type { MediaAssetSummary } from "@/lib/domain/types";
+import { useWorkspacePermission } from "@/components/auth/workspace-permissions";
 
 const platformValueSchema = z.custom<Platform>(
   (value) => typeof value === "string" && PLATFORMS.includes(value as Platform),
@@ -60,8 +63,9 @@ const platformValueSchema = z.custom<Platform>(
 );
 
 const mediaValueSchema = z.object({
-  kind: z.enum(["upload", "url"]),
+  kind: z.enum(["upload", "url", "library"]),
   storageKey: z.string().nullable(),
+  assetId: z.string().nullable().optional(),
   sourceUrl: z.string().nullable(),
   mediaType: z.enum(["image", "video"]),
   mimeType: z.string().min(1),
@@ -145,10 +149,24 @@ const COMPATIBILITY_DEBOUNCE_MS = 400;
 
 function toMediaPayload(
   media: NonNullable<ComposerValues["media"]>,
-  storageKey: string,
+  storageKey: string | null,
 ): CreatePostPayload["media"] {
+  if (media.kind === "library") {
+    return {
+      kind: "library",
+      assetId: media.assetId ?? "",
+      storageKey: null,
+      mediaType: media.mediaType,
+      mimeType: media.mimeType,
+      fileSize: media.fileSize,
+      width: media.width,
+      height: media.height,
+      duration: media.duration,
+    };
+  }
+
   const base = {
-    storageKey,
+    storageKey: storageKey ?? "",
     mediaType: media.mediaType,
     mimeType: media.mimeType,
     fileSize: media.fileSize,
@@ -165,11 +183,15 @@ function toMediaPayload(
 export function CreatePostForm({
   accounts,
   defaultTimezone,
+  defaultScheduleTime = "09:00",
+  initialMedia,
   mode = "create",
   draft,
 }: {
   accounts: AccountSummary[];
   defaultTimezone: string;
+  defaultScheduleTime?: string;
+  initialMedia?: MediaAssetSummary | null;
   mode?: "create" | "draft";
   draft?: DraftDetail;
 }) {
@@ -186,6 +208,10 @@ export function CreatePostForm({
   const [scheduleOpen, setScheduleOpen] = useState(false);
   const [compatibility, setCompatibility] = useState<PlatformCompatibility>({});
   const [checking, setChecking] = useState(false);
+  const canSaveDraft = useWorkspacePermission(mode === "draft" ? "drafts:update" : "drafts:create");
+  const canPublish = useWorkspacePermission("posts:publish");
+  const canSchedule = useWorkspacePermission("posts:schedule");
+  const canConnect = useWorkspacePermission("accounts:connect");
 
   const {
     pending,
@@ -213,6 +239,7 @@ export function CreatePostForm({
     return {
       kind: draft.media.storageKey ? ("upload" as const) : ("url" as const),
       storageKey: draft.media.storageKey,
+      assetId: null,
       sourceUrl: draft.media.sourceUrl,
       mimeType: draft.media.mimeType,
       fileName: "Saved media",
@@ -224,6 +251,11 @@ export function CreatePostForm({
       duration: draft.media.duration,
     };
   }, [draft]);
+
+  const initialLibraryMedia = useMemo(
+    () => (initialMedia ? createLibraryMedia(initialMedia) : null),
+    [initialMedia],
+  );
 
   const initialPlatforms = useMemo(
     () => (draft
@@ -241,7 +273,7 @@ export function CreatePostForm({
     defaultValues: {
       caption: draft?.contentText ?? "",
       platforms: initialPlatforms,
-      media: draftMedia,
+      media: draftMedia ?? initialLibraryMedia,
     },
   });
 
@@ -422,7 +454,7 @@ export function CreatePostForm({
       setServerError(null);
       startTransition(async () => {
         const persisted = await persistPendingMedia(values.media!);
-        if (!persisted.ok || !persisted.media.storageKey) {
+        if (!persisted.ok || (!persisted.media.storageKey && !persisted.media.assetId)) {
           if (cancellation.signal.aborted) {
             toast.success("Publishing cancelled.");
             setCancelling(false);
@@ -433,8 +465,7 @@ export function CreatePostForm({
         }
 
         const postMedia = persisted.media;
-        const storageKey = postMedia.storageKey;
-        if (!storageKey) {
+        if (!postMedia.storageKey && !postMedia.assetId) {
           setActiveSubmission(null);
           setPendingAction(null);
           return;
@@ -442,7 +473,7 @@ export function CreatePostForm({
         setValue("media", postMedia, { shouldValidate: false });
         const payload = {
           contentText: values.caption,
-          media: toMediaPayload(postMedia, storageKey),
+          media: toMediaPayload(postMedia, postMedia.storageKey),
           platforms: values.platforms,
           schedule,
         };
@@ -470,6 +501,18 @@ export function CreatePostForm({
 
         if (!result.ok) {
           setServerError(result.message);
+          setActiveSubmission(null);
+          setPendingAction(null);
+          return;
+        }
+
+        if (result.status === "draft" && result.postId) {
+          toast.success("Draft saved. Submit it for review when it is ready.");
+          resetUploader();
+          router.push(`/drafts/${result.postId}`);
+          setCompatibility({});
+          setSubmitAttempted(false);
+          setCancelling(false);
           setActiveSubmission(null);
           setPendingAction(null);
           return;
@@ -543,7 +586,7 @@ export function CreatePostForm({
       let media = parsed.data.media;
       if (media) {
         const persisted = await persistPendingMedia(media);
-        if (!persisted.ok || !persisted.media.storageKey) {
+        if (!persisted.ok || (!persisted.media.storageKey && !persisted.media.assetId)) {
           setActiveSubmission(null);
           setPendingAction(null);
           return;
@@ -555,7 +598,7 @@ export function CreatePostForm({
       const result = await saveDraftAction({
         postId: draft?.id,
         caption: parsed.data.caption,
-        media: media ? toMediaPayload(media, media.storageKey as string) : null,
+        media: media ? toMediaPayload(media, media.storageKey) : null,
         platforms: parsed.data.platforms,
         timezone: draft?.timezone ?? defaultTimezone,
       });
@@ -661,6 +704,18 @@ export function CreatePostForm({
     [addFromUrl, setValue, submitAttempted],
   );
 
+  const handleLibrary = useCallback(
+    (media: ComposerMedia) => {
+      setServerError(null);
+      setCompatibility({});
+      setValue("media", media, {
+        shouldValidate: submitAttempted,
+        shouldDirty: true,
+      });
+    },
+    [setValue, submitAttempted],
+  );
+
   const removeMedia = useCallback(() => {
     resetUploader();
     setCompatibility({});
@@ -704,7 +759,7 @@ export function CreatePostForm({
           limit={limit}
           platforms={effectivePlatforms}
           error={captionError}
-          disabled={isPending}
+          disabled={isPending || !canSaveDraft}
           onChange={(value) =>
             setValue("caption", value, {
               shouldValidate: errors.caption !== undefined,
@@ -749,8 +804,9 @@ export function CreatePostForm({
             <MediaTabs
               onFile={(file) => void handleFile(file)}
               onUrl={handleUrl}
+              onLibrary={handleLibrary}
               error={mediaError}
-              disabled={isPending}
+              disabled={isPending || !canSaveDraft}
             />
           )}
 
@@ -773,14 +829,14 @@ export function CreatePostForm({
               <AlertTriangle aria-hidden="true" />
               <AlertDescription className="text-warning">
                 Connect an account to publish.{" "}
-                <Button
+                {canConnect ? <Button
                   asChild
                   variant="link"
                   size="sm"
                   className="h-auto p-0 text-warning"
                 >
                   <Link href="/connected-accounts">Connect account</Link>
-                </Button>
+                </Button> : null}
               </AlertDescription>
             </Alert>
           ) : (
@@ -845,7 +901,7 @@ export function CreatePostForm({
 
               {!submitting ? (
                 <>
-                  <Button
+                  {canSaveDraft ? <Button
                     type="button"
                     variant="outline"
                     className="h-11 w-full sm:h-9 sm:w-auto"
@@ -860,9 +916,9 @@ export function CreatePostForm({
                     ) : (
                       "Save draft"
                     )}
-                  </Button>
+                  </Button> : null}
 
-                  <Tooltip>
+                  {canSchedule ? <Tooltip>
                     <TooltipTrigger asChild>
                       <span className="w-full sm:w-auto">
                         <Button
@@ -893,9 +949,9 @@ export function CreatePostForm({
                         No selected platform supports this media.
                       </TooltipContent>
                     ) : null}
-                  </Tooltip>
+                  </Tooltip> : null}
 
-                  <Tooltip>
+                  {canPublish ? <Tooltip>
                     <TooltipTrigger asChild>
                       <span className="w-full sm:w-auto">
                         <Button
@@ -920,7 +976,7 @@ export function CreatePostForm({
                     {publishDisabledReason ? (
                       <TooltipContent>{publishDisabledReason}</TooltipContent>
                     ) : null}
-                </Tooltip>
+                </Tooltip> : null}
                 </>
               ) : null}
             </div>
@@ -932,6 +988,7 @@ export function CreatePostForm({
         open={scheduleOpen}
         onOpenChange={setScheduleOpen}
         defaultTimezone={defaultTimezone}
+        defaultTime={defaultScheduleTime}
         pending={isPending && pendingAction === "schedule"}
         onConfirm={confirmSchedule}
       />

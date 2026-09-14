@@ -9,6 +9,8 @@ import { logger } from "@/lib/logger";
 import { consumeRateLimit } from "@/lib/rate-limit";
 import { getProvider } from "@/providers/social";
 import { PLATFORMS, type Platform } from "@/lib/status";
+import { requireWorkspaceMember } from "@/lib/domain/workspaces";
+import { verifyOAuthState } from "@/providers/social/http";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -125,21 +127,38 @@ export async function GET(
     return errorRedirect(origin, platform, "denied");
   }
 
+  const expectedState = request.cookies.get(`oauth_state_${platform}`)?.value;
+  if (!expectedState || expectedState !== state) {
+    logger.warn("oauth callback rejected: state mismatch", { platform });
+    return errorRedirect(origin, platform, "denied");
+  }
+
   const redirectUri = new URL(
     `/api/oauth/${platform}/callback`,
     resolveAppUrl(origin),
   ).toString();
 
   try {
+    const signedState = verifyOAuthState(state);
+    if (
+      !signedState ||
+      signedState.userId !== userId ||
+      signedState.platform !== platform ||
+      !signedState.workspaceId
+    ) {
+      return errorRedirect(origin, platform, "denied");
+    }
+    await requireWorkspaceMember(userId, signedState.workspaceId);
     const drafts = await provider.handleCallback({
       userId,
+      workspaceId: signedState.workspaceId,
       code,
       state,
       redirectUri,
       codeVerifier: request.cookies.get("oauth_pkce_x")?.value,
     });
 
-    const saved = await saveConnectedAccounts(userId, drafts);
+    const saved = await saveConnectedAccounts(userId, drafts, signedState.workspaceId);
 
     if (saved.length === 0) {
       return errorRedirect(origin, platform, "denied");

@@ -9,6 +9,7 @@ import {
   postMediaSchema,
   saveDraftSchema,
   scheduleSchema,
+  settingsUpdateSchema,
 } from "@/lib/validation/schemas";
 
 const VALID_MEDIA = {
@@ -166,6 +167,28 @@ describe("postMediaSchema", () => {
     assert.deepEqual(issuePaths(result), ["sourceUrl"]);
   });
 
+  test("accepts a library asset reference without trusting a storage key", () => {
+    const result = postMediaSchema.safeParse({
+      ...VALID_MEDIA,
+      kind: "library",
+      storageKey: null,
+      sourceUrl: null,
+      assetId: "00000000-0000-0000-0000-000000000001",
+    });
+    assert.equal(result.success, true);
+  });
+
+  test("rejects a library media item without an asset id", () => {
+    const result = postMediaSchema.safeParse({
+      ...VALID_MEDIA,
+      kind: "library",
+      storageKey: null,
+      sourceUrl: null,
+    });
+    assert.equal(result.success, false);
+    assert.deepEqual(issuePaths(result), ["assetId"]);
+  });
+
   test("rejects an unsupported mime type", () => {
     const result = postMediaSchema.safeParse({ ...VALID_MEDIA, mimeType: "image/gif" });
     assert.equal(result.success, false);
@@ -316,5 +339,42 @@ describe("saveDraftSchema", () => {
     });
     assert.equal(result.success, false);
     assert.ok(issueMessages(result).includes("Choose one account per platform."));
+  });
+});
+
+describe("settingsUpdateSchema", () => {
+  test("trims a display name and accepts valid preferences", () => {
+    const result = settingsUpdateSchema.safeParse({
+      displayName: "  Ega  ",
+      timezone: "Asia/Jakarta",
+      defaultScheduleTime: "18:30",
+    });
+    assert.equal(result.success, true);
+    if (result.success) assert.equal(result.data.displayName, "Ega");
+  });
+
+  test("allows clearing a display name", () => {
+    const result = settingsUpdateSchema.safeParse({ displayName: "   " });
+    assert.equal(result.success, true);
+    if (result.success) assert.equal(result.data.displayName, null);
+  });
+
+  test("rejects invalid timezone, display name and default time", () => {
+    assert.equal(
+      settingsUpdateSchema.safeParse({ timezone: "Invalid/Timezone" }).success,
+      false,
+    );
+    assert.equal(
+      settingsUpdateSchema.safeParse({ displayName: "a".repeat(81) }).success,
+      false,
+    );
+    assert.equal(
+      settingsUpdateSchema.safeParse({ defaultScheduleTime: "18:07" }).success,
+      false,
+    );
+  });
+
+  test("rejects an empty update", () => {
+    assert.equal(settingsUpdateSchema.safeParse({}).success, false);
   });
 });

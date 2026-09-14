@@ -68,6 +68,62 @@ type ThreadsUser = {
   threads_profile_picture_url?: string;
 };
 
+function mapThreadsError(
+  status: number,
+  payload: unknown,
+): ProviderError | null {
+  const text = JSON.stringify(payload ?? "").toLowerCase();
+
+  if (
+    status === 401 ||
+    status === 403 ||
+    text.includes("invalid_grant") ||
+    text.includes("invalid_token") ||
+    text.includes("access_token") ||
+    text.includes("token expired") ||
+    text.includes("token is expired")
+  ) {
+    return new ProviderError({
+      code: "token_expired",
+      message: humanErrorMessage(PLATFORM, "token_expired"),
+      retryable: false,
+      status,
+    });
+  }
+
+  if (status === 429 || text.includes("rate limit") || text.includes("too many")) {
+    return new ProviderError({
+      code: "rate_limited",
+      message: humanErrorMessage(PLATFORM, "rate_limited"),
+      retryable: true,
+      status,
+    });
+  }
+
+  if (text.includes("permission") || text.includes("not authorized")) {
+    return new ProviderError({
+      code: "permission_denied",
+      message: humanErrorMessage(PLATFORM, "permission_denied"),
+      retryable: false,
+      status,
+    });
+  }
+
+  return null;
+}
+
+async function threadsRequest<T>(
+  url: string,
+  init: RequestInit,
+  endpoint: string,
+) {
+  return requestJson<T>(url, init, {
+    platform: PLATFORM,
+    endpoint,
+    mapError: mapThreadsError,
+  });
+}
+
 function tokenExpiry(expiresIn: unknown): Date | null {
   return typeof expiresIn === "number" && expiresIn > 0
     ? new Date(Date.now() + expiresIn * 1000)
@@ -75,10 +131,10 @@ function tokenExpiry(expiresIn: unknown): Date | null {
 }
 
 async function readProfile(token: string): Promise<ThreadsUser> {
-  const { data } = await requestJson<ThreadsUser>(
-    `${GRAPH_BASE}/me?fields=id,username,name,threads_profile_picture_url&access_token=${encodeURIComponent(token)}`,
-    { method: "GET" },
-    { platform: PLATFORM, endpoint: "GET /me" },
+  const { data } = await threadsRequest<ThreadsUser>(
+    `${GRAPH_BASE}/me?fields=id,username,name,threads_profile_picture_url`,
+    { method: "GET", headers: { Authorization: `Bearer ${token}` } },
+    "GET /me",
   );
   return data;
 }
@@ -87,7 +143,7 @@ async function publishMedia(input: PublishInput): Promise<PublishResult> {
   const userId = input.account.platformAccountId;
   const mediaUrl = await input.resolveMediaUrl(input.media);
   const mediaType = input.media.mediaType === "image" ? "IMAGE" : "VIDEO";
-  const container = await requestJson<{ id?: string }>(
+  const container = await threadsRequest<{ id?: string }>(
     `${GRAPH_BASE}/${encodeURIComponent(userId)}/threads`,
     {
       method: "POST",
@@ -101,7 +157,7 @@ async function publishMedia(input: PublishInput): Promise<PublishResult> {
         text: input.caption,
       }),
     },
-    { platform: PLATFORM, endpoint: "POST /{threads-user-id}/threads" },
+    "POST /{threads-user-id}/threads",
   );
 
   if (!container.data.id) {
@@ -113,7 +169,7 @@ async function publishMedia(input: PublishInput): Promise<PublishResult> {
     });
   }
 
-  const published = await requestJson<{ id?: string }>(
+  const published = await threadsRequest<{ id?: string }>(
     `${GRAPH_BASE}/${encodeURIComponent(userId)}/threads_publish`,
     {
       method: "POST",
@@ -123,7 +179,7 @@ async function publishMedia(input: PublishInput): Promise<PublishResult> {
       },
       body: formBody({ creation_id: container.data.id }),
     },
-    { platform: PLATFORM, endpoint: "POST /{threads-user-id}/threads_publish" },
+    "POST /{threads-user-id}/threads_publish",
   );
 
   return {
@@ -153,6 +209,7 @@ export const threadsProvider: SocialProvider = {
       response_type: "code",
       state: signOAuthState({
         userId: input.userId,
+        workspaceId: input.workspaceId,
         platform: PLATFORM,
         state: input.state,
       }),
@@ -170,7 +227,7 @@ export const threadsProvider: SocialProvider = {
     }
 
     const { clientId, clientSecret } = requireCredentials();
-    const tokenResult = await requestJson<ThreadsToken>(
+    const tokenResult = await threadsRequest<ThreadsToken>(
       `${OAUTH_BASE}/oauth/access_token`,
       {
         method: "POST",
@@ -183,7 +240,7 @@ export const threadsProvider: SocialProvider = {
           code: input.code,
         }),
       },
-      { platform: PLATFORM, endpoint: "POST /oauth/access_token" },
+      "POST /oauth/access_token",
     );
 
     if (!tokenResult.data.access_token || !tokenResult.data.user_id) {
@@ -195,14 +252,14 @@ export const threadsProvider: SocialProvider = {
       });
     }
 
-    const longLived = await requestJson<ThreadsToken>(
+    const longLived = await threadsRequest<ThreadsToken>(
       `${OAUTH_BASE}/access_token?${formBody({
         grant_type: "th_exchange_token",
         client_secret: clientSecret,
         access_token: tokenResult.data.access_token,
       })}`,
       { method: "GET" },
-      { platform: PLATFORM, endpoint: "GET /access_token (long-lived)" },
+      "GET /access_token (long-lived)",
     );
     const accessToken = longLived.data.access_token ?? tokenResult.data.access_token;
     const user = await readProfile(accessToken);
@@ -226,13 +283,13 @@ export const threadsProvider: SocialProvider = {
   async refreshToken(account): Promise<RefreshResult> {
     requireCredentials();
     const token = accountToken(account);
-    const result = await requestJson<ThreadsToken>(
+    const result = await threadsRequest<ThreadsToken>(
       `${OAUTH_BASE}/refresh_access_token?${formBody({
         grant_type: "th_refresh_token",
         access_token: token,
       })}`,
       { method: "GET" },
-      { platform: PLATFORM, endpoint: "GET /refresh_access_token" },
+      "GET /refresh_access_token",
     );
 
     if (!result.data.access_token) {

@@ -11,17 +11,31 @@ import {
   getPostSummary,
   listDrafts,
   listHistoryPosts,
+  listHistoryPostsPage,
   listScheduledPosts,
   publishDraft,
   retryPlatform,
   saveDraft,
 } from "@/lib/domain/posts";
 import { listActiveAccounts } from "@/lib/domain/accounts";
+import { getMediaAssetRowForUser } from "@/lib/domain/media";
+import {
+  getAnalyticsOverview,
+  getPostAnalyticsDetail,
+  listAnalyticsTargetIds,
+  listAnalyticsSnapshots,
+  saveAnalyticsSnapshot,
+  syncPostPlatformAnalytics,
+  type AnalyticsRange,
+  type AnalyticsSnapshotInput,
+} from "@/lib/domain/analytics";
 import type {
   DashboardData,
   DraftSummary,
   PostDetail,
   PostSummary,
+  HistoryQuery,
+  PaginatedPosts,
 } from "@/lib/domain/types";
 import { zonedTimeToUtc } from "@/lib/time";
 import type { Platform, PostStatus } from "@/lib/status";
@@ -50,7 +64,20 @@ function resolveTargets(
   });
 }
 
-function toDomainMedia(media: PostMediaInput) {
+async function toDomainMedia(userId: string, media: PostMediaInput) {
+  if (media.kind === "library") {
+    const asset = await getMediaAssetRowForUser(userId, media.assetId ?? "");
+    return {
+      storageKey: asset.storageKey,
+      sourceUrl: null,
+      mediaType: asset.mediaType,
+      mimeType: asset.mimeType,
+      fileSize: asset.fileSize,
+      width: asset.width,
+      height: asset.height,
+      duration: asset.duration,
+    };
+  }
   return {
     storageKey: media.storageKey,
     sourceUrl: media.kind === "url" ? media.sourceUrl ?? null : null,
@@ -92,7 +119,7 @@ export async function createPostForUser(
     contentText: input.caption,
     timezone: input.schedule?.timezone ?? "UTC",
     scheduledAt,
-    media: toDomainMedia(input.media),
+    media: await toDomainMedia(userId, input.media),
     targets,
   });
 }
@@ -115,7 +142,7 @@ export async function saveDraftForUser(
     userId,
     contentText: input.caption,
     timezone: input.timezone,
-    media: input.media ? toDomainMedia(input.media) : null,
+    media: input.media ? await toDomainMedia(userId, input.media) : null,
     targets: resolveTargets(input.platforms, accounts),
   });
 }
@@ -148,13 +175,21 @@ export async function publishDraftForUser(
     contentText: input.caption,
     timezone: input.schedule?.timezone ?? "UTC",
     scheduledAt,
-    media: toDomainMedia(input.media),
+    media: await toDomainMedia(userId, input.media),
     targets: resolveTargets(input.platforms, accounts),
   });
 }
 
 export function listDraftsForUser(userId: string): Promise<DraftSummary[]> {
   return listDrafts(userId);
+}
+
+export function listHistoryPostsForUser(
+  userId: string,
+  query: HistoryQuery,
+  timezone = "UTC",
+): Promise<PaginatedPosts> {
+  return listHistoryPostsPage(userId, query, timezone);
 }
 
 export function getDraftDetailForUser(
@@ -175,15 +210,9 @@ export async function listPostsForUser(
 ): Promise<PostSummary[]> {
   if (scope === "scheduled") return listScheduledPosts(userId);
   if (scope === "history") return listHistoryPosts(userId, search);
-
-  const [scheduled, history] = await Promise.all([
-    listScheduledPosts(userId),
-    listHistoryPosts(userId, search),
-  ]);
-
-  return [...scheduled, ...history].sort(
-    (a, b) => b.createdAt.getTime() - a.createdAt.getTime(),
-  );
+  // History is the complete lifecycle view, so `all` must not append the
+  // scheduled subset a second time.
+  return listHistoryPosts(userId, search);
 }
 
 export function getPostForUser(userId: string, postId: string): Promise<PostSummary | null> {
@@ -220,3 +249,34 @@ export function retryPostPlatformForUser(
 export function getDashboardForUser(userId: string): Promise<DashboardData> {
   return getDashboardData(userId);
 }
+
+export function getAnalyticsForUser(
+  userId: string,
+  options: { range?: AnalyticsRange; platform?: Platform; timeZone?: string } = {},
+) {
+  return getAnalyticsOverview(userId, options);
+}
+
+export function getPostAnalyticsForUser(userId: string, postId: string) {
+  return getPostAnalyticsDetail(userId, postId);
+}
+
+export function listAnalyticsTargetIdsForUser(userId: string, platform?: Platform) {
+  return listAnalyticsTargetIds(userId, platform);
+}
+
+export function listAnalyticsForUser(
+  userId: string,
+  options: { range?: AnalyticsRange; platform?: Platform; postId?: string; timeZone?: string } = {},
+) {
+  return listAnalyticsSnapshots(userId, options);
+}
+
+export function saveAnalyticsForUser(
+  userId: string,
+  input: AnalyticsSnapshotInput,
+) {
+  return saveAnalyticsSnapshot(userId, input);
+}
+
+export { syncPostPlatformAnalytics };

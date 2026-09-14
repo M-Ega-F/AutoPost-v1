@@ -15,7 +15,7 @@ import {
 } from "@/lib/services/posts";
 import { createPostSchema, saveDraftSchema } from "@/lib/validation/schemas";
 import type { ActionResult } from "@/lib/domain/types";
-import type { Platform } from "@/lib/status";
+import type { Platform, PostStatus } from "@/lib/status";
 
 export type CreatePostMediaPayload =
   | {
@@ -32,6 +32,18 @@ export type CreatePostMediaPayload =
       kind: "url";
       sourceUrl: string;
       storageKey: string;
+      mediaType: "image" | "video";
+      mimeType: string;
+      fileSize: number | null;
+      width: number | null;
+      height: number | null;
+      duration: number | null;
+    }
+  | {
+      kind: "library";
+      assetId: string;
+      storageKey: null;
+      sourceUrl?: null;
       mediaType: "image" | "video";
       mimeType: string;
       fileSize: number | null;
@@ -56,11 +68,14 @@ export type DraftPayload = {
   timezone: string;
 };
 
+type PostActionResult = ActionResult & { postId?: string; status?: PostStatus };
+
 function normalizeMedia(media: CreatePostMediaPayload | null | undefined) {
   if (!media) return null;
   return {
     ...media,
     sourceUrl: media.kind === "url" ? media.sourceUrl : null,
+    assetId: media.kind === "library" ? media.assetId : null,
   };
 }
 
@@ -73,7 +88,7 @@ function fail(error: unknown, fallback: string): ActionResult {
 
 export async function createPostAction(
   payload: CreatePostPayload,
-): Promise<ActionResult & { postId?: string }> {
+): Promise<PostActionResult> {
   const userId = await requireUserId();
 
   const limited = consumeRateLimit(
@@ -106,7 +121,7 @@ export async function createPostAction(
     revalidatePath("/scheduled");
     revalidatePath("/history");
 
-    return { ok: true, postId: result.postId };
+    return { ok: true, postId: result.postId, status: result.status };
   } catch (error) {
     return fail(error, "We couldn't create this post. Try again.");
   }
@@ -114,7 +129,7 @@ export async function createPostAction(
 
 export async function saveDraftAction(
   payload: DraftPayload,
-): Promise<ActionResult & { postId?: string }> {
+): Promise<PostActionResult> {
   const userId = await requireUserId();
   const limited = consumeRateLimit("saveDraft", userId);
   if (!limited.ok) {
@@ -143,7 +158,7 @@ export async function saveDraftAction(
     });
     revalidatePath("/drafts");
     revalidatePath(`/drafts/${result.postId}`);
-    return { ok: true, postId: result.postId };
+    return { ok: true, postId: result.postId, status: result.status };
   } catch (error) {
     return fail(error, "We couldn't save this draft. Try again.");
   }
@@ -152,7 +167,7 @@ export async function saveDraftAction(
 export async function publishDraftAction(
   postId: string,
   payload: CreatePostPayload,
-): Promise<ActionResult & { postId?: string }> {
+): Promise<PostActionResult> {
   const userId = await requireUserId();
   const limited = consumeRateLimit(
     payload?.schedule ? "schedule" : "publishNow",
@@ -182,7 +197,7 @@ export async function publishDraftAction(
     revalidatePath("/dashboard");
     revalidatePath("/scheduled");
     revalidatePath("/history");
-    return { ok: true, postId: result.postId };
+    return { ok: true, postId: result.postId, status: result.status };
   } catch (error) {
     return fail(error, "We couldn't publish this draft. Try again.");
   }

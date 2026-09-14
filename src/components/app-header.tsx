@@ -1,31 +1,57 @@
 "use client";
 
-import { LogOut, Menu } from "lucide-react";
-import { useTransition } from "react";
+import { Layers, LogOut, Menu, Plus } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { useState, useTransition } from "react";
 
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { NotificationBell } from "@/components/notifications/notification-bell";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { logoutAction } from "@/lib/actions/auth";
 import { cn } from "@/lib/utils";
+import type { WorkspaceRole } from "@/lib/auth/permissions";
+
+const ROLE_LABELS: Record<WorkspaceRole, string> = {
+  owner: "Owner",
+  admin: "Admin",
+  editor: "Editor",
+  viewer: "Viewer",
+};
 
 export function AppHeader({
   userEmail,
+  workspaces,
+  activeWorkspaceId,
   onOpenNavigation,
 }: {
   userEmail: string | null;
+  workspaces: Array<{
+    id: string;
+    name: string;
+    slug: string;
+    isPersonal: boolean;
+    role: WorkspaceRole;
+    avatarUrl?: string | null;
+  }>;
+  activeWorkspaceId: string;
   onOpenNavigation: () => void;
 }) {
   const [isPending, startTransition] = useTransition();
+  const [isSwitching, setIsSwitching] = useState(false);
+  const router = useRouter();
   const initial = (userEmail ?? "").trim().charAt(0).toUpperCase() || "?";
+  const activeWorkspace = workspaces.find((workspace) => workspace.id === activeWorkspaceId);
 
   return (
     <header className="sticky top-0 z-30 flex h-14 items-center gap-2 border-b border-primary/30 bg-background/75 px-4 shadow-[0_8px_28px_hsl(var(--neon-purple)/0.10)] backdrop-blur-xl md:px-6 lg:px-8">
@@ -40,8 +66,60 @@ export function AppHeader({
         <Menu aria-hidden="true" />
       </Button>
 
-      <div className="flex-1" />
+      <div className="flex-1">
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            className="inline-flex max-w-56 items-center gap-2 rounded-md border border-border/70 bg-card/60 px-3 py-2 text-left text-sm hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            aria-label="Current workspace"
+          >
+            <Avatar size="sm">
+              {activeWorkspace?.avatarUrl ? <AvatarImage src={activeWorkspace.avatarUrl} alt="" /> : null}
+              <AvatarFallback className="bg-primary/15 text-primary">{activeWorkspace?.name.charAt(0).toUpperCase() ?? <Layers className="size-3" aria-hidden="true" />}</AvatarFallback>
+            </Avatar>
+            <span className="truncate">{activeWorkspace?.name ?? "Workspace"}</span>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="w-64">
+            <DropdownMenuLabel>Workspaces</DropdownMenuLabel>
+            <DropdownMenuRadioGroup
+              value={activeWorkspaceId}
+              onValueChange={(workspaceId) => {
+                if (!workspaceId || workspaceId === activeWorkspaceId) return;
+                setIsSwitching(true);
+                void fetch("/api/workspaces/active", {
+                  method: "POST",
+                  headers: { "content-type": "application/json" },
+                  body: JSON.stringify({ workspaceId }),
+                }).finally(() => {
+                  setIsSwitching(false);
+                  router.refresh();
+                });
+              }}
+            >
+              {workspaces.map((workspace) => (
+                <DropdownMenuRadioItem key={workspace.id} value={workspace.id} disabled={isSwitching}>
+                  <span className="min-w-0 truncate">{workspace.name}</span>
+                  <span className="ml-auto text-xs text-muted-foreground">{workspace.isPersonal ? "Personal" : ROLE_LABELS[workspace.role]}</span>
+                </DropdownMenuRadioItem>
+              ))}
+            </DropdownMenuRadioGroup>
+            {activeWorkspace ? (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onSelect={() => router.push("/workspace/settings")}>
+                  <Plus aria-hidden="true" />
+                  Manage workspace
+                </DropdownMenuItem>
+              </>
+            ) : null}
+            <DropdownMenuItem onSelect={() => router.push("/workspace/settings?create=1")}>
+              <Plus aria-hidden="true" />
+              Create workspace
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
       <ThemeToggle />
+      <NotificationBell key={activeWorkspaceId} activeWorkspaceId={activeWorkspaceId} />
 
       <DropdownMenu>
         <DropdownMenuTrigger

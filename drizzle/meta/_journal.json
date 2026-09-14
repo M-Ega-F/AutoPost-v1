@@ -15,6 +15,97 @@
       "when": 1788317235385,
       "tag": "0001_add_social_platforms",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1789287474105,
+      "tag": "0003_curious_mercury",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1789292740687,
+      "tag": "0004_user_preferences",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1789295805826,
+      "tag": "0005_media_assets",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1789318680246,
+      "tag": "0005_familiar_patch",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1789320725585,
+      "tag": "0006_outgoing_quasimodo",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1789322403417,
+      "tag": "0007_shocking_tyger_tiger",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1789324365599,
+      "tag": "0008_fearless_mantis",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1789325944886,
+      "tag": "0009_brainy_jamie_braddock",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1789326342702,
+      "tag": "0010_aberrant_sentry",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1789352530554,
+      "tag": "0011_groovy_absorbing_man",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1789352575113,
+      "tag": "0012_dazzling_red_shift",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1789356794405,
+      "tag": "0013_ordinary_molecule_man",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1789358647637,
+      "tag": "0014_gray_morbius",
+      "breakpoints": true
     }
   ]
 }

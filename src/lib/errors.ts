@@ -164,7 +164,9 @@ export type AppErrorCode =
   | ErrorCode
   | "validation_failed"
   | "not_found"
+  | "gone"
   | "forbidden"
+  | "conflict"
   | "unauthenticated"
   | "rate_limited_action"
   | "not_configured"

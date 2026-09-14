@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 
-import type { Platform } from "@/lib/status";
+import { PLATFORM_META, type Platform } from "@/lib/status";
 import { PLATFORM_LIMITS } from "@/lib/validation/limits";
 import {
   allProviders,
@@ -132,6 +132,14 @@ const PROVIDERS: Array<{
     maxDurationSec: PLATFORM_LIMITS.tiktok.maxDurationSec ?? 0,
     minDurationSec: PLATFORM_LIMITS.tiktok.minDurationSec ?? 0,
   },
+  {
+    name: "threadsProvider",
+    platform: "threads",
+    provider: threadsProvider,
+    captionLimit: PLATFORM_LIMITS.threads.captionLength,
+    maxDurationSec: PLATFORM_LIMITS.threads.maxDurationSec ?? 0,
+    minDurationSec: PLATFORM_LIMITS.threads.minDurationSec ?? 0,
+  },
 ];
 
 /* -------------------------------------------------------------------------- */
@@ -244,8 +252,7 @@ describe("provider.validateContent", () => {
       test("the failure message names the platform", async () => {
         const result = await validate(provider, platform, media({ mimeType: "image/gif" }));
         assert.equal(result.ok, false);
-        const label =
-          platform === "instagram" ? "Instagram" : platform === "facebook" ? "Facebook" : "TikTok";
+        const label = PLATFORM_META[platform].label;
         assert.equal(
           result.ok === false && result.message,
           `${label} rejected this media format.`,

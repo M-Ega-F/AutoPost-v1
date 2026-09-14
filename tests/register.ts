@@ -6,7 +6,7 @@ import { pathToFileURL } from "node:url";
  * Swaps three external boundaries for test doubles:
  *
  *   @/lib/db            -> a real Postgres in WASM (PGlite)
- *   @/lib/queue/publish -> an in-memory recorder
+ *   @/lib/queue/publish and @/lib/queue/analytics -> in-memory recorders
  *   @/providers/social  -> scriptable fake providers
  *
  * Production code is untouched: nothing under `src/lib`, `src/app` or
@@ -24,6 +24,8 @@ const base = path.resolve("tests");
 const replacements: Record<string, string> = {
   "@/lib/db": pathToFileURL(path.join(base, "db-harness.ts")).href,
   "@/lib/queue/publish": pathToFileURL(path.join(base, "fake-queue.ts")).href,
+  "@/lib/queue/analytics": pathToFileURL(path.join(base, "fake-queue.ts")).href,
+  "@/lib/queue": pathToFileURL(path.join(base, "fake-queue.ts")).href,
   "@/providers/social": pathToFileURL(path.join(base, "fake-providers.ts")).href,
 };
 

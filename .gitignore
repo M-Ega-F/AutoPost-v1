@@ -1,10 +1,10 @@
-<<<<<<< HEAD
 # Logs
 logs
 *.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+pnpm-debug.log*
 lerna-debug.log*
 
 # Diagnostic reports (https://nodejs.org/api/report.html)
@@ -47,6 +47,7 @@ web_modules/
 
 # TypeScript cache
 *.tsbuildinfo
+next-env.d.ts
 
 # Optional npm cache directory
 .npm
@@ -78,6 +79,10 @@ web_modules/
 # Next.js build output
 .next
 out
+build
+
+# Vercel
+.vercel/
 
 # Nuxt.js build / generate output
 .nuxt
@@ -142,39 +147,8 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
-=======
-# Environment
-.env
-.env.local
-.env.*.local
-.env.development.local
-.env.test.local
-.env.production.local
-
-# Dependencies
-node_modules/
-
-# Next.js
-.next/
-out/
-build/
-
-# Debug / logs
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-*.log
-
-# Vercel
-.vercel/
-
-# TypeScript
-*.tsbuildinfo
-next-env.d.ts
 
 # OS / editor
 .DS_Store
 Thumbs.db
 .idea/
->>>>>>> c264327 (feat: apply extreme neon visual theme)

@@ -6,6 +6,7 @@ export type ApiErrorCode =
   | "UNAUTHORIZED"
   | "FORBIDDEN"
   | "NOT_FOUND"
+  | "GONE"
   | "VALIDATION_ERROR"
   | "CONFLICT"
   | "RATE_LIMITED"
@@ -49,8 +50,12 @@ export function apiErrorFromUnknown(
         return apiError({ status: 401, code: "UNAUTHORIZED", message: error.message });
       case "forbidden":
         return apiError({ status: 403, code: "FORBIDDEN", message: error.message });
+      case "conflict":
+        return apiError({ status: 409, code: "CONFLICT", message: error.message });
       case "not_found":
         return apiError({ status: 404, code: "NOT_FOUND", message: error.message });
+      case "gone":
+        return apiError({ status: 410, code: "GONE", message: error.message });
       case "rate_limited_action":
         return apiError({ status: 429, code: "RATE_LIMITED", message: error.message });
       case "validation_failed":
