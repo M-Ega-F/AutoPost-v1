@@ -1,6 +1,8 @@
 import {
   CalendarClock,
   CalendarDays,
+  ClipboardCheck,
+  BriefcaseBusiness,
   ChartNoAxesCombined,
   Building2,
   Bell,
@@ -31,6 +33,8 @@ export const NAV_ITEMS: NavItem[] = [
   { label: "Templates", href: "/templates", icon: LayoutTemplate },
   { label: "Scheduled", href: "/scheduled", icon: CalendarClock },
   { label: "Calendar", href: "/calendar", icon: CalendarDays },
+  { label: "Reviews", href: "/reviews", icon: ClipboardCheck },
+  { label: "Campaigns", href: "/campaigns", icon: BriefcaseBusiness },
   { label: "History", href: "/history", icon: History },
   { label: "Notifications", href: "/notifications", icon: Bell },
   { label: "Media Library", href: "/media", icon: Images },

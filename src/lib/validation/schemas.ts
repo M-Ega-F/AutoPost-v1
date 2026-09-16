@@ -190,6 +190,92 @@ export const workspaceUpdateSchema = z
 export const workspaceDeleteSchema = z.object({ confirmation: z.string().trim().min(1, "Type the workspace name to confirm.") }).strict();
 export const workspaceTransferSchema = z.object({ memberId: z.string().uuid("Choose a valid member.") }).strict();
 
+export const campaignStatusSchema = z.enum(["draft", "active", "completed", "archived"]);
+export const campaignObjectiveSchema = z.enum([
+  "brand_awareness",
+  "engagement",
+  "traffic",
+  "promotion",
+  "education",
+  "community",
+  "other",
+]);
+export const campaignTargetMetricSchema = z.enum(["views", "likes", "comments", "shares", "saves", "reach", "impressions"]);
+const campaignTargetValueSchema = z.coerce.number().int().positive("Target value must be greater than zero.").max(Number.MAX_SAFE_INTEGER, "Target value is too large.").nullable().optional();
+const campaignDateSchema = z.string().datetime({ offset: true }).nullable().optional();
+const campaignNameSchema = z.string().trim().min(1, "Campaign name is required.").max(160, "Campaign name is too long.");
+const campaignDescriptionSchema = z.string().trim().max(2000, "Campaign description is too long.").nullable().optional();
+const campaignCustomObjectiveSchema = z.string().trim().max(160, "Custom objective is too long.").nullable().optional();
+
+export const campaignCreateSchema = z.object({
+  name: campaignNameSchema,
+  description: campaignDescriptionSchema,
+  objective: campaignObjectiveSchema.nullable().optional(),
+  customObjective: campaignCustomObjectiveSchema,
+  targetMetric: campaignTargetMetricSchema.nullable().optional(),
+  targetValue: campaignTargetValueSchema,
+  startAt: campaignDateSchema,
+  endAt: campaignDateSchema,
+}).strict().superRefine((value, ctx) => {
+  if (value.startAt && value.endAt && new Date(value.startAt) > new Date(value.endAt)) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Start date must be before end date.", path: ["endAt"] });
+  if (value.objective === "other" && !value.customObjective?.trim()) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Describe the custom objective.", path: ["customObjective"] });
+  if (value.objective !== "other" && value.customObjective?.trim()) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Custom objective is only available for Other.", path: ["customObjective"] });
+  if ((value.targetMetric == null) !== (value.targetValue == null)) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Choose both a target metric and target value.", path: ["targetValue"] });
+});
+
+export const campaignUpdateSchema = z.object({
+  name: campaignNameSchema.optional(),
+  description: campaignDescriptionSchema,
+  objective: campaignObjectiveSchema.nullable().optional(),
+  customObjective: campaignCustomObjectiveSchema,
+  targetMetric: campaignTargetMetricSchema.nullable().optional(),
+  targetValue: campaignTargetValueSchema,
+  startAt: campaignDateSchema,
+  endAt: campaignDateSchema,
+}).strict().refine((value) => Object.keys(value).length > 0, { message: "Choose a campaign detail to update." });
+
+export const campaignListQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).max(10_000).default(1),
+  pageSize: z.coerce.number().int().min(1).max(50).default(12),
+  status: campaignStatusSchema.optional(),
+  search: z.string().trim().max(120).optional(),
+  sort: z.enum(["updated", "created", "name"]).default("updated"),
+  order: z.enum(["asc", "desc"]).default("desc"),
+}).strict();
+
+export const campaignPostsQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).max(10_000).default(1),
+  pageSize: z.coerce.number().int().min(1).max(50).default(20),
+  status: z.enum(["draft", "scheduled", "processing", "published", "partial_failure", "failed", "cancelled"]).optional(),
+  approvalStatus: z.enum(["not_required", "draft", "in_review", "changes_requested", "approved"]).optional(),
+  platform: platformSchema.optional(),
+  from: z.coerce.date().optional(),
+  to: z.coerce.date().optional(),
+  search: z.string().trim().max(120).optional(),
+}).strict().refine((value) => !value.from || !value.to || value.from < value.to, { message: "Choose a valid date range." });
+
+export const campaignPostAttachSchema = z.object({ postId: z.string().uuid("Choose a valid post.") }).strict();
+
+export const reviewInboxQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).max(10_000).default(1),
+  pageSize: z.coerce.number().int().min(1).max(50).default(20),
+  status: z.enum(["in_review", "changes_requested", "approved"]).optional(),
+  reviewer: z.union([z.literal("me"), z.string().uuid()]).optional(),
+  author: z.string().uuid().optional(),
+  platform: platformSchema.optional(),
+  campaignId: z.string().uuid().optional(),
+  from: z.coerce.date().optional(),
+  to: z.coerce.date().optional(),
+  search: z.string().trim().max(120).optional(),
+  sort: z.enum(["priority", "oldest", "newest", "scheduled", "deadline", "updated"]).default("priority"),
+}).strict().refine((value) => !value.from || !value.to || value.from < value.to, { message: "Choose a valid date range." });
+
+export const reviewerUpdateSchema = z.object({ reviewerId: z.string().uuid().nullable() }).strict();
+export const reviewDeadlineSchema = z.object({ reviewDueAt: z.string().datetime({ offset: true }).nullable() }).strict();
+export const reviewCommentSchema = z.object({ body: z.string().trim().min(1, "Write a comment before sending it.").max(2000, "The review comment is too long."), parentCommentId: z.string().uuid().nullable().optional() }).strict();
+export const reviewCommentEditSchema = z.object({ body: z.string().trim().min(1, "Write a comment before sending it.").max(2000, "The review comment is too long.") }).strict();
+export const reviewCommentResolveSchema = z.object({ resolved: z.boolean() }).strict();
+
 export const scheduleSchema = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, { message: "Choose a valid date." }),
   time: z.string().regex(/^\d{2}:\d{2}$/, { message: "Choose a valid time." }),
@@ -247,6 +333,7 @@ export const createPostSchema = z
       .min(1, { message: "Select at least one platform." })
       .max(PLATFORMS.length, { message: "Select at least one platform." }),
     schedule: scheduleSchema.nullable(),
+    campaignId: z.string().uuid().nullable().optional(),
   })
   .superRefine((value, ctx) => {
     const unique = new Set(value.platforms);
@@ -282,6 +369,7 @@ export const saveDraftSchema = z
       .array(platformSchema)
       .max(PLATFORMS.length, { message: "Too many platforms selected." }),
     timezone: z.string().trim().min(1, { message: "Choose a timezone." }),
+    campaignId: z.string().uuid().nullable().optional(),
   })
   .superRefine((value, ctx) => {
     const unique = new Set(value.platforms);

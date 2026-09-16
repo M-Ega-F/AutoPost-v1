@@ -5,7 +5,7 @@ import { hasAllPermissions, hasAnyPermission, hasPermission, ROLE_PERMISSIONS } 
 
 describe("workspace permission matrix", () => {
   test("owner has every declared permission", () => {
-    assert.equal(ROLE_PERMISSIONS.owner.size, 48);
+    assert.equal(ROLE_PERMISSIONS.owner.size, 60);
     assert.equal(hasAllPermissions("owner", [...ROLE_PERMISSIONS.owner]), true);
   });
 

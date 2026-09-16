@@ -18,10 +18,12 @@ export type FakeJob = {
 
 export const enqueued: FakeJob[] = [];
 export const removed: string[] = [];
+export const PUBLISH_QUEUE_NAME = "publish-post-platform";
 export const webhookEnqueued: Array<{ webhookId: string; deliveryId: string; delayMs: number | null }> = [];
+export const campaignEvaluationsEnqueued: Array<{ campaignId: string; workspaceId: string; trigger: string }> = [];
 
 export function publishJobId(postPlatformId: string, attempt: number): string {
-  return `${postPlatformId}:${attempt}`;
+  return `${postPlatformId}-${attempt}`;
 }
 
 export async function enqueuePublishJob(
@@ -80,6 +82,12 @@ export function resetQueue(): void {
   enqueued.length = 0;
   removed.length = 0;
   webhookEnqueued.length = 0;
+  campaignEvaluationsEnqueued.length = 0;
+}
+
+export async function enqueueCampaignEvaluation(input: { campaignId: string; workspaceId: string; trigger: string }): Promise<string> {
+  campaignEvaluationsEnqueued.push(input);
+  return `campaign-evaluation:${input.campaignId}`;
 }
 
 export function jobsFor(postPlatformId: string): FakeJob[] {
@@ -87,6 +95,20 @@ export function jobsFor(postPlatformId: string): FakeJob[] {
 }
 
 export const WEBHOOK_QUEUE_NAME = "deliver-webhook";
+export const REVIEW_AUTOMATION_QUEUE_NAME = "review-automation";
+export const CAMPAIGN_AUTOMATION_QUEUE_NAME = "campaign-evaluation";
+export function getReviewAutomationQueue(): { getJobCounts: (...states: string[]) => Promise<Record<string, number>>; getJobs: (...args: unknown[]) => Promise<unknown[]> } {
+  return {
+    async getJobCounts() { return { waiting: 0, active: 0, completed: 0, failed: 0, delayed: 0, paused: 0, prioritized: 0 }; },
+    async getJobs() { return []; },
+  };
+}
+export function getCampaignAutomationQueue(): { getJobCounts: (...states: string[]) => Promise<Record<string, number>>; getJobs: (...args: unknown[]) => Promise<unknown[]> } {
+  return {
+    async getJobCounts() { return { waiting: 0, active: 0, completed: 0, failed: 0, delayed: 0, paused: 0, prioritized: 0 }; },
+    async getJobs() { return []; },
+  };
+}
 export function getWebhookQueue(): { add: (name: string, data: { webhookId: string; deliveryId: string }, options?: { delay?: number; jobId?: string }) => Promise<{ id: string }> } {
   return {
     async add(_name, data, options) {

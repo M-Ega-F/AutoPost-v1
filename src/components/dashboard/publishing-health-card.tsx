@@ -70,9 +70,9 @@ export function PublishingHealthCard({ initialSnapshot }: { initialSnapshot: Rel
     };
   }, []);
 
-  const waiting = (snapshot.queues.publishing.counts.waiting ?? 0) + (snapshot.queues.analytics.counts.waiting ?? 0) + (snapshot.queues.webhooks.counts.waiting ?? 0);
-  const active = (snapshot.queues.publishing.counts.active ?? 0) + (snapshot.queues.analytics.counts.active ?? 0) + (snapshot.queues.webhooks.counts.active ?? 0);
-  const delayed = (snapshot.queues.publishing.counts.delayed ?? 0) + (snapshot.queues.analytics.counts.delayed ?? 0) + (snapshot.queues.webhooks.counts.delayed ?? 0);
+  const waiting = (snapshot.queues.publishing.counts.waiting ?? 0) + (snapshot.queues.analytics.counts.waiting ?? 0) + (snapshot.queues.webhooks.counts.waiting ?? 0) + (snapshot.queues.reviewAutomation.counts.waiting ?? 0) + (snapshot.queues.campaignAutomation.counts.waiting ?? 0);
+  const active = (snapshot.queues.publishing.counts.active ?? 0) + (snapshot.queues.analytics.counts.active ?? 0) + (snapshot.queues.webhooks.counts.active ?? 0) + (snapshot.queues.reviewAutomation.counts.active ?? 0) + (snapshot.queues.campaignAutomation.counts.active ?? 0);
+  const delayed = (snapshot.queues.publishing.counts.delayed ?? 0) + (snapshot.queues.analytics.counts.delayed ?? 0) + (snapshot.queues.webhooks.counts.delayed ?? 0) + (snapshot.queues.reviewAutomation.counts.delayed ?? 0) + (snapshot.queues.campaignAutomation.counts.delayed ?? 0);
 
   return (
     <Card aria-labelledby="publishing-health-title" className="gap-4">

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { AppError } from "@/lib/errors";
+import { currentPerfContext, perfLoggingEnabled } from "@/lib/perf";
 
 export type ApiErrorCode =
   | "UNAUTHORIZED"
@@ -33,7 +34,23 @@ export function apiError(options: ApiErrorOptions): Response {
 }
 
 export function apiSuccess<T>(data: T, status = 200): Response {
-  return NextResponse.json(data, { status, headers: NO_STORE });
+  const startedAt = performance.now();
+  const response = NextResponse.json(data, { status, headers: NO_STORE });
+  const context = currentPerfContext();
+  if (perfLoggingEnabled() && context) {
+    console.log(JSON.stringify({
+      level: "info",
+      time: new Date().toISOString(),
+      message: "[PERF][serialization]",
+      endpoint: context.endpoint,
+      requestId: context.requestId,
+      contextId: context.contextId,
+      operation: "apiSuccess.NextResponse.json",
+      durationMs: Math.round(performance.now() - startedAt),
+      status,
+    }));
+  }
+  return response;
 }
 
 export function apiNoContent(): Response {

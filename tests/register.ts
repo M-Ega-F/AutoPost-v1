@@ -25,6 +25,7 @@ const replacements: Record<string, string> = {
   "@/lib/db": pathToFileURL(path.join(base, "db-harness.ts")).href,
   "@/lib/queue/publish": pathToFileURL(path.join(base, "fake-queue.ts")).href,
   "@/lib/queue/analytics": pathToFileURL(path.join(base, "fake-queue.ts")).href,
+  "@/lib/queue/campaign-automation": pathToFileURL(path.join(base, "fake-queue.ts")).href,
   "@/lib/queue": pathToFileURL(path.join(base, "fake-queue.ts")).href,
   "@/providers/social": pathToFileURL(path.join(base, "fake-providers.ts")).href,
 };

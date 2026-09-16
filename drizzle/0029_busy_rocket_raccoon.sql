@@ -1,0 +1,2 @@
+ALTER TYPE "public"."notification_type" ADD VALUE 'EXPERIMENT_STATISTICAL_MILESTONE' BEFORE 'ACCOUNT_EXPIRED';--> statement-breakpoint
+ALTER TYPE "public"."webhook_event_type" ADD VALUE 'experiment.statistical_milestone' BEFORE 'webhook.test';

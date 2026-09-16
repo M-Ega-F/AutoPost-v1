@@ -262,15 +262,15 @@ export async function countExecutions(postPlatformId: string): Promise<number> {
 
 export async function latestExecutionLog(
   postPlatformId: string,
-): Promise<unknown> {
+): Promise<{ found: boolean; responseLog: unknown }> {
   const [row] = await db
-    .select({ responseLog: postExecutions.responseLog })
+    .select({ responseLog: postExecutions.responseLog, id: postExecutions.id })
     .from(postExecutions)
     .where(eq(postExecutions.postPlatformId, postPlatformId))
     .orderBy(sql`${postExecutions.attemptNumber} desc`)
     .limit(1);
 
-  return row?.responseLog ?? null;
+  return { found: Boolean(row), responseLog: row?.responseLog ?? null };
 }
 
 export async function findStalledPlatformIds(): Promise<string[]> {

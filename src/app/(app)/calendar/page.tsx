@@ -9,8 +9,9 @@ import { requireUser } from "@/lib/auth/server";
 import { getSettingsForUser } from "@/lib/services/settings";
 import { normalizeTimeZone, TIMEZONE_COOKIE } from "@/lib/time";
 
-export default async function CalendarPage() {
+export default async function CalendarPage({ searchParams }: { searchParams: Promise<{ campaignId?: string }> }) {
   const user = await requireUser();
+  const { campaignId } = await searchParams;
   const cookieStore = await cookies();
   const settings = await getSettingsForUser(
     user.id,
@@ -20,18 +21,19 @@ export default async function CalendarPage() {
   const month = currentCalendarMonth(timeZone);
   const range = calendarMonthRange(month, timeZone);
   const [posts, drafts] = await Promise.all([
-    getCalendarForUser(user.id, range),
+    getCalendarForUser(user.id, range, campaignId),
     listDraftsForUser(user.id),
   ]);
 
   return (
     <>
-      <PageHeader title="Calendar" subtitle={`Scheduled posts in ${timeZone}.`} />
+      <PageHeader title="Calendar" subtitle={`${campaignId ? "Campaign-filtered scheduled posts" : "Scheduled posts"} in ${timeZone}.`} />
       <CalendarView
         timeZone={timeZone}
         initialMonth={month}
         initialPosts={posts.map(toCalendarPostDto)}
         drafts={drafts.map(toCalendarDraftDto)}
+        campaignId={campaignId ?? null}
       />
     </>
   );

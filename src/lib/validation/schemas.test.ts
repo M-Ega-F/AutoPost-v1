@@ -3,6 +3,8 @@ import { describe, test } from "node:test";
 
 import {
   captionSchema,
+  campaignCreateSchema,
+  campaignUpdateSchema,
   createPostSchema,
   loginSchema,
   mediaUrlSchema,
@@ -306,6 +308,51 @@ describe("createPostSchema", () => {
       false,
       "the same URL is refused at the point of entry",
     );
+  });
+});
+
+describe("campaign planning schemas", () => {
+  test("accepts a measurable campaign goal and date range", () => {
+    const result = campaignCreateSchema.safeParse({
+      name: "Launch",
+      objective: "promotion",
+      targetMetric: "reach",
+      targetValue: "25000",
+      startAt: "2026-09-01T00:00:00.000Z",
+      endAt: "2026-09-30T00:00:00.000Z",
+    });
+    assert.equal(result.success, true);
+    if (result.success) assert.equal(result.data.targetValue, 25_000);
+  });
+
+  test("requires custom text for Other and requires metric/value pairs", () => {
+    assert.equal(campaignCreateSchema.safeParse({ name: "Launch", objective: "other" }).success, false);
+    assert.equal(campaignCreateSchema.safeParse({ name: "Launch", targetMetric: "views" }).success, false);
+    assert.equal(campaignCreateSchema.safeParse({ name: "Launch", targetValue: 100 }).success, false);
+  });
+
+  test("rejects reversed planning dates and illegal custom objectives", () => {
+    assert.equal(
+      campaignCreateSchema.safeParse({
+        name: "Launch",
+        objective: "promotion",
+        customObjective: "Not allowed",
+      }).success,
+      false,
+    );
+    assert.equal(
+      campaignCreateSchema.safeParse({
+        name: "Launch",
+        startAt: "2026-09-30T00:00:00.000Z",
+        endAt: "2026-09-01T00:00:00.000Z",
+      }).success,
+      false,
+    );
+  });
+
+  test("accepts a partial goal update", () => {
+    const result = campaignUpdateSchema.safeParse({ targetMetric: "likes", targetValue: 500 });
+    assert.equal(result.success, true);
   });
 });
 

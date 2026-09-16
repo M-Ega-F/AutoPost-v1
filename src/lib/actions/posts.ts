@@ -4,6 +4,9 @@ import { revalidatePath } from "next/cache";
 
 import { requireUserId } from "@/lib/auth/server";
 import { AppError, errorMessageForUser } from "@/lib/errors";
+import { logger } from "@/lib/logger";
+import { perfLoggingEnabled, withPerfRequest } from "@/lib/perf";
+import { createPublishTraceId, logPublishTrace } from "@/lib/publishing/trace";
 import { consumeRateLimit } from "@/lib/rate-limit";
 import {
   cancelPostForUser,
@@ -58,6 +61,7 @@ export type CreatePostPayload = {
   /** Platform names only — the server resolves the connected account itself. */
   platforms: Platform[];
   schedule: { date: string; time: string; timezone: string } | null;
+  campaignId?: string | null;
 };
 
 export type DraftPayload = {
@@ -66,6 +70,7 @@ export type DraftPayload = {
   media: CreatePostMediaPayload | null;
   platforms: Platform[];
   timezone: string;
+  campaignId?: string | null;
 };
 
 type PostActionResult = ActionResult & { postId?: string; status?: PostStatus };
@@ -89,6 +94,20 @@ function fail(error: unknown, fallback: string): ActionResult {
 export async function createPostAction(
   payload: CreatePostPayload,
 ): Promise<PostActionResult> {
+  const publishTraceId = createPublishTraceId();
+  logPublishTrace(publishTraceId, "PUBLISH_REQUEST", {
+    operation: payload?.schedule ? "schedule" : "publish",
+  });
+  return withPerfRequest("POST /create-post", () =>
+    createPostActionInternal(payload, publishTraceId),
+  );
+}
+
+async function createPostActionInternal(
+  payload: CreatePostPayload,
+  publishTraceId: string,
+): Promise<PostActionResult> {
+  const perfStartedAt = Date.now();
   const userId = await requireUserId();
 
   const limited = consumeRateLimit(
@@ -109,17 +128,26 @@ export async function createPostAction(
       media: normalizeMedia(payload?.media),
       platforms: payload?.platforms,
       schedule: payload?.schedule,
+      campaignId: payload?.campaignId,
     });
 
     if (!parsed.success) {
       return { ok: false, message: parsed.error.issues[0]?.message ?? "Invalid post." };
     }
 
-    const result = await createPostForUser(userId, parsed.data);
+    const result = await createPostForUser(userId, parsed.data, publishTraceId);
 
     revalidatePath("/dashboard");
     revalidatePath("/scheduled");
     revalidatePath("/history");
+
+    if (perfLoggingEnabled()) {
+      logger.info("[PERF][createPostAction]", {
+        durationMs: Date.now() - perfStartedAt,
+        targetCount: parsed.data.platforms.length,
+        status: result.status,
+      });
+    }
 
     return { ok: true, postId: result.postId, status: result.status };
   } catch (error) {
@@ -147,6 +175,7 @@ export async function saveDraftAction(
       media: normalizeMedia(payload?.media),
       platforms: payload?.platforms,
       timezone: payload?.timezone,
+      campaignId: payload?.campaignId,
     });
     if (!parsed.success) {
       return { ok: false, message: parsed.error.issues[0]?.message ?? "Invalid draft." };
@@ -168,6 +197,16 @@ export async function publishDraftAction(
   postId: string,
   payload: CreatePostPayload,
 ): Promise<PostActionResult> {
+  logger.info("[PUBLISH-ENTRY]", {
+    postId,
+    platforms: Array.isArray(payload?.platforms) ? payload.platforms : [],
+    timestamp: new Date().toISOString(),
+  });
+  const publishTraceId = createPublishTraceId();
+  logPublishTrace(publishTraceId, "PUBLISH_REQUEST", {
+    operation: payload?.schedule ? "schedule-draft" : "publish-draft",
+    postId,
+  });
   const userId = await requireUserId();
   const limited = consumeRateLimit(
     payload?.schedule ? "schedule" : "publishNow",
@@ -187,11 +226,12 @@ export async function publishDraftAction(
       media: normalizeMedia(payload?.media),
       platforms: payload?.platforms,
       schedule: payload?.schedule,
+      campaignId: payload?.campaignId,
     });
     if (!parsed.success) {
       return { ok: false, message: parsed.error.issues[0]?.message ?? "Invalid post." };
     }
-    const result = await publishDraftForUser(userId, postId, parsed.data);
+    const result = await publishDraftForUser(userId, postId, parsed.data, publishTraceId);
     revalidatePath("/drafts");
     revalidatePath(`/drafts/${postId}`);
     revalidatePath("/dashboard");
@@ -216,6 +256,10 @@ export async function deleteDraftAction(postId: string): Promise<ActionResult> {
 }
 
 export async function cancelPostAction(postId: string): Promise<ActionResult> {
+  return withPerfRequest("SERVER_ACTION cancelPostAction", () => cancelPostActionInternal(postId));
+}
+
+async function cancelPostActionInternal(postId: string): Promise<ActionResult> {
   const userId = await requireUserId();
 
   const limited = consumeRateLimit("cancel", userId);
@@ -239,6 +283,12 @@ export async function cancelPostAction(postId: string): Promise<ActionResult> {
 }
 
 export async function retryPlatformAction(
+  postPlatformId: string,
+): Promise<ActionResult> {
+  return withPerfRequest("SERVER_ACTION retryPlatformAction", () => retryPlatformActionInternal(postPlatformId));
+}
+
+async function retryPlatformActionInternal(
   postPlatformId: string,
 ): Promise<ActionResult> {
   const userId = await requireUserId();

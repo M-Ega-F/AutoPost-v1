@@ -10,6 +10,7 @@ import { config } from "dotenv";
 import { ProviderError } from "@/lib/errors";
 import { logger } from "@/lib/logger";
 import type { PublishJobData } from "@/lib/queue/publish";
+import { logPublishTrace, withPublishTrace } from "@/lib/publishing/trace";
 import type { AnalyticsJobData } from "@/lib/queue/analytics";
 
 config({ path: ".env.local" });
@@ -65,6 +66,14 @@ async function main(): Promise<void> {
   const workerId = `publish-${hostname()}-${process.pid}-${randomUUID().slice(0, 8)}`;
   const log = logger.child({ workerId });
 
+  log.info("[WORKER-VERSION]", {
+    source: "src/workers/publish-worker.ts",
+    nodeEnv: process.env.NODE_ENV ?? null,
+    appEnv: process.env.APP_ENV ?? null,
+    pid: process.pid,
+    timestamp: new Date().toISOString(),
+  });
+
   const worker = new Worker<PublishJobData, void, string>(
     PUBLISH_QUEUE_NAME,
     async (job: Job<PublishJobData, void, string>) => {
@@ -77,17 +86,26 @@ async function main(): Promise<void> {
       });
       const startedAt = Date.now();
 
+      logPublishTrace(job.data?.publishTraceId, "WORKER_JOB_RECEIVED", {
+        postPlatformId: job.data?.postPlatformId,
+        bullmqJobId: job.id ?? null,
+        attempt: job.data?.attempt ?? null,
+      });
+
       try {
         if (!job.data?.postPlatformId) {
           throw new Error("Job payload is missing postPlatformId.");
         }
 
-        const outcome = await executePublishJob({
-          postPlatformId: job.data.postPlatformId,
-          attempt: job.data.attempt,
-          workerId,
-          bullmqJobId: job.id ?? null,
-        });
+        const outcome = await withPublishTrace(job.data.publishTraceId, () =>
+          executePublishJob({
+            postPlatformId: job.data.postPlatformId,
+            attempt: job.data.attempt,
+            workerId,
+            bullmqJobId: job.id ?? null,
+            publishTraceId: job.data.publishTraceId,
+          }),
+        );
 
         jobLog.info("job finished", {
           outcome: outcome.status,

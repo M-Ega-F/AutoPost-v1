@@ -29,7 +29,7 @@ export type SweepResult = {
 
 /**
  * This sweep is the safety net for scheduled posts, so it must keep working
- * even when the shared enqueue helper cannot build a job id.
+ * even when the shared enqueue helper fails for a transient queue error.
  */
 async function enqueueTarget(
   postPlatformId: string,
@@ -52,7 +52,7 @@ async function enqueueTarget(
       "publish",
       { postPlatformId, attempt },
       {
-        jobId: publishJobId(postPlatformId, attempt).replaceAll(":", "-"),
+        jobId: publishJobId(postPlatformId, attempt),
         attempts: MAX_ATTEMPTS,
         backoff: { type: "exponential", delay: 15_000 },
       },

@@ -205,6 +205,26 @@ function AnalyticsSection({ post }: { post: PostDetailData }) {
   );
 }
 
+function CampaignIntelligenceSection({ post }: { post: PostDetailData }) {
+  const intelligence = post.campaignIntelligence;
+  if (!post.campaignId || !intelligence) return null;
+  const label = intelligence.classification === "top_performer" ? "Top performer" : intelligence.classification === "underperforming" ? "Underperforming" : intelligence.classification === "insufficient_data" ? "Insufficient data" : intelligence.classification.replaceAll("_", " ");
+  return (
+    <section aria-labelledby="post-campaign-intelligence-title" className="space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 id="post-campaign-intelligence-title" className="text-base font-medium">Campaign performance context</h2>
+        <Link href={`/campaigns/${post.campaignId}`} className="text-xs text-primary underline-offset-4 hover:underline">Open campaign intelligence</Link>
+      </div>
+      <div className="grid gap-3 rounded-lg border border-border p-4 text-sm sm:grid-cols-4">
+        <div><p className="text-2xl font-semibold tabular-nums">{intelligence.score ?? "—"}</p><p className="text-muted-foreground">Score</p></div>
+        <div><p className="font-medium capitalize">{label}</p><p className="text-muted-foreground">Classification</p></div>
+        <div><p className="font-medium capitalize">{intelligence.trend}</p><p className="text-muted-foreground">Trend</p></div>
+        <div><p className="font-medium">{intelligence.goalContribution === null ? "—" : `${intelligence.goalContribution}%`}</p><p className="text-muted-foreground">Goal contribution</p></div>
+      </div>
+    </section>
+  );
+}
+
 /**
  * Per-platform results for one post. Statuses are read from the server on every
  * refresh; the client never decides that something published.
@@ -233,6 +253,7 @@ export function PostDetailPanel({
           {post.scheduledAt ? <div><dt className="inline">Scheduled: </dt><dd className="inline tabular-nums">{formatDateTime(post.scheduledAt, displayTimeZone)}</dd></div> : null}
           {post.publishedAt ? <div><dt className="inline">Published: </dt><dd className="inline tabular-nums">{formatDateTime(post.publishedAt, displayTimeZone)}</dd></div> : null}
           <div><dt className="inline">Timezone: </dt><dd className="inline">{displayTimeZone}</dd></div>
+          {post.campaignId ? <div><dt className="inline">Campaign: </dt><dd className="inline"><Link href={`/campaigns/${post.campaignId}`} className="text-primary underline-offset-4 hover:underline">View campaign</Link></dd></div> : null}
         </dl>
       </div>
 
@@ -271,6 +292,7 @@ export function PostDetailPanel({
       </PostStatusRegion>
       <ReviewPanel postId={post.id} />
       <AnalyticsSection post={post} />
+      <CampaignIntelligenceSection post={post} />
     </div>
   );
 }

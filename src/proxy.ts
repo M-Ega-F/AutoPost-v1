@@ -2,6 +2,12 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
 import { safeNextPath } from "@/lib/auth/redirect";
+import { logger } from "@/lib/logger";
+import {
+  classifyTransport,
+  TRANSPORT_ID_HEADER,
+  TRANSPORT_KIND_HEADER,
+} from "@/lib/transport";
 
 /**
  * Route-aware auth gate.
@@ -18,7 +24,25 @@ function isPublicPage(pathname: string): boolean {
 }
 
 export default async function proxy(request: NextRequest) {
-  let response = NextResponse.next({ request });
+  const transportId = crypto.randomUUID();
+  const { pathname, search } = request.nextUrl;
+  const transport = classifyTransport({
+    method: request.method,
+    pathname,
+    searchParams: request.nextUrl.searchParams,
+    headers: request.headers,
+  });
+  let responseStatus = 200;
+  const startedAt = performance.now();
+
+  function nextResponse() {
+    const requestHeaders = new Headers(request.headers);
+    requestHeaders.set(TRANSPORT_ID_HEADER, transportId);
+    requestHeaders.set(TRANSPORT_KIND_HEADER, transport.kind);
+    return NextResponse.next({ request: { headers: requestHeaders } });
+  }
+
+  let response = nextResponse();
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL ?? "",
@@ -36,7 +60,7 @@ export default async function proxy(request: NextRequest) {
           for (const { name, value } of cookiesToSet) {
             request.cookies.set(name, value);
           }
-          response = NextResponse.next({ request });
+          response = nextResponse();
           for (const { name, value, options } of cookiesToSet) {
             response.cookies.set(name, value, options);
           }
@@ -50,7 +74,6 @@ export default async function proxy(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  const { pathname, search } = request.nextUrl;
   const isApi = pathname.startsWith("/api");
 
   if (!user && !isPublicPage(pathname) && !isApi) {
@@ -58,7 +81,21 @@ export default async function proxy(request: NextRequest) {
     url.pathname = "/login";
     url.search = "";
     url.searchParams.set("next", `${pathname}${search}`);
-    return NextResponse.redirect(url);
+    const redirect = NextResponse.redirect(url);
+    responseStatus = redirect.status;
+    logger.info("[PERF][transport]", {
+      transportId,
+      requestKind: transport.kind,
+      method: request.method,
+      pathname,
+      hasQuery: transport.hasQuery,
+      rsc: transport.rsc,
+      prefetch: transport.prefetch,
+      serverAction: transport.serverAction,
+      status: responseStatus,
+      durationMs: Math.round(performance.now() - startedAt),
+    });
+    return redirect;
   }
 
   if (user && pathname === "/login") {
@@ -66,9 +103,35 @@ export default async function proxy(request: NextRequest) {
     const url = request.nextUrl.clone();
     url.pathname = safeNextPath(requested);
     url.search = "";
-    return NextResponse.redirect(url);
+    const redirect = NextResponse.redirect(url);
+    responseStatus = redirect.status;
+    logger.info("[PERF][transport]", {
+      transportId,
+      requestKind: transport.kind,
+      method: request.method,
+      pathname,
+      hasQuery: transport.hasQuery,
+      rsc: transport.rsc,
+      prefetch: transport.prefetch,
+      serverAction: transport.serverAction,
+      status: responseStatus,
+      durationMs: Math.round(performance.now() - startedAt),
+    });
+    return redirect;
   }
 
+  logger.info("[PERF][transport]", {
+    transportId,
+    requestKind: transport.kind,
+    method: request.method,
+    pathname,
+    hasQuery: transport.hasQuery,
+    rsc: transport.rsc,
+    prefetch: transport.prefetch,
+    serverAction: transport.serverAction,
+    status: responseStatus,
+    durationMs: Math.round(performance.now() - startedAt),
+  });
   return response;
 }
 

@@ -17,8 +17,9 @@ import {
   retryPlatform,
   saveDraft,
 } from "@/lib/domain/posts";
-import { listActiveAccounts } from "@/lib/domain/accounts";
+import { listActiveAccounts, listActiveAccountsForWorkspace } from "@/lib/domain/accounts";
 import { getMediaAssetRowForUser } from "@/lib/domain/media";
+import { getActiveWorkspaceForUser } from "@/lib/domain/workspaces";
 import {
   getAnalyticsOverview,
   getPostAnalyticsDetail,
@@ -64,9 +65,9 @@ function resolveTargets(
   });
 }
 
-async function toDomainMedia(userId: string, media: PostMediaInput) {
+async function toDomainMedia(userId: string, media: PostMediaInput, workspaceId?: string) {
   if (media.kind === "library") {
-    const asset = await getMediaAssetRowForUser(userId, media.assetId ?? "");
+    const asset = await getMediaAssetRowForUser(userId, media.assetId ?? "", workspaceId);
     return {
       storageKey: asset.storageKey,
       sourceUrl: null,
@@ -93,8 +94,10 @@ async function toDomainMedia(userId: string, media: PostMediaInput) {
 export async function createPostForUser(
   userId: string,
   input: CreatePostInput,
+  publishTraceId?: string,
 ): Promise<{ postId: string; status: PostStatus }> {
-  const accounts = await listActiveAccounts(userId);
+  const workspace = await getActiveWorkspaceForUser(userId);
+  const accounts = await listActiveAccountsForWorkspace(userId, workspace.workspace.id);
   const targets = resolveTargets(input.platforms, accounts);
 
   let scheduledAt: Date | null = null;
@@ -119,9 +122,11 @@ export async function createPostForUser(
     contentText: input.caption,
     timezone: input.schedule?.timezone ?? "UTC",
     scheduledAt,
-    media: await toDomainMedia(userId, input.media),
+    media: await toDomainMedia(userId, input.media, workspace.workspace.id),
     targets,
-  });
+    campaignId: input.campaignId,
+    publishTraceId,
+  }, workspace.workspace.id);
 }
 
 export type DraftPayload = {
@@ -144,6 +149,7 @@ export async function saveDraftForUser(
     timezone: input.timezone,
     media: input.media ? await toDomainMedia(userId, input.media) : null,
     targets: resolveTargets(input.platforms, accounts),
+    campaignId: input.campaignId,
   });
 }
 
@@ -151,6 +157,7 @@ export async function publishDraftForUser(
   userId: string,
   postId: string,
   input: CreatePostInput,
+  publishTraceId?: string,
 ): Promise<{ postId: string; status: PostStatus }> {
   const accounts = await listActiveAccounts(userId);
   let scheduledAt: Date | null = null;
@@ -177,6 +184,7 @@ export async function publishDraftForUser(
     scheduledAt,
     media: await toDomainMedia(userId, input.media),
     targets: resolveTargets(input.platforms, accounts),
+    publishTraceId,
   });
 }
 

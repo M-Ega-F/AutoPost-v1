@@ -76,6 +76,20 @@ tokens, OAuth secrets, and encrypted values are not returned.
 | POST | `/api/webhooks/:id/enable` or `/disable` | Session + `webhooks:update` | Enable or disable an endpoint. |
 | GET | `/api/webhooks/:id/deliveries` | Session + `webhooks:view` | List safe delivery status/history without payload bodies. |
 | GET | `/api/webhooks/:id/deliveries/:deliveryId` | Session + `webhooks:view` | Read one safe delivery record. |
+| GET, POST | `/api/campaigns` | Session; POST + `campaigns:create` | List workspace campaigns with server-side pagination/filtering or create a campaign. |
+| GET, PATCH, DELETE | `/api/campaigns/:id` | Session + campaign permission | Read, update, or delete one workspace campaign. Deletion detaches posts and keeps post history. |
+| POST | `/api/campaigns/:id/activate`, `/complete`, `/archive`, `/restore` | Session + campaign permission | Execute one explicit campaign lifecycle transition. |
+| GET, POST | `/api/campaigns/:id/posts` | Session; POST + `campaigns:manage_posts` | List campaign posts or attach an existing post from the active workspace. |
+| DELETE | `/api/campaigns/:id/posts/:postId` | Session + `campaigns:manage_posts` | Detach a post without deleting it. |
+| GET | `/api/campaigns/:id/available-posts` | Session + `campaigns:view` | List unassigned posts eligible for the campaign. |
+| GET | `/api/campaigns/:id/activity?page=1&pageSize=20` | Session + `campaigns:view` | Read the workspace-scoped, paginated campaign activity feed. |
+| GET | `/api/campaigns/:id/intelligence?page=1&pageSize=20&sort=score` | Session + `campaigns:view` | Read deterministic campaign content intelligence, rankings, platform/format/timing signals, recommendations, opportunities, momentum, and data quality. |
+| GET | `/api/campaigns/:id/intelligence?postId=<id>&postId=<id>` | Session + `campaigns:view` | Compare two or three posts that belong to the campaign; returns per-metric winners and safe derived values. |
+| GET | `/api/campaigns/:id/intelligence/history?limit=20&cursor=<opaque>&from=<iso>&to=<iso>` | Session + `campaigns:view` | Read bounded, cursor-paginated intelligence snapshots for up to a 90-day range. |
+| GET | `/api/campaigns/:id/intelligence/opportunities` | Session + `campaigns:view` | Read current safe optimization opportunities from the latest snapshot. |
+| GET | `/api/campaigns/:id/intelligence/rankings?type=performance&limit=20&cursor=<opaque>&platform=instagram&format=video&trend=rising&momentum=improving&minimumConfidence=medium&underperforming=false` | Session + `campaigns:view` | Read persisted post intelligence summaries with database keyset ranking. The response contains only derived scores, classification, freshness and safe IDs. |
+| POST | `/api/campaigns/:id/intelligence/posts/:postId/evaluate` | Session + `campaigns:update` | Re-evaluate one campaign post using the existing campaign intelligence evaluator and persist its derived summary. |
+| POST | `/api/campaigns/:id/evaluate` | Session + `campaigns:update` | Queue one idempotent evaluation; JSON `{ "mode": "incremental" | "full" }` selects the evaluation mode. Editors may evaluate only campaigns they created. |
 
 Invitation creation/resend responses include `invitationUrl` because no email
 provider is configured yet. The raw token is never stored or logged and is
@@ -152,6 +166,43 @@ complete post history to filter it locally.
 The existing composer upload and URL flows remain browser-local until publish
 or schedule. The Media Library upload flow persists a reusable asset immediately;
 choosing one in the composer reuses that stored object without another upload.
+
+### Campaign planning and coordination
+
+Campaign create/update accepts optional `customObjective`, `targetMetric`, and
+positive integer `targetValue`. `objective=other` requires
+`customObjective`; `targetMetric` and `targetValue` must be supplied together.
+Campaign post and available-post list endpoints support `status`,
+`approvalStatus`, `platform`, `from`, `to`, `search`, `page`, and `pageSize`.
+The campaign detail response includes derived `progress`, `health`, `timeline`,
+`approvalSummary`, `publishingSummary`, and analytics coverage summaries.
+
+`GET /api/reviews` accepts `campaignId` and applies the campaign ownership
+check server-side. `GET /api/calendar?campaignId=<campaignId>` applies the same
+active-workspace check and returns only matching posts.
+
+Campaign detail also includes current performance metrics, platform breakdown,
+analytics coverage, optional historical trend deltas, deterministic insights,
+goal milestones, health status, and actionable alerts. The scheduled campaign
+evaluator uses a job payload containing only `campaignId`, `workspaceId`, and a
+trigger.
+
+`GET /api/campaigns/:id/intelligence` is campaign-scoped and uses only internal
+analytics snapshots; it never calls a provider API during the request. Supported
+parameters are `page` (1–500), `pageSize` (1–50), `sort=score|views|engagement|published`,
+and repeated `postId` parameters for a two- or three-post comparison. The
+response contains safe post identifiers, status, platform/format summaries,
+derived metrics, scores, confidence, freshness, rankings, goal contribution,
+insights, recommendations, opportunities, momentum, and actionable comparison winners. Captions, media
+URLs, credentials, provider payloads, queue internals, and stack traces are not
+returned. Requests are rate-limited by the existing process limiter.
+
+History cursors are opaque, UUID/date validated, workspace-bound by the server,
+and pages are limited to 50 items. History ranges are capped at 90 days. Full
+manual evaluations have a stricter rate limit than incremental evaluations.
+Evaluation queue payloads contain only campaign/workspace identifiers, mode,
+reason, trigger, and numeric priority; analytics payloads and credentials never
+enter BullMQ.
 
 ## Settings
 
@@ -246,3 +297,67 @@ events contain only IDs and status (`post.review_requested`, `post.approved`,
 `post.changes_requested`, `post.resubmitted`, and
 `post.approval_invalidated`); captions, media URLs, credentials, comments,
 and provider errors are excluded.
+
+### Review Inbox and advanced approval management
+
+| Method | Path | Auth | Description |
+| --- | --- | --- | --- |
+| GET | /api/reviews?page=1&pageSize=20&status=in_review&reviewer=me&platform=instagram&sort=priority | Session + posts:view | Workspace-scoped, server-paginated review queue with summary counts. Supports `in_review`, `changes_requested`, and `approved`, reviewer/author UUIDs, platform, ISO date range, caption search, and `priority`, `oldest`, `newest`, `scheduled`, `deadline`, or `updated` sorting. |
+| PATCH | /api/posts/:id/reviewer | Session + content:review | Assign, change, or clear an owner/admin reviewer. The post creator and members from another workspace are rejected. |
+| PATCH | /api/posts/:id/review/deadline | Session + content:review | Set or clear a future UTC review deadline. |
+| POST | /api/posts/:id/withdraw-review | Session + posts:update | Return an `in_review` post to `draft`; the conditional transition and audit event are transactional and repeat-safe. |
+| GET | /api/posts/:id/review/comments | Session + posts:view | List workspace-scoped plain-text review comments. |
+| POST | /api/posts/:id/review/comments | Session + content:comment | Add a validated 1–2000 character plain-text comment while a post is in review or has changes requested. |
+
+Review Inbox filtering, sorting, pagination, summary counts, reviewer
+eligibility, and workspace isolation happen server-side. Queue priority is
+overdue, deadline soon, scheduled soon, then waiting time. Deadline overdue is
+computed from UTC timestamps and is only true for `in_review` posts. Deadline
+approaching/overdue notifications are handled by the server-side BullMQ
+`review-automation` queue and its idempotent five-minute Job Scheduler. Stale
+jobs skip when a review is completed, withdrawn, reassigned, or its deadline
+changes.
+
+Advanced review events add reviewer assignment, deadline changes, comments, and
+withdrawal to the existing timeline. Webhooks are emitted through the Phase 15
+delivery pipeline as `post.review_withdrawn`, `post.reviewer_assigned`,
+`post.reviewer_changed`, `post.reviewer_unassigned`,
+`post.review_deadline_changed`, and `post.review_comment_added`. Payloads use
+the existing safe envelope and never contain captions, media URLs, tokens,
+credentials, secrets, or stack traces.
+
+Phase 16C also adds `PATCH` and `DELETE` comment mutation endpoints plus
+`POST /api/posts/:id/review/comments/:commentId/resolve` for root discussion
+resolution/reopen. Replies are capped to one level, comments are soft-deleted,
+and mentions are stored as validated workspace member IDs. Comment mutations
+use the granular `content:comments:*` permissions and existing centralized
+rate limit.
+
+### Campaign optimization actions and experimentation
+
+| Method | Path | Auth | Description |
+| --- | --- | --- | --- |
+| GET/POST | /api/campaigns/:id/optimization-actions | Session + campaigns:view/update | List or create a workspace-scoped optimization action. |
+| GET | /api/campaigns/:id/optimization-actions/:actionId | Session + campaigns:view | Read one action after campaign and workspace ownership checks. |
+| POST | /api/campaigns/:id/optimization-actions/:actionId/:action | Session + campaigns:update | Apply `accept`, `start`, `complete`, `dismiss`, `cancel`, `fail`, or `retry` through the guarded state machine. |
+| GET/POST | /api/campaigns/:id/experiments | Session + campaigns:view/update | List or create a control-and-variant experiment. |
+| GET | /api/campaigns/:id/experiments/:experimentId | Session + campaigns:view | Read an experiment with up to three variants and its latest result. |
+| POST | /api/campaigns/:id/experiments/:experimentId/:action | Session + campaigns:update | Apply `plan`, `start`, `pause`, `resume`, `complete`, or `cancel`. |
+| GET/POST | /api/campaigns/:id/experiments/:experimentId/variants | Session + campaigns:view/update | List or add a campaign post variant. |
+| DELETE | /api/campaigns/:id/experiments/:experimentId/variants/:variantId | Session + campaigns:update | Remove a variant while the experiment is draft or planned. |
+| GET/POST | /api/campaigns/:id/experiments/:experimentId/results | Session + campaigns:view/update | Read or evaluate a deduplicated result from post intelligence summaries. |
+| POST | /api/campaigns/:id/experiments/:experimentId/evaluate | Session + campaigns:update | Rate-limited alias for manual evaluation. |
+| GET | /api/campaigns/:id/experiments/:experimentId/statistics | Session + campaigns:view | Read the latest statistical snapshot: sufficiency, uplift, interval, MDE, power, duration, winner confidence, data quality, and recommendation. |
+| GET | /api/campaigns/:id/experiments/:experimentId/history | Session + campaigns:view | Paginated statistical evaluation history (`page`, `pageSize`). |
+| GET | /api/campaigns/:id/experiments/learning | Session + campaigns:view | Paginated workspace-scoped historical experiment learning and aggregate evidence summary. |
+
+The Phase 17G API never accepts a frontend workspace ID. Server authorization
+resolves the active workspace and verifies campaign, control-post, variant,
+and action ownership. Experiment results contain only derived scores, sample
+counts, confidence, status, winner ID, and fingerprints; captions, media,
+provider responses, and credentials are excluded. Running experiments are also
+evaluated by the existing campaign automation worker after fresh summaries
+arrive. Statistical snapshots use algorithm version `17h-v1`, remain
+idempotent by input fingerprint, and preserve the last successful snapshot if
+a worker evaluation fails. Approval, scheduling, publishing, retry, and
+cancellation remain post-level workflows.

@@ -27,6 +27,7 @@ import type { TemplateInput } from "@/lib/validation/schemas";
 import { MAX_ATTEMPTS } from "@/lib/domain/executions";
 import { getActiveWorkspaceId } from "@/lib/domain/workspaces";
 import { requireWorkspacePermission } from "@/lib/auth/authorization";
+import { measurePerf } from "@/lib/perf";
 
 const EMPTY_TEMPLATE_CAPTION = "";
 
@@ -166,21 +167,21 @@ export async function createDraftFromReusableContent(input: {
 
 async function loadPostReusableContent(userId: string, postId: string) {
   const workspaceId = await getActiveWorkspaceId(userId);
-  const [post] = await db
+  const [post] = await measurePerf("[PERF][db]", "save-as-template.sourcePost", () => db
     .select()
     .from(posts)
     .where(and(eq(posts.id, postId), eq(posts.userId, userId), eq(posts.workspaceId, workspaceId)))
-    .limit(1);
+    .limit(1), { queryCount: 1 });
   if (!post) throw new AppError("not_found", "We couldn't find that post.");
 
-  const [mediaRows, targetRows] = await Promise.all([
+  const [mediaRows, targetRows] = await measurePerf("[PERF][db]", "save-as-template.sourceMedia+targets", () => Promise.all([
     db.select().from(postMedia).where(eq(postMedia.postId, postId)).orderBy(asc(postMedia.position)),
     db
       .select({ platform: postPlatforms.platform, socialAccountId: postPlatforms.socialAccountId })
       .from(postPlatforms)
       .where(eq(postPlatforms.postId, postId))
       .orderBy(asc(postPlatforms.createdAt)),
-  ]);
+  ]), { queryCount: 2 });
 
   return {
     contentText: post.contentText,
@@ -218,7 +219,7 @@ async function toTemplateSummary(
   const media = templateMedia(row);
   if (media && row.mediaStorageKey) {
     try {
-      media.previewUrl = await createSignedMediaUrl(row.mediaStorageKey);
+      media.previewUrl = await measurePerf("[PERF][storage]", "templates.signedPreviewUrl", () => createSignedMediaUrl(row.mediaStorageKey!));
     } catch {
       media.previewUrl = null;
     }
@@ -248,12 +249,12 @@ async function getTemplateRow(userId: string, templateId: string) {
 
 export async function listTemplatesForUser(userId: string): Promise<ContentTemplateSummary[]> {
   const workspaceId = await getActiveWorkspaceId(userId);
-  const rows = await db
+  const rows = await measurePerf("[PERF][db]", "templates.rows", () => db
     .select()
     .from(contentTemplates)
     .where(and(eq(contentTemplates.userId, userId), eq(contentTemplates.workspaceId, workspaceId)))
     .orderBy(desc(contentTemplates.updatedAt))
-    .limit(100);
+    .limit(100), { queryCount: 1 });
   return Promise.all(rows.map(toTemplateSummary));
 }
 
@@ -274,7 +275,7 @@ export async function createTemplateForUser(
 ): Promise<ContentTemplateDetail> {
   await requireWorkspacePermission(userId, "templates:create");
   const workspaceId = await getActiveWorkspaceId(userId);
-  const [created] = await db
+  const [created] = await measurePerf("[PERF][db]", "templates.create", () => db
     .insert(contentTemplates)
     .values({
       userId,
@@ -283,7 +284,7 @@ export async function createTemplateForUser(
       contentText: input.caption.trim() || EMPTY_TEMPLATE_CAPTION,
       targets: templateTargets(input.platforms),
     })
-    .returning();
+    .returning(), { queryCount: 1 });
   return toTemplateSummary(created);
 }
 
@@ -337,7 +338,7 @@ export async function savePostAsTemplateForUser(
   const workspaceId = await getActiveWorkspaceId(userId);
   const source = await loadPostReusableContent(userId, postId);
   const targets = await resolveReusableTargets(userId, source.targets);
-  const [created] = await db
+  const [created] = await measurePerf("[PERF][db]", "save-as-template.insert", () => db
     .insert(contentTemplates)
     .values({
       userId,
@@ -354,6 +355,6 @@ export async function savePostAsTemplateForUser(
       duration: source.media?.duration ?? null,
       targets,
     })
-    .returning();
+    .returning(), { queryCount: 1 });
   return toTemplateSummary(created);
 }

@@ -29,6 +29,7 @@ function missingCredentialNames(platform: string): string[] {
   if (platform === "tiktok") return ["TIKTOK_CLIENT_KEY", "TIKTOK_CLIENT_SECRET"];
   if (platform === "threads") return ["THREADS_CLIENT_ID", "THREADS_CLIENT_SECRET"];
   if (platform === "linkedin") return ["LINKEDIN_CLIENT_ID", "LINKEDIN_CLIENT_SECRET"];
+  if (platform === "instagram") return ["INSTAGRAM_CLIENT_ID", "INSTAGRAM_CLIENT_SECRET"];
   // X OAuth 2.0 PKCE supports public clients, so the client secret is optional.
   if (platform === "x") return ["X_CLIENT_ID"];
   return ["META_CLIENT_ID", "META_CLIENT_SECRET"];
@@ -46,9 +47,27 @@ function logDevelopmentOAuthStart(
     platform,
     appUrlConfigured: Boolean(serverConfig.appUrlOptional),
     metaClientIdConfigured:
-      platform === "facebook" || platform === "instagram"
+      platform === "facebook"
         ? Boolean(serverConfig.meta.clientId)
+        : platform === "instagram"
+          ? Boolean(serverConfig.instagram.clientId)
+          : undefined,
+    metaClientSecretConfigured:
+      platform === "facebook"
+        ? Boolean(serverConfig.meta.clientSecret)
+        : platform === "instagram"
+          ? Boolean(serverConfig.instagram.clientSecret)
+          : undefined,
+    oauthAppId:
+      platform === "facebook" || platform === "instagram"
+        ? parsed.searchParams.get("client_id")
         : undefined,
+    metaGraphVersion:
+      platform === "facebook"
+        ? serverConfig.meta.graphVersion
+        : platform === "instagram"
+          ? serverConfig.instagram.graphVersion
+          : undefined,
     redirectUri,
     authorizationHost: parsed.host,
     authorizationPath: parsed.pathname,

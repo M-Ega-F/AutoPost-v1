@@ -52,9 +52,12 @@ cut -d= -f1 .env.local | grep -v '^\s*$' | sort
 | Redis | `UPSTASH_REDIS_REST_URL` | not read by the app | optional | listed in Plan §39; harmless to keep |
 | Redis | `UPSTASH_REDIS_REST_TOKEN` | not read by the app | optional | listed in Plan §39; harmless to keep |
 | Encryption | `ENCRYPTION_KEY` | `serverConfig.encryptionKey` (AES-GCM token vault) | yes | rotating it makes stored tokens undecryptable |
-| Meta | `META_CLIENT_ID` (fallback `FACEBOOK_CLIENT_ID`) | `serverConfig.meta.clientId` | optional at boot, **required for scenarios 2, 6–9, 11, 13, 14** | |
-| Meta | `META_CLIENT_SECRET` (fallback `FACEBOOK_CLIENT_SECRET`) | `serverConfig.meta.clientSecret` | optional at boot, required for the same scenarios | |
-| Meta | `META_GRAPH_API_VERSION` | `serverConfig.meta.graphVersion` | optional | defaults to `v23.0` |
+| Meta / Facebook | `META_CLIENT_ID` (fallback `FACEBOOK_CLIENT_ID`) | `serverConfig.meta.clientId` | optional at boot, **required for Facebook scenarios 2, 6–9, 11, 13, 14** | |
+| Meta / Facebook | `META_CLIENT_SECRET` (fallback `FACEBOOK_CLIENT_SECRET`) | `serverConfig.meta.clientSecret` | optional at boot, required for the same Facebook scenarios | |
+| Instagram Login | `INSTAGRAM_CLIENT_ID` | `serverConfig.instagram.clientId` | required for standalone Instagram Login scenarios | |
+| Instagram Login | `INSTAGRAM_CLIENT_SECRET` | `serverConfig.instagram.clientSecret` | required for standalone Instagram Login scenarios | |
+| Instagram Login | `INSTAGRAM_GRAPH_API_VERSION` | `serverConfig.instagram.graphVersion` | optional, defaults to `v26.0` | |
+| Meta | `META_GRAPH_API_VERSION` | `serverConfig.meta.graphVersion` | optional | defaults to `v26.0` |
 | TikTok | `TIKTOK_CLIENT_KEY` | `serverConfig.tiktok.clientKey` | optional at boot, **required for scenarios 2, 6–9, 11, 13, 14** | |
 | TikTok | `TIKTOK_CLIENT_SECRET` | `serverConfig.tiktok.clientSecret` | optional at boot, required for the same scenarios | |
 | App URL | `APP_URL` (or `NEXT_PUBLIC_APP_URL`; falls back to `VERCEL_URL`) | `resolveAppUrl()`, OAuth redirect URI | **required for OAuth** | see 1.5 |
@@ -288,8 +291,8 @@ registered exactly as in section 1.5.
 - A rejected or failed grant renders a destructive toast "We couldn't connect TikTok. Try again."
 - No token, scope list or expiry date is ever shown on the card (`Design.md` 6.6).
 
-**Status.** `Needs real credentials` — `META_CLIENT_ID` + `META_CLIENT_SECRET` for Instagram and Facebook,
-`TIKTOK_CLIENT_KEY` + `TIKTOK_CLIENT_SECRET` for TikTok.
+**Status.** `Needs real credentials` — `INSTAGRAM_CLIENT_ID` + `INSTAGRAM_CLIENT_SECRET` for standalone Instagram Login,
+`META_CLIENT_ID` + `META_CLIENT_SECRET` for Facebook, and `TIKTOK_CLIENT_KEY` + `TIKTOK_CLIENT_SECRET` for TikTok.
 
 ---
 

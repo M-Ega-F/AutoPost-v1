@@ -111,8 +111,8 @@ export async function resetTestDatabase(): Promise<void> {
   await initTestDatabase();
   await getClient().exec(`
     truncate table
-      webhook_deliveries, webhooks, post_review_events, post_analytics_snapshots, post_executions, post_platforms, post_media, posts, content_templates,
-      social_accounts, user_preferences, media_assets, notifications, workspace_invitations, workspace_members, workspaces, auth.users
+      post_review_comment_mentions, post_review_automation_events, post_review_comments, webhook_deliveries, webhooks, post_review_events, post_analytics_snapshots, post_executions, post_platforms, post_media, posts, content_templates,
+      social_accounts, user_preferences, media_assets, notifications, workspace_invitations, workspace_members, campaign_automation_events, campaign_activity, campaigns, workspaces, auth.users
     restart identity cascade;
   `);
 }

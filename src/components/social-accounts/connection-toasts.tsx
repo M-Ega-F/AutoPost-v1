@@ -6,7 +6,7 @@ import { toast } from "sonner";
 
 import { PLATFORMS, PLATFORM_META, type Platform } from "@/lib/status";
 
-type OAuthErrorCode = "denied" | "not_configured" | "token" | "unknown";
+type OAuthErrorCode = "denied" | "no_pages" | "not_configured" | "token" | "unknown";
 
 function isPlatform(value: string): value is Platform {
   return (PLATFORMS as readonly string[]).includes(value);
@@ -15,6 +15,7 @@ function isPlatform(value: string): value is Platform {
 function isErrorCode(value: string): value is OAuthErrorCode {
   return (
     value === "denied" ||
+    value === "no_pages" ||
     value === "not_configured" ||
     value === "token" ||
     value === "unknown"
@@ -30,6 +31,9 @@ function messageFor(code: OAuthErrorCode, subject: string): string {
   if (code === "not_configured") {
     const start = subject.charAt(0).toUpperCase() + subject.slice(1);
     return `${start} isn't set up on this server yet.`;
+  }
+  if (code === "no_pages") {
+    return "No publishable Facebook Page was returned. Check the Page access and publishing permissions, then try again.";
   }
   return `We couldn't connect ${subject}. Try again.`;
 }

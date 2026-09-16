@@ -7,6 +7,7 @@ import { humanErrorMessage, ProviderError, type ErrorCode } from "@/lib/errors";
 import { sanitize } from "@/lib/logger";
 import type { Platform } from "@/lib/status";
 import { PLATFORM_LIMITS } from "@/lib/validation/limits";
+import { logPublishTrace } from "@/lib/publishing/trace";
 import type { MediaAsset, ValidationResult } from "./types";
 import { validationError } from "./types";
 
@@ -192,9 +193,9 @@ function authErrorCode(code: string, message: string): ErrorCode {
       "session",
       "revoked",
       "invalid oauth",
+      "invalid access token",
       "access_token_invalid",
       "token_invalid",
-      "unauthor",
     ])
   ) {
     return "token_expired";
@@ -212,7 +213,34 @@ function authErrorCode(code: string, message: string): ErrorCode {
     return "permission_denied";
   }
 
-  return "token_expired";
+  // An unrecognised 401 is not enough evidence that a token expired. Keep the
+  // user-facing message generic and preserve the raw provider details instead.
+  return "provider_error";
+}
+
+function metaErrorDetails(payload: unknown): {
+  metaErrorCode: string | number | null;
+  metaErrorSubcode: string | number | null;
+  metaErrorType: string | null;
+  metaErrorMessage: string | null;
+} {
+  const root = asRecord(payload);
+  const error = asRecord(root?.error) ?? root;
+  const code = error?.code;
+  const subcode = error?.error_subcode;
+  const type = error?.type;
+  const message = providerMessage(payload);
+
+  return {
+    metaErrorCode:
+      typeof code === "string" || typeof code === "number" ? code : null,
+    metaErrorSubcode:
+      typeof subcode === "string" || typeof subcode === "number" ? subcode : null,
+    metaErrorType: typeof type === "string" ? type : null,
+    metaErrorMessage: message
+      ? String(sanitize(message)).slice(0, 500)
+      : null,
+  };
 }
 
 /**
@@ -429,18 +457,69 @@ export async function requestJson<T>(
   options: JsonRequestOptions,
 ): Promise<JsonResult<T>> {
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-  const response = await fetchWithTimeout(url, init, {
-    platform: options.platform,
-    endpoint: options.endpoint,
-    timeoutMs,
-  });
+  const traceableMetaRequest = options.platform === "facebook" || options.platform === "instagram";
+  const startedAt = Date.now();
+  if (traceableMetaRequest) {
+    logPublishTrace(undefined, "META_REQUEST_START", {});
+  }
+
+  let response: Response;
+  try {
+    response = await fetchWithTimeout(url, init, {
+      platform: options.platform,
+      endpoint: options.endpoint,
+      timeoutMs,
+    });
+  } catch (error) {
+    if (traceableMetaRequest) {
+      logPublishTrace(undefined, "META_RESPONSE_ERROR", {
+        platform: options.platform,
+        endpoint: options.endpoint,
+        method: init.method ?? "GET",
+        status: 0,
+        durationMs: Date.now() - startedAt,
+        code: error instanceof ProviderError ? error.code : "network_error",
+      });
+    }
+    throw error;
+  }
 
   const text = await response.text();
   const payload = parseBody(text);
 
   if (!response.ok) {
+    if (traceableMetaRequest) {
+      const requestHeaders = new Headers(init.headers);
+      const bodyText = typeof init.body === "string" ? init.body : "";
+      const requestUrl = new URL(url);
+      logPublishTrace(undefined, "META_RESPONSE_ERROR", {
+        platform: options.platform,
+        endpoint: options.endpoint,
+        method: init.method ?? "GET",
+        status: response.status,
+        durationMs: Date.now() - startedAt,
+        hasAccessToken:
+          /^Bearer\s+\S+$/i.test(requestHeaders.get("authorization") ?? "") ||
+          requestUrl.searchParams.has("access_token"),
+        hasAppSecretProof:
+          requestUrl.searchParams.has("appsecret_proof") ||
+          new URLSearchParams(bodyText).has("appsecret_proof"),
+        ...metaErrorDetails(payload),
+      });
+    }
     const mapped = options.mapError?.(response.status, payload);
     throw mapped ?? mapProviderError(options.platform, response.status, payload);
+  }
+
+  if (traceableMetaRequest) {
+    logPublishTrace(undefined, "META_RESPONSE", {
+      platform: options.platform,
+      endpoint: options.endpoint,
+      method: init.method ?? "GET",
+      status: response.status,
+      durationMs: Date.now() - startedAt,
+      responseSuccess: true,
+    });
   }
 
   const log = responseLog(

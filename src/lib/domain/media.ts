@@ -129,12 +129,13 @@ export async function listMediaAssetsForUser(
 export async function getMediaAssetRowForUser(
   userId: string,
   assetId: string,
+  workspaceId?: string,
 ): Promise<typeof mediaAssets.$inferSelect> {
-  const workspaceId = await getActiveWorkspaceId(userId);
+  const resolvedWorkspaceId = workspaceId ?? (await getActiveWorkspaceId(userId));
   const [row] = await db
     .select()
     .from(mediaAssets)
-    .where(and(eq(mediaAssets.id, assetId), eq(mediaAssets.userId, userId), eq(mediaAssets.workspaceId, workspaceId)))
+    .where(and(eq(mediaAssets.id, assetId), eq(mediaAssets.userId, userId), eq(mediaAssets.workspaceId, resolvedWorkspaceId)))
     .limit(1);
 
   if (!row) throw new AppError("not_found", "That media asset was not found.");

@@ -11,6 +11,8 @@
     "typecheck": "tsc --noEmit",
     "worker": "node --conditions=react-server --require ./scripts/node-os-compat.cjs --import tsx src/workers/publish-worker.ts",
     "webhook-worker": "node --conditions=react-server --require ./scripts/node-os-compat.cjs --import tsx src/workers/webhook-worker.ts",
+    "review-automation-worker": "node --conditions=react-server --require ./scripts/node-os-compat.cjs --import tsx src/workers/review-automation-worker.ts",
+    "campaign-automation-worker": "node --conditions=react-server --require ./scripts/node-os-compat.cjs --import tsx src/workers/campaign-automation-worker.ts",
     "test": "node --conditions=react-server --require ./scripts/node-os-compat.cjs --import tsx --test \"src/**/*.test.ts\"",
     "test:integration": "node --conditions=react-server --require ./scripts/node-os-compat.cjs --import tsx --import ./tests/register.ts --test \"tests/**/*.test.ts\"",
     "test:all": "npm run test && npm run test:integration",

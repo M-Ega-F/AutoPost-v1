@@ -7,8 +7,13 @@ import { requireUser } from "@/lib/auth/server";
 import { listTemplatesForUser } from "@/lib/domain/reuse";
 import { getActiveWorkspaceForUser } from "@/lib/domain/workspaces";
 import { hasPermission } from "@/lib/auth/permissions";
+import { withPerfRequest } from "@/lib/perf";
 
 export default async function TemplatesPage() {
+  return withPerfRequest("GET /templates", () => renderTemplatesPage());
+}
+
+async function renderTemplatesPage() {
   const user = await requireUser();
   const [templates, workspace] = await Promise.all([listTemplatesForUser(user.id), getActiveWorkspaceForUser(user.id)]);
   const canCreate = hasPermission(workspace.workspace.role, "templates:create");

@@ -106,6 +106,111 @@
       "when": 1789358647637,
       "tag": "0014_gray_morbius",
       "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1789361480236,
+      "tag": "0015_unique_bruce_banner",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1789362568976,
+      "tag": "0016_clever_bloodstorm",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1789362893936,
+      "tag": "0017_simple_starjammers",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1789366523919,
+      "tag": "0018_watery_the_spike",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1789370544220,
+      "tag": "0019_bumpy_blue_marvel",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1789372981868,
+      "tag": "0020_chief_aqueduct",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1789376095611,
+      "tag": "0021_fuzzy_bill_hollister",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1789384058266,
+      "tag": "0022_curious_purple_man",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1789387577758,
+      "tag": "0023_true_mathemanic",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1789390575630,
+      "tag": "0024_quick_supernaut",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1789482569401,
+      "tag": "0025_fixed_maximus",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1789483584562,
+      "tag": "0026_adorable_redwing",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1789483790424,
+      "tag": "0027_sleepy_silver_surfer",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1789485265016,
+      "tag": "0028_great_shadowcat",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1789485873069,
+      "tag": "0029_busy_rocket_raccoon",
+      "breakpoints": true
     }
   ]
 }

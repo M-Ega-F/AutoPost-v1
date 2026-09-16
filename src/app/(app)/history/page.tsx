@@ -13,8 +13,17 @@ import { historyQuerySchema } from "@/lib/validation/schemas";
 import { listHistoryPostsForUser } from "@/lib/services/posts";
 import { getSettingsForUser } from "@/lib/services/settings";
 import { normalizeTimeZone, TIMEZONE_COOKIE } from "@/lib/time";
+import { withPerfRequest } from "@/lib/perf";
 
 export default async function HistoryPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  return withPerfRequest("GET /history", () => renderHistoryPage({ searchParams }));
+}
+
+async function renderHistoryPage({
   searchParams,
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;

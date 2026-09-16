@@ -1,8 +1,15 @@
 import { AppShell } from "@/components/app-shell";
 import { requireUser } from "@/lib/auth/server";
 import { getActiveWorkspaceForUser, listUserWorkspaces } from "@/lib/domain/workspaces";
+import { withPerfRequest } from "@/lib/perf";
 
-export default async function AppLayout({
+export default function AppLayout({
+  children,
+}: Readonly<{ children: React.ReactNode }>) {
+  return withPerfRequest("GET /(app)", () => renderAppLayout({ children }));
+}
+
+async function renderAppLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   const user = await requireUser();

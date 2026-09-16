@@ -6,6 +6,8 @@ import { serverConfig } from "@/lib/env";
 export const PUBLISH_QUEUE_NAME = "publish-post-platform";
 export const ANALYTICS_QUEUE_NAME = "sync-post-analytics";
 export const WEBHOOK_QUEUE_NAME = "deliver-webhook";
+export const REVIEW_AUTOMATION_QUEUE_NAME = "review-automation";
+export const CAMPAIGN_AUTOMATION_QUEUE_NAME = "campaign-evaluation";
 
 let connection: ConnectionOptions | undefined;
 
@@ -40,6 +42,8 @@ export function getRedisClient(): IORedis {
 let queue: Queue | undefined;
 let analyticsQueue: Queue | undefined;
 let webhookQueue: Queue | undefined;
+let reviewAutomationQueue: Queue | undefined;
+let campaignAutomationQueue: Queue | undefined;
 
 export function getPublishQueue(): Queue {
   if (!queue) {
@@ -75,6 +79,36 @@ export function getWebhookQueue(): Queue {
   return webhookQueue;
 }
 
+export function getReviewAutomationQueue(): Queue {
+  if (!reviewAutomationQueue) {
+    reviewAutomationQueue = new Queue(REVIEW_AUTOMATION_QUEUE_NAME, {
+      connection: getRedisConnection(),
+      defaultJobOptions: {
+        removeOnComplete: { age: 24 * 60 * 60, count: 1_000 },
+        removeOnFail: { age: 7 * 24 * 60 * 60 },
+        attempts: 3,
+        backoff: { type: "exponential", delay: 15_000 },
+      },
+    });
+  }
+  return reviewAutomationQueue;
+}
+
+export function getCampaignAutomationQueue(): Queue {
+  if (!campaignAutomationQueue) {
+    campaignAutomationQueue = new Queue(CAMPAIGN_AUTOMATION_QUEUE_NAME, {
+      connection: getRedisConnection(),
+      defaultJobOptions: {
+        removeOnComplete: { age: 24 * 60 * 60, count: 1_000 },
+        removeOnFail: { age: 7 * 24 * 60 * 60 },
+        attempts: 3,
+        backoff: { type: "exponential", delay: 15_000 },
+      },
+    });
+  }
+  return campaignAutomationQueue;
+}
+
 export function defaultJobOptions(): JobsOptions {
   return {
     removeOnComplete: { age: 24 * 60 * 60, count: 1_000 },
@@ -96,6 +130,14 @@ export async function closeQueue(): Promise<void> {
   if (webhookQueue) {
     await webhookQueue.close();
     webhookQueue = undefined;
+  }
+  if (reviewAutomationQueue) {
+    await reviewAutomationQueue.close();
+    reviewAutomationQueue = undefined;
+  }
+  if (campaignAutomationQueue) {
+    await campaignAutomationQueue.close();
+    campaignAutomationQueue = undefined;
   }
   const redis = connection as unknown as IORedis | undefined;
   if (redis && typeof redis.disconnect === "function") {

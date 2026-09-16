@@ -21,6 +21,8 @@ import { isValidTimeZone } from "@/lib/time";
 import { removeMediaObject } from "@/lib/storage";
 import { removePublishJobs } from "@/lib/queue/publish";
 import { logger } from "@/lib/logger";
+import { measurePerf } from "@/lib/perf";
+import { currentRequestContext, recordRequestContextMetric } from "@/lib/request-context";
 import { notifyWorkspaceMemberEvent, notifyWorkspaceTransfer } from "@/lib/domain/notifications";
 
 export type WorkspaceSummary = {
@@ -88,7 +90,7 @@ function toSummary(
 }
 
 /** Creates the one personal workspace for a user, safely on repeated calls. */
-export async function ensurePersonalWorkspace(userId: string): Promise<WorkspaceSummary> {
+async function ensurePersonalWorkspaceInternal(userId: string): Promise<WorkspaceSummary> {
   const existing = await db
     .select()
     .from(workspaces)
@@ -133,6 +135,19 @@ export async function ensurePersonalWorkspace(userId: string): Promise<Workspace
   return toSummary(workspace);
 }
 
+export async function ensurePersonalWorkspace(userId: string): Promise<WorkspaceSummary> {
+  const requestContext = currentRequestContext();
+  const cached = requestContext?.personalWorkspacePromises.get(userId);
+  if (cached) {
+    recordRequestContextMetric("personalWorkspaceCacheHitCount");
+    return cached;
+  }
+  recordRequestContextMetric("personalWorkspaceResolveCount");
+  const promise = measurePerf("[PERF][workspace]", "ensurePersonalWorkspace", () => ensurePersonalWorkspaceInternal(userId));
+  requestContext?.personalWorkspacePromises.set(userId, promise);
+  return promise;
+}
+
 export async function listUserWorkspaces(userId: string): Promise<WorkspaceSummary[]> {
   await ensurePersonalWorkspace(userId);
   const rows = await db
@@ -149,16 +164,28 @@ export async function getWorkspaceForUser(
   userId: string,
   workspaceId: string,
 ): Promise<WorkspaceSummary | null> {
-  const [row] = await db
-    .select({ workspace: workspaces, role: workspaceMembers.role })
-    .from(workspaceMembers)
-    .innerJoin(workspaces, eq(workspaces.id, workspaceMembers.workspaceId))
-    .where(and(eq(workspaceMembers.userId, userId), eq(workspaceMembers.workspaceId, workspaceId)))
-    .limit(1);
-  return row ? toSummary(row.workspace, row.role) : null;
+  const requestContext = currentRequestContext();
+  const cacheKey = `${userId}:${workspaceId}`;
+  const cached = requestContext?.workspacePromises.get(cacheKey);
+  if (cached) {
+    recordRequestContextMetric("membershipCacheHitCount");
+    return cached;
+  }
+  recordRequestContextMetric("membershipResolveCount");
+  const promise = measurePerf("[PERF][workspace]", "getWorkspaceForUser", async () => {
+    const [row] = await db
+      .select({ workspace: workspaces, role: workspaceMembers.role })
+      .from(workspaceMembers)
+      .innerJoin(workspaces, eq(workspaces.id, workspaceMembers.workspaceId))
+      .where(and(eq(workspaceMembers.userId, userId), eq(workspaceMembers.workspaceId, workspaceId)))
+      .limit(1);
+    return row ? toSummary(row.workspace, row.role) : null;
+  });
+  requestContext?.workspacePromises.set(cacheKey, promise);
+  return promise;
 }
 
-export async function getActiveWorkspaceForUser(userId: string): Promise<WorkspaceContext> {
+async function getActiveWorkspaceForUserInternal(userId: string): Promise<WorkspaceContext> {
   const personal = await ensurePersonalWorkspace(userId);
   const [preferences] = await db
     .select({ activeWorkspaceId: userPreferences.activeWorkspaceId })
@@ -184,6 +211,19 @@ export async function getActiveWorkspaceForUser(userId: string): Promise<Workspa
       });
   }
   return { userId, workspace: fallback };
+}
+
+export async function getActiveWorkspaceForUser(userId: string): Promise<WorkspaceContext> {
+  const requestContext = currentRequestContext();
+  const cached = requestContext?.activeWorkspacePromises.get(userId);
+  if (cached) {
+    recordRequestContextMetric("activeWorkspaceCacheHitCount");
+    return cached;
+  }
+  recordRequestContextMetric("activeWorkspaceResolveCount");
+  const promise = measurePerf("[PERF][workspace]", "getActiveWorkspaceForUser", () => getActiveWorkspaceForUserInternal(userId));
+  requestContext?.activeWorkspacePromises.set(userId, promise);
+  return promise;
 }
 
 export async function getActiveWorkspaceId(userId: string): Promise<string> {

@@ -6,6 +6,8 @@ import { redirect } from "next/navigation";
 import type { User } from "@supabase/supabase-js";
 
 import { serverConfig } from "@/lib/env";
+import { measurePerf } from "@/lib/perf";
+import { currentRequestContext, recordRequestContextMetric } from "@/lib/request-context";
 
 type CookieWriter = {
   set: (input: {
@@ -50,10 +52,31 @@ export async function createSupabaseServerClient() {
 }
 
 export async function getCurrentUser(): Promise<User | null> {
-  const supabase = await createSupabaseServerClient();
+  const requestContext = currentRequestContext();
+  if (requestContext?.currentUserPromise) {
+    recordRequestContextMetric("authCacheHitCount");
+    return requestContext.currentUserPromise;
+  }
+
+  recordRequestContextMetric("authResolveCount");
+  const promise = getCurrentUserUncached();
+  if (requestContext) requestContext.currentUserPromise = promise;
+  return promise;
+}
+
+async function getCurrentUserUncached(): Promise<User | null> {
+  const supabase = await measurePerf(
+    "[PERF][shared-auth]",
+    "supabase-client.create",
+    () => createSupabaseServerClient(),
+  );
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await measurePerf(
+    "[PERF][shared-auth]",
+    "supabase.auth.getUser",
+    () => supabase.auth.getUser(),
+  );
   if (user) {
     const { ensurePersonalWorkspace } = await import("@/lib/domain/workspaces");
     await ensurePersonalWorkspace(user.id);

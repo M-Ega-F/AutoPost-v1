@@ -6,6 +6,7 @@ import type { CalendarPost } from "@/lib/domain/types";
 export function getCalendarForUser(
   userId: string,
   range: { start: Date; end: Date },
+  campaignId?: string,
 ): Promise<CalendarPost[]> {
-  return listCalendarPosts(userId, range);
+  return listCalendarPosts(userId, range, campaignId);
 }

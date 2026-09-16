@@ -42,7 +42,7 @@ import {
   TEST_MEDIA,
   USER_ID,
 } from "./fixtures";
-import { enqueued, jobsFor, removed } from "./fake-queue";
+import { enqueued, jobsFor, publishJobId, removed } from "./fake-queue";
 
 /**
  * Domain-level integration tests for the post lifecycle: create, schedule,
@@ -234,7 +234,7 @@ describe("createPost — publish now", () => {
 
     // The job id is written back so a later retry can remove the stale job.
     for (const target of await targetRowsFor(postId)) {
-      assert.equal(target.bullmqJobId, `${target.id}:1`);
+      assert.equal(target.bullmqJobId, publishJobId(target.id, 1));
     }
   });
 });
@@ -590,12 +590,53 @@ describe("retryPlatform — only the failed platform is retried", () => {
   });
 });
 
-describe("retryPlatform — when retrying must not be offered", () => {
-  test("refuses to retry an auth failure and asks for a reconnect", async () => {
+describe("retryPlatform — current account state controls retry", () => {
+  test("allows a historical token failure after the account is healthy again", async () => {
     const { targetId } = await buildPartialFailurePost();
 
     const instagram = targetId("instagram");
     await setTargetError(instagram, "token_expired");
+    const beforeReconnect = await getTargetRow(instagram);
+    assert.ok(beforeReconnect);
+    const account = await getAccountRow(beforeReconnect.socialAccountId);
+    assert.ok(account);
+    await db
+      .update(socialAccounts)
+      .set({ status: "needs_reconnect", tokenExpiresAt: null })
+      .where(eq(socialAccounts.id, account.id));
+    await saveConnectedAccounts(USER_ID, [
+      {
+        platform: "instagram",
+        platformAccountId: account.platformAccountId,
+        username: account.username,
+        displayName: account.displayName,
+        avatarUrl: account.avatarUrl,
+        accessToken: "reconnected-access-token",
+        refreshToken: "reconnected-refresh-token",
+        tokenExpiresAt: new Date(Date.now() + 86_400_000),
+        scopes: account.scopes,
+      },
+    ]);
+
+    await retryPlatform(USER_ID, instagram);
+
+    const target = await getTargetRow(instagram);
+    assert.equal(target?.status, "pending");
+    assert.equal(target?.lastErrorCode, null);
+    assert.equal(enqueued.length, 1);
+    assert.equal(enqueued[0]?.postPlatformId, instagram);
+  });
+
+  test("refuses to retry when the current account needs reconnection", async () => {
+    const { targetId } = await buildPartialFailurePost();
+
+    const instagram = targetId("instagram");
+    const target = await getTargetRow(instagram);
+    assert.ok(target);
+    await db
+      .update(socialAccounts)
+      .set({ status: "needs_reconnect" })
+      .where(eq(socialAccounts.id, target.socialAccountId));
 
     await assert.rejects(
       () => retryPlatform(USER_ID, instagram),
@@ -605,10 +646,40 @@ describe("retryPlatform — when retrying must not be offered", () => {
         /reconnect/i.test(error.message),
     );
 
-    const target = await getTargetRow(instagram);
-    assert.equal(target?.status, "failed");
-    assert.equal(target?.lastErrorCode, "token_expired");
+    assert.equal((await getTargetRow(instagram))?.status, "failed");
     assert.equal(enqueued.length, 0);
+  });
+
+  test("refuses a historical token failure when the current account is disconnected", async () => {
+    const { targetId } = await buildPartialFailurePost();
+
+    const instagram = targetId("instagram");
+    await setTargetError(instagram, "token_expired");
+    const target = await getTargetRow(instagram);
+    assert.ok(target);
+    await disconnectAccount(USER_ID, target.socialAccountId);
+
+    await assert.rejects(
+      () => retryPlatform(USER_ID, instagram),
+      (error: unknown) =>
+        error instanceof AppError &&
+        error.code === "validation_failed" &&
+        error.message === "This Instagram account is no longer connected.",
+    );
+
+    assert.equal((await getTargetRow(instagram))?.status, "failed");
+    assert.equal(enqueued.length, 0);
+  });
+
+  test("detail keeps the historical auth error but does not disable retry for a healthy account", async () => {
+    const { postId, targetId } = await buildPartialFailurePost();
+    const instagram = targetId("instagram");
+    await setTargetError(instagram, "token_expired");
+
+    const detail = await getPostDetail(USER_ID, postId);
+    const target = detail?.platforms.find((platform) => platform.id === instagram);
+    assert.equal(target?.errorCode, "token_expired");
+    assert.equal(target?.needsReconnect, false);
   });
 
   test("refuses to retry a target on a cancelled post", async () => {
@@ -671,7 +742,7 @@ describe("retryPlatform — stale job handling", () => {
     assert.equal(enqueued[0].attempt, 2);
 
     const target = await getTargetRow(instagram);
-    assert.equal(target?.bullmqJobId, `${instagram}:2`);
+    assert.equal(target?.bullmqJobId, publishJobId(instagram, 2));
   });
 });
 

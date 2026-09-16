@@ -35,6 +35,7 @@ import {
   downloadMediaObject,
 } from "@/lib/storage";
 import { getProvider } from "@/providers/social";
+import { logPublishTrace } from "@/lib/publishing/trace";
 import type {
   MediaAsset,
   PublishInput,
@@ -54,6 +55,7 @@ export type PublishJobInput = {
   attempt: number;
   workerId: string;
   bullmqJobId: string | null;
+  publishTraceId?: string;
 };
 
 export type PublishOutcome =
@@ -91,6 +93,7 @@ type AttemptState = {
   account: SocialAccountRecord;
   executionId: string;
   previousLog: unknown;
+  publishTraceId?: string;
 };
 
 /**
@@ -130,6 +133,13 @@ export async function executePublishJob(
   });
 
   log.info("job started", { attemptCount: postPlatform.attemptCount });
+  logPublishTrace(input.publishTraceId, "EXECUTION_PROCESSING", {
+    postId: post.id,
+    postPlatformId: postPlatform.id,
+    platform: postPlatform.platform,
+    bullmqJobId: input.bullmqJobId,
+    attempt,
+  });
 
   if (post.status === "cancelled") {
     await markTargetCancelled(postPlatform.id, postPlatform.platform);
@@ -147,10 +157,26 @@ export async function executePublishJob(
     // Read the previous attempt's log BEFORE inserting this attempt's row, so a
     // redelivered job sees the handle the earlier attempt left behind instead of
     // the empty log of the row we are about to create.
-    const previousLog = await latestExecutionLog(postPlatform.id);
+    const previousExecution = await latestExecutionLog(postPlatform.id);
+    if (previousExecution.found) {
+      logPublishTrace(input.publishTraceId, "EXECUTION_FOUND", {
+        postId: post.id,
+        postPlatformId: postPlatform.id,
+        platform: postPlatform.platform,
+        attempt,
+      });
+    }
     const attemptNumber = await beginAttempt(postPlatform.id, attempt);
     const executionId = await startExecution({
       postPlatformId: postPlatform.id,
+      platform: postPlatform.platform,
+      attemptNumber,
+      bullmqJobId: input.bullmqJobId,
+    });
+    logPublishTrace(input.publishTraceId, "EXECUTION_CREATED", {
+      postId: post.id,
+      postPlatformId: postPlatform.id,
+      executionId,
       platform: postPlatform.platform,
       attemptNumber,
       bullmqJobId: input.bullmqJobId,
@@ -165,7 +191,8 @@ export async function executePublishJob(
       media,
       account,
       executionId,
-      previousLog,
+      previousLog: previousExecution.responseLog,
+      publishTraceId: input.publishTraceId,
     };
 
     try {
@@ -268,6 +295,14 @@ async function runAttempt(state: AttemptState): Promise<PublishOutcome> {
     });
   }
 
+  logPublishTrace(state.publishTraceId, "PROVIDER_START", {
+    postId: state.post.id,
+    postPlatformId: state.postPlatform.id,
+    executionId: state.executionId,
+    platform,
+    operation: resume ? "resume" : "publish",
+    attempt: state.attempt,
+  });
   const result = await provider.publish(buildPublishInput(state, accessToken));
 
   if (result.status === "published") {
@@ -406,6 +441,10 @@ async function resolveAccessToken(state: AttemptState): Promise<string> {
     });
     return refreshed.accessToken;
   } catch (error) {
+    // HTTP failures are already normalized by the provider. Preserve their
+    // status/code instead of converting an unknown 401 into token_expired.
+    if (error instanceof ProviderError) throw error;
+
     log.error("token refresh failed", { error: errorMessage(error) });
     await markAccountNeedsReconnect(
       account.id,
@@ -443,6 +482,15 @@ async function handleAttemptError(
     message,
     responseLog: providerError.responseLog,
   });
+  logPublishTrace(state.publishTraceId, "EXECUTION_FAILED", {
+    postId: state.post.id,
+    postPlatformId: state.postPlatform.id,
+    executionId: state.executionId,
+    platform,
+    code,
+    retryable: providerError.retryable,
+    attempt: state.attempt,
+  });
 
   // An authentication failure is never retried: the user has to reconnect.
   if (isAuthFailure(code)) {
@@ -475,6 +523,14 @@ async function completePublished(
       response: responseLog,
     }),
   );
+  logPublishTrace(state.publishTraceId, "EXECUTION_SUCCESS", {
+    postId: state.post.id,
+    postPlatformId: state.postPlatform.id,
+    executionId: state.executionId,
+    platform: postPlatform.platform,
+    status: "published",
+    attempt: state.attempt,
+  });
 
   await db
     .update(postPlatforms)
@@ -492,6 +548,11 @@ async function completePublished(
     .where(eq(postPlatforms.id, postPlatform.id));
 
   const postStatus = await safeRecompute(state);
+  logPublishTrace(state.publishTraceId, "POST_STATUS_UPDATED", {
+    postId: state.post.id,
+    postPlatformId: state.postPlatform.id,
+    postStatus,
+  });
   try {
     if (postStatus === "published") await notifyPostEvent(state.postPlatform.postId, "POST_PUBLISHED");
     if (postStatus === "partial_failure") await notifyPostEvent(state.postPlatform.postId, "POST_PARTIAL_FAILURE");
@@ -542,6 +603,11 @@ async function failTarget(
     .where(eq(postPlatforms.id, state.postPlatform.id));
 
   const postStatus = await safeRecompute(state);
+  logPublishTrace(state.publishTraceId, "POST_STATUS_UPDATED", {
+    postId: state.post.id,
+    postPlatformId: state.postPlatform.id,
+    postStatus,
+  });
   try {
     if (postStatus === "failed") await notifyPostEvent(state.postPlatform.postId, "POST_FAILED");
     if (postStatus === "partial_failure") await notifyPostEvent(state.postPlatform.postId, "POST_PARTIAL_FAILURE");

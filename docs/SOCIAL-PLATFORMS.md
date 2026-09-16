@@ -4,12 +4,25 @@ AutoPost supports six platform targets:
 
 | Platform | Environment variables | OAuth callback |
 | --- | --- | --- |
-| Instagram | `META_CLIENT_ID`, `META_CLIENT_SECRET` | `/api/oauth/instagram/callback` |
+| Instagram | `INSTAGRAM_CLIENT_ID`, `INSTAGRAM_CLIENT_SECRET` | `/api/oauth/instagram/callback` |
 | Facebook | `META_CLIENT_ID`, `META_CLIENT_SECRET` | `/api/oauth/facebook/callback` |
 | TikTok | `TIKTOK_CLIENT_KEY`, `TIKTOK_CLIENT_SECRET` | `/api/oauth/tiktok/callback` |
 | Threads | `THREADS_CLIENT_ID`, `THREADS_CLIENT_SECRET` | `/api/oauth/threads/callback` |
 | LinkedIn | `LINKEDIN_CLIENT_ID`, `LINKEDIN_CLIENT_SECRET` | `/api/oauth/linkedin/callback` |
 | X | `X_CLIENT_ID` and optionally `X_CLIENT_SECRET` | `/api/oauth/x/callback` |
+
+Instagram uses Meta's standalone Instagram Login flow at
+`instagram.com/oauth/authorize`; it does not discover accounts through
+Facebook Pages or `/me/accounts`. The server exchanges the code at
+`api.instagram.com/oauth/access_token`, upgrades the token server-side through
+`graph.instagram.com/access_token`, and reads the Instagram User from
+`graph.instagram.com/{version}/me`. Configure the exact callback URL in the
+Instagram Login settings of the Meta App Dashboard.
+
+Instagram Login requests `instagram_business_basic` and
+`instagram_business_content_publish`. The Facebook Page flow remains separate
+and continues to use `META_CLIENT_ID`, `META_CLIENT_SECRET`, and Facebook's
+`/me/accounts` discovery.
 
 The new provider scopes are intentionally limited to publishing:
 

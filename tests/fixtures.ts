@@ -84,8 +84,10 @@ export async function insertPost(
     caption?: string;
     status?: "draft" | "scheduled" | "processing" | "published" | "partial_failure" | "failed" | "cancelled";
     scheduledAt?: Date | null;
+    publishedAt?: Date | null;
     timezone?: string;
     approvalStatus?: "not_required" | "draft" | "in_review" | "changes_requested" | "approved";
+    campaignId?: string | null;
   } = {},
 ): Promise<string> {
   const db = getDb();
@@ -102,8 +104,10 @@ export async function insertPost(
       contentText: options.caption ?? "Test caption",
       timezone: options.timezone ?? "Asia/Jakarta",
       scheduledAt: options.scheduledAt ?? null,
+      publishedAt: options.publishedAt ?? null,
       status: options.status ?? "processing",
       approvalStatus: options.approvalStatus,
+      campaignId: options.campaignId,
     })
     .returning({ id: posts.id });
 

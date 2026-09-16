@@ -13,7 +13,7 @@ import { hasPermission } from "@/lib/auth/permissions";
 export default async function CreatePostPage({
   searchParams,
 }: {
-  searchParams?: Promise<{ mediaId?: string }>;
+  searchParams?: Promise<{ mediaId?: string; campaignId?: string }>;
 }) {
   const user = await requireUser();
   const workspace = await getActiveWorkspaceForUser(user.id);
@@ -45,6 +45,7 @@ export default async function CreatePostPage({
         defaultTimezone={settings.timezone}
         defaultScheduleTime={settings.defaultScheduleTime}
         initialMedia={initialMedia}
+        campaignId={params?.campaignId ?? null}
       />
     </>
   );

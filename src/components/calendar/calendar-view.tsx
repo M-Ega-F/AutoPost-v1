@@ -69,6 +69,7 @@ function CalendarPostItem({
           <span className="mt-1 block line-clamp-2 break-words font-normal text-muted-foreground">
             {post.captionPreview || "Untitled post"}
           </span>
+          {post.campaignName ? <span className="mt-1 block truncate text-[10px] text-primary/80">Campaign: {post.campaignName}</span> : null}
         </Link>
         <PostStatusBadge status={post.status} className="shrink-0 [&>svg]:size-2.5" />
       </div>
@@ -100,11 +101,13 @@ export function CalendarView({
   initialMonth,
   initialPosts,
   drafts,
+  campaignId,
 }: {
   timeZone: string;
   initialMonth: CalendarMonthKey;
   initialPosts: CalendarPostDto[];
   drafts: CalendarDraftDto[];
+  campaignId?: string | null;
 }) {
   const [month, setMonth] = useState<CalendarMonthKey>(initialMonth);
   const [posts, setPosts] = useState(initialPosts);
@@ -123,7 +126,7 @@ export function CalendarView({
     const range = calendarMonthRange(nextMonth, timeZone);
     try {
       const response = await fetch(
-        `/api/calendar?start=${encodeURIComponent(range.start.toISOString())}&end=${encodeURIComponent(range.end.toISOString())}&timezone=${encodeURIComponent(timeZone)}`,
+        `/api/calendar?start=${encodeURIComponent(range.start.toISOString())}&end=${encodeURIComponent(range.end.toISOString())}&timezone=${encodeURIComponent(timeZone)}${campaignId ? `&campaignId=${encodeURIComponent(campaignId)}` : ""}`,
         { cache: "no-store" },
       );
       const payload = (await response.json().catch(() => null)) as {

@@ -45,9 +45,10 @@ export async function GET(request: Request): Promise<Response> {
     normalizeTimeZone(cookieStore.get(TIMEZONE_COOKIE)?.value),
   );
   const timezone = requestedTimezone ?? settings.timezone;
+  const campaignId = url.searchParams.get("campaignId") ?? undefined;
 
   try {
-    const posts = await getCalendarForUser(userId, { start, end });
+    const posts = await getCalendarForUser(userId, { start, end }, campaignId);
     return apiSuccess({
       range: { start: start.toISOString(), end: end.toISOString(), timezone },
       posts: posts.map(toCalendarPostDto),

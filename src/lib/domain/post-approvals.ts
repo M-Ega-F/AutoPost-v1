@@ -3,15 +3,17 @@ import "server-only";
 import { and, asc, eq } from "drizzle-orm";
 
 import { requireWorkspacePermission } from "@/lib/auth/authorization";
+import { hasPermission } from "@/lib/auth/permissions";
 import { db } from "@/lib/db";
 import { postReviewEvents, posts, workspaces } from "@/lib/db/schema";
 import { AppError } from "@/lib/errors";
 import { notifyContentReviewEvent } from "@/lib/domain/notifications";
 import { emitWebhookEventSafely, type WebhookEventType } from "@/lib/webhooks/events";
+import { measurePerf } from "@/lib/perf";
 
 export const APPROVAL_STATUSES = ["not_required", "draft", "in_review", "changes_requested", "approved"] as const;
 export type ApprovalStatus = (typeof APPROVAL_STATUSES)[number];
-export type ReviewAction = "submitted" | "approved" | "changes_requested" | "resubmitted" | "invalidated";
+export type ReviewAction = "submitted" | "approved" | "changes_requested" | "resubmitted" | "invalidated" | "reviewer_assigned" | "reviewer_changed" | "reviewer_unassigned" | "deadline_changed" | "withdrawn" | "comment_added" | "comment_updated" | "comment_deleted" | "comment_resolved" | "comment_reopened" | "deadline_approaching" | "reminder_sent" | "overdue" | "escalated" | "mentioned";
 
 export type PostReview = {
   postId: string;
@@ -20,6 +22,8 @@ export type PostReview = {
   status: ApprovalStatus;
   requesterId: string | null;
   requestedAt: Date | null;
+  assignedReviewerId: string | null;
+  reviewDueAt: Date | null;
   approvedBy: string | null;
   approvedAt: Date | null;
   lastComment: string | null;
@@ -43,8 +47,9 @@ function webhookFor(action: ReviewAction): WebhookEventType {
           : "post.approval_invalidated";
 }
 
-async function loadReview(postId: string, workspaceId: string): Promise<PostReview> {
-  const [[post], history] = await Promise.all([
+async function loadReview(postId: string, workspaceId: string, userId?: string, ownerOnly = false): Promise<PostReview> {
+  const visibility = ownerOnly && userId ? and(eq(posts.userId, userId), eq(posts.workspaceId, workspaceId)) : eq(posts.workspaceId, workspaceId);
+  const [[post], history] = await measurePerf("[PERF][db]", "review.post+events", () => Promise.all([
     db.select({
       id: posts.id,
       workspaceId: posts.workspaceId,
@@ -52,19 +57,21 @@ async function loadReview(postId: string, workspaceId: string): Promise<PostRevi
       status: posts.approvalStatus,
       requesterId: posts.reviewRequestedBy,
       requestedAt: posts.reviewRequestedAt,
+      assignedReviewerId: posts.assignedReviewerId,
+      reviewDueAt: posts.reviewDueAt,
       approvedBy: posts.approvedBy,
       approvedAt: posts.approvedAt,
       lastComment: posts.lastReviewComment,
-    }).from(posts).innerJoin(workspaces, eq(workspaces.id, posts.workspaceId)).where(and(eq(posts.id, postId), eq(posts.workspaceId, workspaceId))).limit(1),
+    }).from(posts).innerJoin(workspaces, eq(workspaces.id, posts.workspaceId)).where(and(eq(posts.id, postId), visibility)).limit(1),
     db.select({ id: postReviewEvents.id, action: postReviewEvents.action, actorId: postReviewEvents.actorId, comment: postReviewEvents.comment, createdAt: postReviewEvents.createdAt }).from(postReviewEvents).where(and(eq(postReviewEvents.postId, postId), eq(postReviewEvents.workspaceId, workspaceId))).orderBy(asc(postReviewEvents.createdAt), asc(postReviewEvents.id)),
-  ]);
+  ]), { queryCount: 2 });
   if (!post) throw new AppError("not_found", "Post not found.");
-  return { postId: post.id, workspaceId: post.workspaceId, approvalRequired: post.approvalRequired, status: post.status as ApprovalStatus, requesterId: post.requesterId, requestedAt: post.requestedAt, approvedBy: post.approvedBy, approvedAt: post.approvedAt, lastComment: post.lastComment, history: history.map((event) => ({ ...event, action: event.action as ReviewAction })) };
+  return { postId: post.id, workspaceId: post.workspaceId, approvalRequired: post.approvalRequired, status: post.status as ApprovalStatus, requesterId: post.requesterId, requestedAt: post.requestedAt, assignedReviewerId: post.assignedReviewerId, reviewDueAt: post.reviewDueAt, approvedBy: post.approvedBy, approvedAt: post.approvedAt, lastComment: post.lastComment, history: history.map((event) => ({ ...event, action: event.action as ReviewAction })) };
 }
 
 export async function getPostReviewForUser(userId: string, postId: string): Promise<PostReview> {
   const context = await requireWorkspacePermission(userId, "posts:view");
-  return loadReview(postId, context.workspaceId);
+  return loadReview(postId, context.workspaceId, userId, !hasPermission(context.role, "content:review"));
 }
 
 type ActionKind = "submit" | "approve" | "request_changes";

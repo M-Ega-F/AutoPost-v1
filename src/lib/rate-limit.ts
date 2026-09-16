@@ -41,6 +41,7 @@ export const RATE_LIMITS = {
   workspaceDelete: { limit: 3, windowMs: 24 * 60 * 60_000 },
   reviewSubmit: { limit: 30, windowMs: 60_000 },
   reviewAction: { limit: 30, windowMs: 60_000 },
+  reviewManagement: { limit: 60, windowMs: 60_000 },
   notificationMarkRead: { limit: 120, windowMs: 60_000 },
   notificationMarkAll: { limit: 20, windowMs: 60_000 },
   notificationDelete: { limit: 60, windowMs: 60_000 },
@@ -49,6 +50,20 @@ export const RATE_LIMITS = {
   webhookDelete: { limit: 10, windowMs: 60_000 },
   webhookTest: { limit: 5, windowMs: 60_000 },
   webhookRotateSecret: { limit: 10, windowMs: 60_000 },
+  campaignCreate: { limit: 20, windowMs: 60_000 },
+  campaignUpdate: { limit: 60, windowMs: 60_000 },
+  campaignDelete: { limit: 10, windowMs: 60_000 },
+  campaignAttachPost: { limit: 120, windowMs: 60_000 },
+  campaignDetachPost: { limit: 120, windowMs: 60_000 },
+  campaignEvaluate: { limit: 20, windowMs: 60_000 },
+  campaignEvaluateFull: { limit: 5, windowMs: 60 * 60_000 },
+  campaignIntelligence: { limit: 60, windowMs: 60_000 },
+    campaignIntelligenceHistory: { limit: 30, windowMs: 60_000 },
+    campaignIntelligenceRanking: { limit: 60, windowMs: 60_000 },
+  postIntelligenceEvaluate: { limit: 10, windowMs: 60_000 },
+  campaignOptimization: { limit: 60, windowMs: 60_000 },
+  campaignOptimizationWrite: { limit: 30, windowMs: 60_000 },
+  experimentEvaluate: { limit: 10, windowMs: 60_000 },
 } satisfies Record<string, RateLimitRule>;
 
 export type RateLimitKey = keyof typeof RATE_LIMITS;

@@ -25,6 +25,9 @@ import { PLATFORMS, type Platform } from "@/lib/status";
 import { formatInZone, zonedTimeToUtc } from "@/lib/time";
 import { getProvider } from "@/providers/social";
 import { emitWebhookEventSafely } from "@/lib/webhooks/events";
+import { enqueueCampaignEvaluation } from "@/lib/queue/campaign-automation";
+import { markPostIntelligenceStale } from "@/lib/domain/post-intelligence";
+import { measurePerf } from "@/lib/perf";
 
 export const ANALYTICS_METRICS = [
   "views",
@@ -178,27 +181,33 @@ export async function saveAnalyticsSnapshot(
     })
     .returning();
 
-  if (row) void emitWebhookEventSafely({ workspaceId, type: "analytics.updated", data: { analyticsSnapshotId: row.id, postId: row.postId, platform: row.platform } });
+  if (row) {
+    void emitWebhookEventSafely({ workspaceId, type: "analytics.updated", data: { analyticsSnapshotId: row.id, postId: row.postId, platform: row.platform } });
+    if (target.post.campaignId) {
+      void markPostIntelligenceStale({ workspaceId, campaignId: target.post.campaignId, postId: row.postId, reason: "analytics_changed" }).catch(() => undefined);
+      void enqueueCampaignEvaluation({ campaignId: target.post.campaignId, workspaceId, trigger: "analytics_updated", reason: "analytics_changed", evaluationMode: "incremental" }).catch(() => undefined);
+    }
+  }
   return row ? toSnapshot(row) : null;
 }
 
 export async function listAnalyticsSnapshots(
   userId: string,
-  options: { range?: AnalyticsRange; platform?: Platform; postId?: string; timeZone?: string } = {},
+  options: { range?: AnalyticsRange; platform?: Platform; postId?: string; timeZone?: string; workspaceId?: string } = {},
 ): Promise<AnalyticsSnapshot[]> {
-  const workspaceId = await getActiveWorkspaceId(userId);
+  const workspaceId = options.workspaceId ?? (await getActiveWorkspaceId(userId));
   const start = rangeStart(options.range ?? "all", options.timeZone ?? "UTC");
   const conditions = [eq(postAnalyticsSnapshots.userId, userId)];
   if (start) conditions.push(gte(postAnalyticsSnapshots.collectedAt, start));
   if (options.platform) conditions.push(eq(postAnalyticsSnapshots.platform, options.platform));
   if (options.postId) conditions.push(eq(postAnalyticsSnapshots.postId, options.postId));
 
-  const rows = await db
+  const rows = await measurePerf("[PERF][db]", "analytics.snapshots", () => db
     .select({ snapshot: postAnalyticsSnapshots })
     .from(postAnalyticsSnapshots)
     .innerJoin(posts, eq(posts.id, postAnalyticsSnapshots.postId))
     .where(and(...conditions, eq(posts.workspaceId, workspaceId)))
-    .orderBy(desc(postAnalyticsSnapshots.collectedAt), desc(postAnalyticsSnapshots.createdAt));
+    .orderBy(desc(postAnalyticsSnapshots.collectedAt), desc(postAnalyticsSnapshots.createdAt)), { queryCount: 1 });
 
   return rows.map((row) => toSnapshot(row.snapshot));
 }
@@ -285,20 +294,21 @@ export async function getAnalyticsOverview(
 export async function getPostAnalyticsDetail(
   userId: string,
   postId: string,
+  workspaceIdOverride?: string,
 ): Promise<PostAnalyticsDetail | null> {
-  const workspaceId = await getActiveWorkspaceId(userId);
-  const [post] = await db
+  const workspaceId = workspaceIdOverride ?? (await getActiveWorkspaceId(userId));
+  const [post] = await measurePerf("[PERF][db]", "history.detail.analytics.post", () => db
     .select({ id: posts.id })
     .from(posts)
     .where(and(eq(posts.id, postId), eq(posts.userId, userId), eq(posts.workspaceId, workspaceId)))
-    .limit(1);
+    .limit(1), { queryCount: 1 });
   if (!post) return null;
 
-  const targets = await db
+  const targets = await measurePerf("[PERF][db]", "history.detail.analytics.targets", () => db
     .select({ id: postPlatforms.id, platform: postPlatforms.platform })
     .from(postPlatforms)
-    .where(eq(postPlatforms.postId, postId));
-  const snapshots = await listAnalyticsSnapshots(userId, { postId });
+    .where(eq(postPlatforms.postId, postId)), { queryCount: 1 });
+  const snapshots = await listAnalyticsSnapshots(userId, { postId, workspaceId });
 
   return {
     postId,

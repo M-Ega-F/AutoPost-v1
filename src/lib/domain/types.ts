@@ -4,6 +4,7 @@ import type {
   PostStatus,
   SocialAccountStatus,
 } from "@/lib/status";
+import type { CampaignIntelligencePost } from "@/lib/domain/campaign-intelligence";
 
 export type AccountHealthStatus =
   | "healthy"
@@ -177,6 +178,7 @@ export type MediaSummary = {
 
 export type PostSummary = {
   id: string;
+  campaignId: string | null;
   contentText: string;
   status: PostStatus;
   timezone: string;
@@ -202,6 +204,7 @@ export type PostDetail = PostSummary & {
   media: MediaSummary | null;
   executions: ExecutionSummary[];
   analytics: PostAnalyticsDetail | null;
+  campaignIntelligence?: CampaignIntelligencePost | null;
 };
 
 export type HistorySort = "newest" | "oldest" | "scheduled" | "published";
@@ -256,6 +259,8 @@ export type CalendarPlatform = Pick<
 
 export type CalendarPost = {
   id: string;
+  campaignId: string | null;
+  campaignName: string | null;
   status: Extract<PostStatus, "scheduled" | "processing" | "failed" | "partial_failure">;
   scheduledAt: Date;
   timezone: string;

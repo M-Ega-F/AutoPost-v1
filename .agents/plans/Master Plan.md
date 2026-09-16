@@ -1,3634 +1,1383 @@
-Anda bekerja pada repository:
+Anda bekerja di repository:
 
 C:\Users\aldis\Documents\Codex\AutoPost-v1
 
-Tugas Anda adalah mengimplementasikan:
-
-# PHASE 16A — CONTENT APPROVAL & REVIEW WORKFLOW
-
-Implementasi harus disesuaikan dengan arsitektur AutoPost-v1 yang sudah selesai sampai Phase 15.
-
 ==================================================
-1. KONTEKS PRODUK
+TUJUAN
 ==================================================
 
-AutoPost-v1 adalah SaaS Multi-Social Auto Poster.
-
-Tujuan utama:
-
-Upload konten sekali
-→ pilih beberapa platform
-→ publish sekarang atau schedule
-→ background worker memproses
-→ user melihat hasil.
-
-Produk sekarang sudah berkembang menjadi workspace-based SaaS dengan:
-
-- Multi workspace
-- Team collaboration
-- Roles & permissions
-- Draft system
-- Templates
-- Calendar
-- Scheduling
-- Media Library
-- Analytics
-- Notifications
-- Queue reliability
-- Webhooks
-
-Phase 16A bertujuan menambahkan:
-
-CONTENT APPROVAL & REVIEW WORKFLOW
-
-Agar content tidak langsung:
-
-Draft
-→ Published
-
-Tetapi dapat melalui proses:
-
-Draft
-↓
-In Review
-↓
-Approved
-↓
-Scheduled / Publishing
-↓
-Published
-
-Atau:
-
-Draft
-↓
-In Review
-↓
-Changes Requested
-↓
-Draft
-↓
-In Review
-
-==================================================
-2. KONDISI REPOSITORY SAAT INI
-==================================================
-
-Repository sudah memiliki:
-
-PHASE 1
-Internal API dan service layer.
-
-PHASE 2
-Dashboard.
-
-PHASE 3
-Draft System.
-
-PHASE 4
-Calendar & Schedule Management.
-
-PHASE 5
-History.
-
-PHASE 6
-Content Reuse, Duplicate & Templates.
-
-PHASE 7
-Connected Accounts & Account Health.
-
-PHASE 8
-Threads integration.
-
-PHASE 9
-User Settings & Preferences.
-
-PHASE 10
-Media Library.
-
-PHASE 11
-Analytics.
-
-PHASE 12A
-Workspace isolation.
-
-PHASE 12B
-Roles & Permissions.
-
-PHASE 12C
-Team Invitations & Member Management.
-
-PHASE 12D
-Workspace Management.
-
-PHASE 13
-Notification System.
-
-PHASE 14
-Reliability & Observability.
-
-PHASE 15
-External Webhooks.
-
-JANGAN merusak implementasi yang sudah ada.
-
-==================================================
-3. ARSITEKTUR EXISTING YANG HARUS DIPERTAHANKAN
-==================================================
-
-Gunakan pola existing.
-
-Domain:
-
-src/lib/domain/
-
-Authorization:
-
-src/lib/auth/permissions.ts
-
-src/lib/auth/authorization.ts
-
-Database:
-
-src/lib/db/schema.ts
-
-Drizzle migrations:
-
-drizzle/
-
-Supabase RLS:
-
-supabase/migrations/
-
-API:
-
-src/app/api/
-
-Components:
-
-src/components/
-
-Notifications:
-
-gunakan sistem Phase 13.
-
-Queue:
-
-BullMQ existing.
-
-Worker:
-
-src/workers/
-
-Workspace:
-
-workspace-aware.
-
-Semua resource harus tetap:
-
-workspace-scoped
-
-dan
-
-server-authorized.
-
-==================================================
-4. TUJUAN PHASE 16A
-==================================================
-
-Tambahkan workflow approval agar workspace dapat melakukan review content sebelum publish.
-
-Workflow dasar:
-
-DRAFT
-
-↓
-
-IN REVIEW
-
-↓
-
-APPROVED
-
-↓
-
-SCHEDULED
-
-↓
-
-PUBLISHING
-
-↓
-
-PUBLISHED
-
-
-Alternative flow:
-
-DRAFT
-
-↓
-
-IN REVIEW
-
-↓
-
-CHANGES REQUESTED
-
-↓
-
-DRAFT
-
-↓
-
-IN REVIEW
-
-
-Approval workflow harus:
-
-- workspace-aware
-- role-aware
-- permission-based
-- notification-aware
-- audit-friendly
-- aman terhadap race condition
-- tidak merusak queue existing
-- tidak mengubah publish worker secara tidak perlu
-
-==================================================
-5. PENTING — JANGAN LANGSUNG MENGUBAH posts.status
-==================================================
-
-Audit terlebih dahulu status post existing.
-
-Cari:
-
-posts.status
-
-dan seluruh state yang sudah digunakan.
-
-Contoh kemungkinan existing:
-
-draft
-scheduled
-processing
-published
-failed
-partial_failure
-cancelled
-
-JANGAN asal menambahkan status baru jika:
-
-status existing memiliki dependency pada:
-
-- worker
-- queue
-- dashboard
-- analytics
-- history
-- calendar
-- retry
-- cancel
-- webhook
-- notification
-
-Tentukan arsitektur paling aman.
-
-Prioritas:
-
-JANGAN merusak lifecycle publishing existing.
-
-==================================================
-6. REKOMENDASI ARSITEKTUR APPROVAL
-==================================================
-
-Gunakan approval state terpisah dari publishing status.
-
-Contoh:
-
-posts.status
-
-tetap menangani publishing lifecycle.
-
-Tambahkan:
-
-approval_status
-
-atau
-
-review_status
-
-Contoh:
-
-draft
-
-in_review
-
-changes_requested
-
-approved
-
-approval_not_required
-
-
-Tentukan nama yang paling konsisten dengan existing codebase.
+Saya ingin menambahkan Public API v1 ke AutoPost.
 
 Tujuan:
 
-Publishing lifecycle:
-
-draft
-scheduled
-processing
-published
-failed
-
-tetap terpisah dari:
-
-review lifecycle:
-
-draft
-in_review
-changes_requested
-approved
-
-Jangan mencampur dua state machine jika tidak diperlukan.
+1. Audit seluruh API yang sekarang ada.
+2. Bedakan API internal aplikasi dengan API yang layak menjadi Public API.
+3. Desain sistem API Key yang aman.
+4. Implementasikan Public API v1 dengan perubahan seminimal mungkin.
+5. Public API harus menggunakan domain/service/business logic existing.
+6. Jangan membuat publishing pipeline baru.
+7. Jangan mengganggu frontend yang sudah berjalan.
+8. Jangan mengganggu BullMQ/Redis/worker.
+9. Jangan mengganggu Facebook OAuth.
+10. Jangan mengganggu Instagram Standalone OAuth.
+11. Jangan mengganggu TikTok/Threads.
+12. Jangan mengubah Master Plan.
+13. Jangan commit atau push.
 
 ==================================================
-7. APPROVAL STATE MACHINE
+NON-NEGOTIABLE RULES
 ==================================================
 
-Implementasikan state machine eksplisit.
+1. MASTER PLAN ADALAH SOURCE OF TRUTH
 
-Contoh:
+File:
 
-DRAFT
+    .agents/plans/Master Plan.md
 
-→ submit_for_review
+WAJIB dibaca untuk memahami architecture.
 
-IN_REVIEW
-
-
-IN_REVIEW
-
-→ approve
-
-APPROVED
-
-
-IN_REVIEW
-
-→ request_changes
-
-CHANGES_REQUESTED
-
-
-CHANGES_REQUESTED
-
-→ edit
-
-DRAFT
-
-
-APPROVED
-
-→ content modified
-
-DRAFT
-
-atau
-
-APPROVAL_INVALIDATED
-
-Tentukan behavior yang paling aman.
-
-==================================================
-8. CONTENT MODIFICATION RULE
-==================================================
-
-Ini sangat penting.
-
-Jika content sudah:
-
-APPROVED
-
-kemudian diubah:
-
-caption
-media
-accounts
-platform
-schedule
-
-Approval harus dipertimbangkan kembali.
-
-Implementasikan behavior yang aman.
-
-Rekomendasi:
-
-APPROVED
-
-+
-
-content modification
-
-↓
-
-DRAFT
-
-atau:
-
-APPROVAL INVALIDATED
-
-↓
-
-DRAFT
-
-
-Jangan membiarkan content yang sudah berubah tetap approved.
-
-Contoh:
-
-Reviewer approve:
-
-Caption A
-
-Kemudian editor mengubah menjadi:
-
-Caption B
-
-Post tidak boleh tetap:
-
-approved.
-
-==================================================
-9. REVIEW REQUEST
-==================================================
-
-Tambahkan kemampuan:
-
-Submit for Review.
-
-Editor dapat:
-
-Draft
-
-↓
-
-Submit for Review.
-
-Review request harus menyimpan:
-
-- post_id
-- workspace_id
-- requester
-- requested_at
-
-Jika perlu reviewer dapat ditentukan.
-
-Namun Phase 16A harus tetap simple.
-
-Minimum:
-
-review request terbuka kepada user yang memiliki permission review.
-
-Optional:
-
-assign reviewer.
-
-Jangan membuat assignment system terlalu kompleks jika belum diperlukan.
-
-==================================================
-10. REVIEWER
-==================================================
-
-Reviewer adalah user yang memiliki permission:
-
-content:review
-
-atau permission equivalent.
-
-Tambahkan permission baru secara terpusat.
-
-Contoh:
-
-content:view
-
-content:create
-
-content:update
-
-content:delete
-
-content:submit_review
-
-content:review
-
-content:approve
-
-content:request_changes
-
-
-Namun jangan duplikasi permission yang sudah tersedia.
-
-Audit:
-
-permissions.ts
-
-terlebih dahulu.
-
-Tambahkan hanya permission yang diperlukan.
-
-==================================================
-11. ROLE MATRIX
-==================================================
-
-Gunakan existing role:
-
-owner
-
-admin
-
-editor
-
-viewer
-
-
-Rekomendasi default:
-
-OWNER
-
-- create
-- edit
-- submit review
-- review
-- approve
-- request changes
-- publish
-- schedule
-
-
-ADMIN
-
-- create
-- edit
-- submit review
-- review
-- approve
-- request changes
-- publish
-- schedule
-
-
-EDITOR
-
-- create
-- edit
-- submit review
+JANGAN EDIT FILE TERSEBUT.
 
 Tidak boleh:
+- overwrite
+- rewrite
+- append
+- format ulang
+- mengubah isi Master Plan
 
-- approve own review jika policy melarang
-- approve content lain jika tidak memiliki permission
+2. MINIMAL CHANGE
 
+Jangan melakukan refactor besar.
 
-VIEWER
+Pertahankan:
+- existing domain layer
+- existing service layer
+- existing repository/data access
+- existing auth
+- existing publishing flow
+- existing provider architecture
+- existing queue
+- existing worker
+- existing frontend API behavior
 
-- view only
+Public API harus menjadi adapter/layer baru di atas business logic existing jika memungkinkan.
+
+3. NO DUPLICATE BUSINESS LOGIC
+
+Jangan membuat:
+
+    Public API → duplicate create post logic
+
+Jika existing flow sudah:
+
+    API/UI
+      ↓
+    Action/Service
+      ↓
+    Domain
+      ↓
+    Queue
+
+maka Public API harus memanfaatkan service/domain existing.
+
+4. JANGAN UBAH FACEBOOK / INSTAGRAM
+
+Facebook OAuth yang sudah berhasil harus tetap bekerja.
+
+Instagram Standalone OAuth yang baru selesai juga harus tetap bekerja.
+
+Jangan mengubah:
+- Facebook OAuth
+- Instagram OAuth
+- Instagram Login
+- token exchange
+- connected account behavior
+- publishing provider behavior
+
+kecuali audit membuktikan dependency langsung dengan Public API.
+
+5. JANGAN UBAH WORKER
+
+Jangan mengubah:
+- BullMQ queue architecture
+- worker command
+- worker concurrency
+- job payload contract
+- provider execution architecture
+
+Public API hanya membuat/menjadwalkan resource dan menggunakan queue existing.
+
+6. NO COMMIT / PUSH
+
+Jangan menjalankan:
+
+    git commit
+    git push
+    git reset --hard
+    git clean -fd
+
+Saya akan commit/push sendiri.
 
 ==================================================
-12. SELF APPROVAL POLICY
+PHASE 0 — REPOSITORY AUDIT
 ==================================================
 
-Implementasikan policy secara eksplisit.
+Sebelum coding, audit repository secara menyeluruh.
 
-Tentukan apakah:
+WAJIB baca:
 
-Editor boleh approve content sendiri.
+    .agents/plans/Master Plan.md
 
-Rekomendasi default:
+Kemudian audit:
 
-SELF APPROVAL = FALSE
+    src/app/api
+    src/lib/actions
+    src/lib/domain
+    src/lib/services
+    src/lib/auth
+    src/lib/queue
+    src/workers
+    src/providers
+    database/schema/migrations
+    middleware/proxy
+    validation
+    rate limiting
 
-Artinya:
+Cari semua route API.
 
-user yang membuat review request
+Keyword:
 
-tidak boleh approve request tersebut sendiri.
-
-Namun:
-
-Owner/Admin dapat override.
-
-Atau implementasikan setting policy sederhana.
-
-Jangan membuat workspace configuration terlalu besar.
-
-Minimum:
-
-server-side enforcement.
-
-Jangan hanya menyembunyikan tombol UI.
+    /api/
+    route.ts
+    NextRequest
+    NextResponse
+    cookies
+    Authorization
+    Bearer
+    session
+    API key
+    rate limit
+    idempotency
 
 ==================================================
-13. REVIEW COMMENTS
+PHASE 1 — INVENTORY SELURUH API
 ==================================================
 
-Tambahkan reviewer comment.
+Buat inventory semua endpoint existing.
 
-Saat:
+Untuk setiap endpoint dokumentasikan:
 
-Request Changes
-
-reviewer dapat memberikan:
-
-comment.
+    METHOD
+    PATH
+    AUTH METHOD
+    USER/WORKSPACE REQUIREMENT
+    PERMISSION
+    PURPOSE
+    INPUT
+    OUTPUT
+    SIDE EFFECT
+    DOMAIN/SERVICE USED
+    SENSITIVE DATA
+    PUBLIC API CANDIDATE
+    REASON
 
 Contoh:
 
-"Tolong perbaiki caption bagian CTA."
+    POST /api/...
+    Auth: session
+    Permission: ...
+    Purpose: ...
+    Side effect: ...
+    Public candidate: YES/NO
 
-Data harus:
+Jangan menganggap semua `/api/*` sebagai public API.
 
-- persistent
-- workspace-aware
-- ownership-safe
+==================================================
+PHASE 2 — CLASSIFICATION
+==================================================
 
-Tambahkan tabel jika diperlukan.
+Kelompokkan existing API menjadi:
+
+A. INTERNAL APP API
 
 Contoh:
 
-content_reviews
+    frontend → API → session/cookie
 
-atau:
-
-post_reviews
-
-
-Struktur kemungkinan:
-
-id
-
-workspace_id
-
-post_id
-
-action
-
-comment
-
-actor_id
-
-created_at
-
-
-Action:
-
-submitted
-
-approved
-
-changes_requested
-
-resubmitted
-
-
-Audit trail sangat direkomendasikan.
-
-==================================================
-14. REVIEW HISTORY
-==================================================
-
-Setiap action review harus dapat dilihat.
+B. ADMIN API
 
 Contoh:
 
-Muhammad
+    admin → API → elevated permission
 
-Submitted for review
+C. OAUTH/CALLBACK API
 
-14 Sep 2026
+Contoh:
 
+    Meta/Instagram/TikTok OAuth callback
 
-Admin
+D. WEBHOOK API
 
-Requested changes
+Jika ada.
 
-"Tolong perbaiki CTA"
+E. PUBLIC-CAPABLE API
 
-14 Sep 2026
+Endpoint yang secara konsep aman untuk diekspos melalui Public API.
 
+F. NEVER PUBLIC
 
-Muhammad
+Endpoint yang tidak boleh diekspos sebagai Public API.
 
-Resubmitted
+Contoh NEVER PUBLIC:
 
-15 Sep 2026
-
-
-Admin
-
-Approved
-
-15 Sep 2026
-
-
-Implementasikan timeline.
-
-Jangan expose:
-
-- internal token
-- secret
-- credential
-- stack trace
+    token import
+    OAuth callback
+    secret/config endpoints
+    admin-only endpoints
+    internal health/debug endpoints
+    internal queue endpoints
+    credential endpoints
 
 ==================================================
-15. DATABASE DESIGN
+PHASE 3 — AUDIT EXISTING AUTHORIZATION
 ==================================================
 
-Audit schema existing terlebih dahulu.
+Audit bagaimana aplikasi sekarang menentukan:
 
-Jangan membuat migration tanpa alasan.
+    user
+    workspace
+    account ownership
+    permissions
+    roles
+    admin/owner
+    session
 
-Tentukan desain minimal.
+Cari reusable function/service.
 
-Kemungkinan:
+Jangan membuat authorization system kedua jika existing authorization
+sudah bisa digunakan.
 
-A.
+Public API harus dapat memetakan:
 
-Tambah field pada posts:
+    API Key
+       ↓
+    API Key owner
+       ↓
+    workspace
+       ↓
+    permissions
 
-approval_status
+Pastikan tidak terjadi:
 
-review_requested_at
-
-approved_at
-
-approved_by
-
-
-dan tabel:
-
-post_review_events
-
-
-ATAU:
-
-B.
-
-Tabel approval terpisah.
-
-Pilih berdasarkan arsitektur existing.
-
-Prioritas:
-
-- sederhana
-- normalized
-- mudah di-query
-- audit-friendly
-- workspace-aware
+    API Key User A
+       ↓
+    Workspace User B
 
 ==================================================
-16. REKOMENDASI DATABASE
+PHASE 4 — API KEY SYSTEM DESIGN
 ==================================================
 
-Kemungkinan desain:
+Desain sistem API Key.
 
-posts
+Target konsep:
 
-approval_status
+    User/Workspace
+          ↓
+       API Key
+          ↓
+    hash stored in DB
+          ↓
+    request authentication
+          ↓
+    workspace/user context
+          ↓
+    permission check
+          ↓
+    Public API
 
+Raw API key:
 
-post_review_events
-
-id
-
-workspace_id
-
-post_id
-
-actor_id
-
-action
-
-comment
-
-created_at
-
-
-Action:
-
-submitted
-
-approved
-
-changes_requested
-
-resubmitted
-
-approval_invalidated
-
-
-Jika menggunakan enum PostgreSQL:
-
-pastikan migration aman.
-
-Jika codebase menggunakan text + validation:
-
-ikuti existing convention.
-
-Jangan memperkenalkan pattern database baru tanpa alasan.
-
-==================================================
-17. WORKSPACE ISOLATION
-==================================================
-
-Semua approval resource harus memiliki:
-
-workspace_id
-
-atau ownership relationship yang dapat diverifikasi.
-
-Tidak boleh:
-
-Workspace A
-
-mengakses review:
-
-Workspace B.
-
-Semua domain query harus memverifikasi:
-
-workspace membership.
-
-==================================================
-18. AUTHORIZATION
-==================================================
+    JANGAN disimpan plaintext di database.
 
 Gunakan:
 
-permissions.ts
+    cryptographically secure random key
+    one-way hash for storage
 
-authorization.ts
+API key harus memiliki identifier/prefix yang aman untuk lookup.
 
-Jangan membuat authorization logic tersebar.
+Contoh konsep:
 
-Contoh:
+    ap_live_xxxxxxxxxxxxxxxxx
 
-requireWorkspacePermission()
-
-atau helper existing.
-
-Semua API harus server-side authorized.
-
-UI permission check hanya tambahan UX.
+Tetapi jangan hardcode format jika repository memiliki convention lain.
 
 ==================================================
-19. SUBMIT FOR REVIEW
+API KEY DATA MODEL
 ==================================================
 
-Tambahkan API.
+Audit database terlebih dahulu.
 
-Contoh:
+Cari apakah sudah ada tabel:
 
-POST
+    api_keys
+    access_tokens
+    personal_access_tokens
+    developer_keys
+    integrations
 
-/api/posts/:id/submit-review
+Jika sudah ada yang cocok:
 
+    gunakan kembali jika aman.
 
-Behavior:
+Jangan membuat duplicate system.
 
-1.
+Jika belum ada, desain tabel minimal.
 
-Authenticate user.
+Konsep field:
 
-2.
+    id
+    workspace_id / owner_id
+    name
+    key_prefix
+    key_hash
+    permissions/scopes
+    created_at
+    last_used_at
+    revoked_at
+    expires_at (jika architecture membutuhkan)
+    metadata jika benar-benar diperlukan
 
-Resolve active workspace.
+Jangan menyimpan raw key.
 
-3.
-
-Verify post belongs workspace.
-
-4.
-
-Verify permission.
-
-5.
-
-Verify post editable.
-
-6.
-
-Verify post belum:
-
-scheduled
-processing
-published
-
-7.
-
-Verify review state valid.
-
-8.
-
-Create review event.
-
-9.
-
-Update approval status.
-
-10.
-
-Create notification.
-
-11.
-
-Emit webhook event jika registry Phase 15 mendukung.
-
-12.
-
-Return safe response.
-
-==================================================
-20. APPROVE
-==================================================
-
-Tambahkan:
-
-POST
-
-/api/posts/:id/approve
-
-
-Behavior:
-
-1.
-
-Authenticate.
-
-2.
-
-Resolve workspace.
-
-3.
-
-Verify permission.
-
-4.
-
-Verify post status.
-
-5.
-
-Verify approval status:
-
-in_review.
-
-6.
-
-Verify self approval policy.
-
-7.
-
-Atomic update.
-
-8.
-
-Create review event.
-
-9.
-
-Create notification.
-
-10.
-
-Emit webhook event.
-
-11.
-
-Return result.
-
-==================================================
-21. REQUEST CHANGES
-==================================================
-
-API:
-
-POST
-
-/api/posts/:id/request-changes
-
-
-Payload:
-
-comment
-
-
-Validation:
-
-comment wajib.
-
-Trim whitespace.
-
-Maximum length.
-
-Gunakan schema validation existing.
-
-Behavior:
-
-in_review
-
-↓
-
-changes_requested
-
-Create review event.
-
-Notify requester.
-
-Webhook event.
-
-==================================================
-22. RESUBMIT
-==================================================
-
-Editor dapat:
-
-changes_requested
-
-↓
-
-edit
-
-↓
-
-submit review
-
-Gunakan API submit review existing jika memungkinkan.
-
-Jangan membuat endpoint duplicate tanpa alasan.
-
-Review event:
-
-resubmitted.
-
-==================================================
-23. EDITING DURING REVIEW
-==================================================
-
-Tentukan policy eksplisit.
-
-Rekomendasi:
-
-Jika:
-
-in_review
-
-Editor tidak boleh mengubah content langsung.
-
-Atau:
-
-Editing otomatis menarik content kembali menjadi:
-
-draft.
-
-Saya merekomendasikan:
-
-Edit
-
-saat:
-
-in_review
-
-↓
-
-approval invalidated
-
-↓
-
-draft
-
-
-Dengan review event:
-
-review_cancelled_by_edit
-
-atau:
-
-approval_invalidated.
-
-Namun audit existing composer terlebih dahulu.
-
-Jangan membuat UX membingungkan.
-
-==================================================
-24. APPROVED CONTENT
-==================================================
-
-Jika:
-
-approved
-
-maka content dapat:
-
-Publish
-
-atau
-
-Schedule.
-
-Tentukan apakah approval wajib.
-
-Phase 16A sebaiknya:
-
-tidak langsung memaksa approval untuk semua workspace.
-
-Karena existing user flow sudah:
-
-Draft
-
-→ Publish
-
-Harus tetap compatible.
-
-==================================================
-25. APPROVAL MODE
-==================================================
-
-Implementasikan default compatibility:
-
-Approval workflow tidak wajib secara global.
-
-Contoh:
-
-approval_status:
-
-not_required
-
-draft
-
-in_review
-
-changes_requested
-
-approved
-
-
-Existing post:
-
-not_required
-
-Dengan demikian:
-
-existing Publish
-
-tetap bekerja.
-
-Content yang masuk workflow:
-
-harus approved sebelum:
-
-Schedule
-
-atau Publish.
-
-==================================================
-26. PUBLISH GUARD
-==================================================
-
-Jika post menggunakan approval workflow:
-
-approval_status != approved
-
-maka:
-
-Publish
-
-harus ditolak.
-
-Schedule
-
-harus ditolak.
-
-Error aman:
-
-"This post must be approved before publishing."
-
-atau equivalent.
-
-Enforcement harus:
-
-server-side.
-
-Jangan hanya UI.
-
-==================================================
-27. APPROVAL ENABLEMENT
-==================================================
-
-Jangan langsung membuat workspace settings besar.
-
-Implementasikan cara minimal.
-
-Kemungkinan:
-
-approval workflow digunakan ketika user:
-
-Submit for Review.
-
-Jika belum pernah submit:
-
-approval_status = not_required.
-
-Jika submit:
-
-approval becomes required.
-
-Ini menjaga backward compatibility.
-
-==================================================
-28. CREATE POST COMPATIBILITY
-==================================================
-
-Existing flow harus tetap:
-
-Create Post
-
-→ Publish Now
-
-→ Success
-
-
-dan:
-
-Create Post
-
-→ Schedule
-
-→ Success
-
-
-tanpa approval wajib.
-
-Approval adalah workflow tambahan.
-
-==================================================
-29. DRAFT INTEGRATION
-==================================================
-
-Integrasikan dengan Phase 3 Draft.
-
-Draft dapat:
-
-Save Draft.
-
-Kemudian:
-
-Submit for Review.
-
-Review request harus menggunakan:
-
-postId existing.
-
-Jangan membuat post baru.
-
-==================================================
-30. TEMPLATE INTEGRATION
-==================================================
-
-Template:
-
-Use Template
-
-↓
-
-Draft
-
-↓
-
-optional Submit for Review.
-
-Template sendiri tidak membutuhkan approval.
-
-Jangan menambahkan approval ke:
-
-content_templates
-
-kecuali benar-benar diperlukan.
-
-==================================================
-31. DUPLICATE INTEGRATION
-==================================================
-
-Duplicate post:
-
-harus menghasilkan:
-
-Draft.
-
-Approval:
-
-not_required
-
-atau reset.
-
-Jangan copy:
-
-approved state.
-
-Jangan copy:
-
-review history.
-
-==================================================
-32. MEDIA INTEGRATION
-==================================================
-
-Media Library existing harus tetap.
-
-Jika approved content media berubah:
-
-approval invalidated.
-
-Pastikan media reference tetap aman.
-
-==================================================
-33. SCHEDULE INTEGRATION
-==================================================
-
-Schedule behavior:
-
-NOT_REQUIRED
-
-→ existing behavior.
-
-APPROVED
-
-→ boleh schedule.
-
-IN_REVIEW
-
-→ reject.
-
-CHANGES_REQUESTED
-
-→ reject.
-
-DRAFT
-
-→ reject jika approval workflow aktif.
-
-Server-side guard.
-
-==================================================
-34. CALENDAR
-==================================================
-
-Calendar existing tidak perlu menampilkan review sebagai schedule event.
-
-Namun jika berguna:
-
-tambahkan indicator pada detail.
-
-Contoh:
-
-Approval:
-
-Approved
-
-atau:
-
-In Review.
-
-Jangan memasukkan:
-
-draft review
-
-sebagai calendar event.
-
-==================================================
-35. HISTORY
-==================================================
-
-History existing harus tetap.
-
-Detail post dapat menampilkan:
-
-Approval status.
-
-Contoh:
-
-Approval
-
-Approved
-
-by Admin
-
-15 Sep 2026
-
-
-Review timeline.
-
-Jangan membuat History utama terlalu kompleks.
-
-==================================================
-36. DASHBOARD
-==================================================
-
-Tambahkan approval summary secara minimal.
-
-Contoh:
-
-Pending Review
-
-3
-
-Changes Requested
-
-2
-
-
-Hanya jika data tersedia dengan query efisien.
-
-Jangan membuat dashboard query mengambil semua post.
-
-Gunakan aggregation server-side.
-
-==================================================
-37. NOTIFICATION INTEGRATION
-==================================================
-
-Gunakan Phase 13 notification system.
-
-Tambahkan event:
-
-CONTENT_SUBMITTED_FOR_REVIEW
-
-CONTENT_APPROVED
-
-CONTENT_CHANGES_REQUESTED
-
-CONTENT_RESUBMITTED
-
-APPROVAL_INVALIDATED
-
-
-Notification recipients harus sesuai role dan context.
-
-==================================================
-38. NOTIFICATION RECIPIENTS
-==================================================
-
-Submit Review:
-
-notify users yang memiliki:
-
-content:review
-
-dalam workspace.
-
-Approved:
-
-notify requester / creator.
-
-Changes Requested:
-
-notify requester.
-
-Resubmitted:
-
-notify reviewer jika reviewer assigned.
-
-Jika reviewer tidak assigned:
-
-hindari spam seluruh workspace jika memungkinkan.
-
-Gunakan recipient resolution aman.
-
-==================================================
-39. NOTIFICATION DEDUPLICATION
-==================================================
-
-Gunakan deduplication Phase 13.
-
-Jangan membuat notification setiap polling.
-
-Tidak ada polling event baru.
-
-Hanya event action.
-
-==================================================
-40. WEBHOOK INTEGRATION
-==================================================
-
-Gunakan Phase 15 event registry.
-
-Tambahkan event:
-
-post.review_requested
-
-post.approved
-
-post.changes_requested
-
-post.resubmitted
-
-post.approval_invalidated
-
-
-Payload harus aman.
-
-Contoh:
-
-event_id
-
-event_type
-
-workspace_id
-
-post_id
-
-actor_id
-
-timestamp
-
-
-Jangan expose:
-
-caption
-
-media URL
-
-token
-
-secret
-
-credential
-
-stack trace.
-
-==================================================
-41. WEBHOOK DELIVERY
-==================================================
-
-Jangan membuat webhook queue baru jika Phase 15:
-
-deliver-webhook
-
-sudah generic.
-
-Gunakan event registry existing.
-
-==================================================
-42. QUEUE INTEGRATION
-==================================================
-
-Approval action sendiri tidak membutuhkan BullMQ.
-
-Jangan memasukkan approval request ke queue tanpa alasan.
-
-Queue hanya digunakan jika existing architecture membutuhkan background processing.
-
-Approval harus:
-
-transactional / synchronous domain action.
-
-Publish queue tetap:
-
+Jika permission disimpan sebagai JSON/array, ikuti convention database
 existing.
 
 ==================================================
-43. WORKER SAFETY
+API KEY LIFECYCLE
 ==================================================
 
-Publish worker harus memverifikasi:
-
-approval requirement.
-
-Defense in depth.
-
-Jika post somehow masuk queue tetapi:
-
-approval belum valid,
-
-worker tidak boleh publish.
-
-Namun jangan merusak existing posts:
-
-approval_status = not_required.
-
-==================================================
-44. RACE CONDITION
-==================================================
-
-Tangani concurrency.
-
-Contoh:
-
-Reviewer A
-
-approve.
-
-Reviewer B
-
-request changes.
-
-Secara bersamaan.
-
-Gunakan:
-
-conditional update
-
-atau transaction.
-
-Transition hanya valid jika:
-
-current status sesuai.
-
-Contoh:
-
-UPDATE
-
-WHERE:
-
-approval_status = in_review.
-
-
-Jika zero rows:
-
-return conflict.
-
-Gunakan HTTP:
-
-409 Conflict.
-
-==================================================
-45. IDEMPOTENCY
-==================================================
-
-Submit review harus aman terhadap duplicate request.
-
-Approve harus tidak menghasilkan:
-
-multiple review events.
-
-Gunakan state transition guard.
-
-Jangan mengandalkan frontend.
-
-==================================================
-46. REVIEW EVENT SECURITY
-==================================================
-
-User tidak boleh:
-
-mengubah actor_id.
-
-workspace_id.
-
-created_at.
-
-Action harus ditentukan server.
-
-==================================================
-47. API ENDPOINTS
-==================================================
-
-Implementasikan minimal:
-
-GET
-
-/api/posts/:id/review
-
-
-POST
-
-/api/posts/:id/submit-review
-
-
-POST
-
-/api/posts/:id/approve
-
-
-POST
-
-/api/posts/:id/request-changes
-
-
-Opsional:
-
-POST
-
-/api/posts/:id/withdraw-review
-
-
-Hanya implement jika diperlukan oleh UX.
-
-==================================================
-48. GET REVIEW
-==================================================
-
-Response:
-
-approval status.
-
-review history.
-
-requested by.
-
-timestamps.
-
-comment.
-
-permission hints jika diperlukan.
-
-Jangan expose unnecessary internal data.
-
-==================================================
-49. API RESPONSE
-==================================================
-
-Ikuti format API existing.
-
-Audit:
-
-API-INTERNAL.md.
-
-Gunakan:
-
-consistent error format.
-
-Contoh:
-
-401
-
-Unauthorized.
-
-403
-
-Permission denied.
-
-404
-
-Post not found.
-
-409
-
-Invalid review state.
-
-422
-
-Validation failed.
-
-==================================================
-50. API DOCUMENTATION
-==================================================
-
-Update:
-
-docs/API-INTERNAL.md
-
-Tambahkan:
-
-approval endpoints.
-
-permissions.
-
-state transition.
-
-example response.
-
-error response.
-
-security notes.
-
-==================================================
-51. UI ROUTE
-==================================================
-
-Jangan membuat page baru jika tidak diperlukan.
-
-Integrasikan approval ke:
-
-Draft detail.
-
-Create Post editor.
-
-History detail.
-
-Post detail existing.
-
-Namun jika UX membutuhkan:
-
-gunakan component reusable.
-
-==================================================
-52. COMPOSER UI
-==================================================
-
-Tambahkan action:
-
-Save Draft
-
-Submit for Review
-
-Publish
-
-Schedule
-
-
-Action visibility berdasarkan:
-
-approval status
-
-permission.
-
-Contoh:
-
-EDITOR
-
-Draft
-
-→ Save Draft
-
-→ Submit for Review.
-
-
-ADMIN
-
-In Review
-
-→ Approve
-
-→ Request Changes.
-
-==================================================
-53. REVIEW PANEL
-==================================================
-
-Buat component reusable.
-
-Contoh:
-
-src/components/posts/review/
-
-review-panel.tsx
-
-review-status-badge.tsx
-
-review-timeline.tsx
-
-review-actions.tsx
-
-
-Ikuti naming convention existing.
-
-==================================================
-54. REVIEW STATUS UI
-==================================================
-
-Tampilkan:
-
-Draft
-
-In Review
-
-Changes Requested
-
-Approved
-
-Not Required
-
-
-Gunakan badge existing.
-
-Jangan membuat design system baru.
-
-Gunakan:
-
-shadcn/ui
-
-existing Tailwind convention.
-
-==================================================
-55. REQUEST CHANGES UI
-==================================================
-
-Gunakan dialog.
-
-Textarea:
-
-Comment.
-
-Validation client:
-
-minimum.
-
-Validation server:
-
-authoritative.
-
-Jangan mengirim empty comment.
-
-==================================================
-56. APPROVE UI
-==================================================
-
-Approve dapat:
-
-langsung action.
-
-Atau confirmation kecil.
-
-Tidak perlu dialog besar.
-
-Setelah success:
-
-refresh state.
-
-Notification:
-
-server generated.
-
-==================================================
-57. REVIEW TIMELINE UI
-==================================================
-
-Contoh:
-
-● Submitted for review
-
-Muhammad
-
-14 Sep 2026 14:00
-
-
-● Changes requested
-
-Admin
-
-"Tolong perbaiki CTA."
-
-14 Sep 2026 14:20
-
-
-● Resubmitted
-
-Muhammad
-
-15 Sep 2026 10:00
-
-
-● Approved
-
-Admin
-
-15 Sep 2026 10:15
-
-==================================================
-58. EDITOR EXPERIENCE
-==================================================
-
-Jika:
-
-changes_requested.
-
-Tampilkan:
-
-review comment.
-
-CTA:
-
-Edit Draft.
-
-Setelah edit:
-
-Save Draft.
-
-Kemudian:
-
-Submit for Review.
-
-==================================================
-59. REVIEWER EXPERIENCE
-==================================================
-
-Reviewer melihat:
-
-content preview.
-
-caption.
-
-selected platforms.
-
-accounts.
-
-media.
-
-schedule information.
-
-Review history.
-
-Actions:
-
-Approve.
-
-Request Changes.
-
-==================================================
-60. SECURITY UI
-==================================================
-
-Jangan mengandalkan UI.
-
-Semua endpoint:
-
-server authorization.
-
-UI hanya menyembunyikan action.
-
-==================================================
-61. RLS
-==================================================
-
-Tambahkan Supabase RLS.
-
-Semua tabel baru:
-
-workspace membership aware.
-
-User hanya dapat:
-
-SELECT
-
-review resource dalam workspace.
-
-INSERT:
-
-server/domain policy sesuai membership.
-
-UPDATE:
-
-sesuai authorization.
-
-Namun ingat:
-
-complex role permission biasanya di server.
-
-RLS minimal harus:
-
-mencegah cross-workspace access.
-
-==================================================
-62. RLS MIGRATION
-==================================================
-
-Buat migration:
-
-supabase/migrations/
-
-dengan nomor sesuai repository.
-
-Jangan hardcode nomor.
-
-Audit migration terakhir.
-
-==================================================
-63. DRIZZLE MIGRATION
-==================================================
-
-Buat migration baru.
-
-Gunakan:
-
-npm run db:generate
-
-jika existing workflow menggunakan Drizzle generate.
-
-Jangan edit migration lama.
-
-==================================================
-64. EXISTING DATABASE
-==================================================
-
-Pastikan migration:
-
-compatible existing data.
-
-Existing posts harus tetap bekerja.
-
-Default:
-
-approval_status = not_required
-
-atau equivalent.
-
-Jangan membuat existing post menjadi:
-
-in_review.
-
-==================================================
-65. BACKFILL
-==================================================
-
-Migration harus menangani:
-
-existing rows.
-
-Gunakan safe default.
-
-Jika column:
-
-NOT NULL,
-
-pastikan existing data dapat dimigrate.
-
-==================================================
-66. INDEXES
-==================================================
-
-Tambahkan index hanya jika diperlukan.
-
-Kemungkinan:
-
-workspace_id + approval_status
-
-post_id + created_at
-
-workspace_id + created_at
-
-Jangan over-index.
-
-==================================================
-67. DOMAIN LAYER
-==================================================
-
-Tambahkan domain module.
-
-Contoh:
-
-src/lib/domain/reviews.ts
-
-atau:
-
-src/lib/domain/post-approvals.ts
-
-
-Gunakan naming sesuai existing code.
-
-Domain menangani:
-
-submit.
-
-approve.
-
-request changes.
-
-get history.
-
-state transition.
-
-authorization integration.
-
-notification event.
-
-webhook event.
-
-==================================================
-68. JANGAN TARUH LOGIC DI ROUTE
-==================================================
-
-API route hanya:
-
-authenticate.
-
-parse input.
-
-call domain/service.
-
-return response.
-
-Business logic:
-
-domain layer.
-
-==================================================
-69. STATE TRANSITION HELPER
-==================================================
-
-Implementasikan state transition explicit.
-
-Contoh conceptual:
-
-canTransitionReviewState()
-
-submitForReview()
-
-approveReview()
-
-requestChanges()
-
-invalidateApproval()
-
-
-Jangan menggunakan:
-
-if chain besar tersebar di banyak file.
-
-==================================================
-70. VALIDATION
-==================================================
-
-Gunakan validation schemas existing.
-
-Tambahkan:
-
-submitReviewSchema
-
-requestChangesSchema
-
-
-Comment:
-
-trim.
-
-min length.
-
-max length.
-
-Reject:
-
-empty whitespace.
-
-==================================================
-71. CONTENT SNAPSHOT
-==================================================
-
-Pertimbangkan review snapshot.
-
-Namun jangan membuat kompleksitas tidak perlu.
-
-Minimum requirement:
-
-approval invalidated jika content berubah.
+Minimal lifecycle:
+
+    create
+    authenticate
+    use
+    revoke
 
 Optional:
 
-content hash.
+    rotate
+    expiration
 
-Jika implement hash:
+API key creation:
 
-harus deterministic.
+    User creates key
+       ↓
+    generate random secret
+       ↓
+    hash
+       ↓
+    store hash
+       ↓
+    show raw key ONCE
 
-Jangan menyimpan media binary.
+Setelah itu raw key tidak bisa diambil kembali.
 
-Jika tidak diperlukan:
+Jika user kehilangan key:
 
-gunakan update hooks/domain transition.
+    revoke old key
+    create new key
 
-==================================================
-72. CONTENT CHANGE DETECTION
-==================================================
+Jangan menyediakan endpoint:
 
-Audit semua jalur edit post:
-
-Create Post composer.
-
-Draft edit.
-
-Duplicate.
-
-Template.
-
-API.
-
-Schedule.
-
-Pastikan perubahan content utama dapat:
-
-invalidate approval.
+    GET /api-keys/:id/reveal
 
 ==================================================
-73. FIELDS YANG INVALIDATE APPROVAL
+API KEY PERMISSIONS
 ==================================================
 
-Minimum:
+Jangan langsung membuat permission terlalu kompleks.
 
-caption.
+Audit existing permission system.
 
-media.
+Jika existing system punya permission seperti:
 
-platform.
+    accounts:manage
+    posts:read
+    posts:write
 
-account.
+reuse.
 
-schedule.
+Jika tidak ada Public API permission yang sesuai, desain minimal.
 
-content data.
+Minimal target:
 
-Jangan invalidate hanya karena:
+    posts:read
+    posts:write
 
-analytics update.
+Jika diperlukan:
 
-notification update.
+    accounts:read
+    scheduled:read
+    scheduled:write
+    analytics:read
 
-publish result.
+Jangan memberikan:
 
-internal metadata.
+    admin:*
+    OAuth management
+    credential access
 
-==================================================
-74. APPROVAL + SCHEDULE
-==================================================
+kepada Public API key.
 
-Jika post approved:
-
-Schedule.
-
-Setelah schedule:
-
-approval tetap:
-
-approved.
-
-Jangan reset approval hanya karena scheduling.
-
-Namun jika schedule/content diubah:
-
-tentukan policy.
-
-Rekomendasi:
-
-schedule time sendiri merupakan workflow change.
-
-Jika reviewer approval termasuk schedule:
-
-invalidate.
-
-Jika tidak:
-
-tetap approved.
-
-Untuk Phase 16A:
-
-pilih policy eksplisit dan konsisten.
-
-Dokumentasikan.
+API key harus mengikuti principle of least privilege.
 
 ==================================================
-75. CANCEL
+API KEY AUTHENTICATION
 ==================================================
 
-Existing cancel harus tetap.
+Public API menggunakan:
 
-Cancel scheduled post tidak mengubah review history.
-
-Approval dapat tetap:
-
-approved.
-
-Atau reset sesuai policy.
-
-Jangan menghapus review history.
-
-==================================================
-76. RETRY
-==================================================
-
-Retry publish existing harus tetap.
-
-Jika previously approved post gagal:
-
-Retry tidak perlu approval ulang.
-
-Karena content sama.
-
-==================================================
-77. PARTIAL FAILURE
-==================================================
-
-Approval tidak berubah karena:
-
-partial failure.
-
-Retry tetap existing.
-
-==================================================
-78. ACCOUNT DISCONNECT
-==================================================
-
-Phase 7 behavior tetap.
-
-Approval tidak boleh bypass:
-
-account health.
-
-==================================================
-79. DASHBOARD AGGREGATION
-==================================================
-
-Jika menambahkan:
-
-Pending Review.
-
-Gunakan server aggregation.
-
-Jangan:
-
-fetch all posts client-side.
-
-Filter:
-
-active workspace.
-
-==================================================
-80. NOTIFICATION EVENT REGISTRY
-==================================================
-
-Audit Phase 13 event architecture.
-
-Tambahkan event tanpa duplicate.
-
-Gunakan naming consistent.
-
-==================================================
-81. WEBHOOK EVENT REGISTRY
-==================================================
-
-Audit Phase 15 registry.
-
-Tambahkan:
-
-review events.
-
-Pastikan payload:
-
-versionable.
-
-safe.
-
-minimal.
-
-==================================================
-82. RELIABILITY
-==================================================
-
-Approval tidak membutuhkan monitoring queue.
-
-Namun jika publish guard worker menolak:
-
-unapproved post,
-
-error harus:
-
-safe.
-
-observable.
-
-Tidak expose:
-
-caption.
-
-token.
-
-media URL.
-
-==================================================
-83. AUDIT LOG
-==================================================
-
-Review history berfungsi sebagai audit log.
-
-Setiap event:
-
-actor.
-
-action.
-
-timestamp.
-
-comment jika ada.
-
-Jangan membuat audit system kedua.
-
-==================================================
-84. DELETE POST
-==================================================
-
-Jika post deleted:
-
-Review events harus:
-
-cascade
-
-atau existing cleanup strategy.
-
-Audit foreign key behavior.
-
-Jangan meninggalkan orphan.
-
-==================================================
-85. WORKSPACE DELETE
-==================================================
-
-Review resources harus ikut cleanup workspace.
-
-Gunakan existing workspace delete strategy.
-
-==================================================
-86. MEMBER REMOVE
-==================================================
-
-Review history tetap.
-
-Actor yang sudah keluar workspace:
-
-historical identity tetap dapat direferensikan secara aman.
-
-Jangan menghapus review history.
-
-==================================================
-87. TRANSFER OWNERSHIP
-==================================================
-
-Tidak memengaruhi review state.
-
-Permission resolution harus menggunakan role baru.
-
-==================================================
-88. INVITATION
-==================================================
-
-Tidak memengaruhi review state.
-
-Jangan menambah approval logic ke invitation.
-
-==================================================
-89. API RATE LIMIT
-==================================================
-
-Audit existing rate limit.
-
-Tambahkan protection jika perlu:
-
-submit review.
-
-approve.
-
-request changes.
-
-Jangan membuat rate limit berlebihan.
-
-Gunakan existing helper.
-
-==================================================
-90. CSRF / AUTH
-==================================================
-
-Ikuti API security existing.
-
-Jangan membuat auth bypass.
-
-==================================================
-91. ERROR SAFETY
-==================================================
-
-Jangan expose:
-
-database errors.
-
-SQL.
-
-stack trace.
-
-internal IDs jika existing API tidak expose.
-
-Gunakan safe error.
-
-==================================================
-92. LOGGING
-==================================================
-
-Jangan log:
-
-caption.
-
-media URL.
-
-token.
-
-credential.
-
-secret.
-
-Log hanya:
-
-event type.
-
-workspace context jika existing logging aman.
-
-post identifier hanya jika existing policy mengizinkan.
-
-==================================================
-93. TESTING — UNIT
-==================================================
-
-Tambahkan test.
-
-Minimum:
-
-Review state transition.
-
-Draft → In Review.
-
-In Review → Approved.
-
-In Review → Changes Requested.
-
-Changes Requested → Draft / Resubmit.
-
-Approved modification invalidation.
-
-Invalid transition rejected.
-
-==================================================
-94. TESTING — AUTHORIZATION
-==================================================
-
-Test:
-
-Owner.
-
-Admin.
-
-Editor.
-
-Viewer.
-
-
-Verify:
-
-Editor submit.
-
-Viewer reject.
-
-Editor approve reject jika policy.
-
-Admin approve.
-
-Owner approve.
-
-Cross workspace reject.
-
-==================================================
-95. TESTING — SELF APPROVAL
-==================================================
-
-Test:
-
-Creator submit review.
-
-Creator attempts approve.
-
-Expected:
-
-403
-
-atau policy error.
-
-Admin other user approve:
-
-success.
-
-==================================================
-96. TESTING — OWNERSHIP
-==================================================
-
-Workspace A:
-
-post.
-
-Workspace B:
-
-review request.
-
-Expected:
-
-404 atau 403 sesuai existing security convention.
-
-Tidak boleh leak existence.
-
-==================================================
-97. TESTING — RACE CONDITION
-==================================================
-
-Test conceptual concurrency.
+    Authorization: Bearer <API_KEY>
 
 Contoh:
 
-Approve.
+    Authorization: Bearer ap_live_xxxxxxxxx
 
-Request Changes.
+Jangan menerima API key melalui:
 
-Current state berubah.
+    query parameter
+    URL
+    cookie
 
-Second transition:
+kecuali ada alasan architecture yang sangat kuat.
 
-409.
+API key jangan pernah muncul di logs.
 
-==================================================
-98. TESTING — IDEMPOTENCY
-==================================================
+Jangan log:
 
-Submit review dua kali.
+    Authorization header
+    raw API key
+    full request headers
 
-Tidak boleh menghasilkan:
+Safe log:
 
-duplicate review event.
-
-Approve dua kali.
-
-Tidak boleh menghasilkan:
-
-duplicate approval event.
-
-==================================================
-99. TESTING — PUBLISH GUARD
-==================================================
-
-Post:
-
-in_review.
-
-Attempt Publish.
-
-Expected reject.
-
-Attempt Schedule.
-
-Expected reject.
-
-Post:
-
-approved.
-
-Publish allowed.
-
-Post:
-
-not_required.
-
-Existing publish allowed.
+    key id
+    key prefix
+    workspace id jika aman
+    route
+    method
+    status
+    duration
+    request id
 
 ==================================================
-100. TESTING — EDIT INVALIDATION
+API VERSIONING
 ==================================================
 
-Approved post.
+Public API harus memiliki namespace:
 
-Edit caption.
+    /api/v1/...
 
-Expected:
+Jangan mengubah endpoint internal existing menjadi:
 
-approval invalidated.
+    /api/v1/...
 
-Approved post.
+secara langsung jika itu berpotensi merusak frontend.
 
-Edit media.
+Buat route Public API baru.
 
-Expected:
+Target:
 
-approval invalidated.
+    /api/v1/posts
+    /api/v1/posts/:id
+    /api/v1/accounts
 
-Approved post.
-
-Change account.
-
-Expected policy result.
-
-==================================================
-101. TESTING — NOTIFICATIONS
-==================================================
-
-Test:
-
-Submit review notification.
-
-Approval notification.
-
-Changes requested notification.
-
-Dedup behavior jika applicable.
-
-No duplicate spam.
+Jika repository memiliki naming convention berbeda,
+ikuti convention existing selama tetap versioned.
 
 ==================================================
-102. TESTING — WEBHOOK
+PHASE 5 — PUBLIC API MVP DESIGN
 ==================================================
 
-Test:
+Jangan expose semua functionality sekaligus.
 
-review requested event.
+Mulai dari API minimal yang benar-benar berguna.
 
-approved event.
+Target MVP:
 
-changes requested event.
+    GET  /api/v1/posts
+    GET  /api/v1/posts/:id
 
-Payload safe.
+    POST /api/v1/posts
 
-Webhook queue existing digunakan.
+    POST /api/v1/posts/:id/publish
+    POST /api/v1/posts/:id/cancel
 
-==================================================
-103. TESTING — RLS
-==================================================
+    GET /api/v1/accounts
 
-Test atau verify:
+Jika scheduling existing architecture mudah dipakai tanpa perubahan besar:
 
-Workspace A cannot read review:
+    POST /api/v1/posts
+    dengan scheduledAt
 
-Workspace B.
-
-Workspace member access sesuai policy.
-
-==================================================
-104. TESTING — REGRESSION
-==================================================
-
-Pastikan existing:
-
-Draft.
-
-Publish.
-
-Schedule.
-
-Calendar.
-
-History.
-
-Retry.
-
-Cancel.
-
-Template.
-
-Duplicate.
-
-Media.
-
-Analytics.
-
-Notifications.
-
-Webhooks.
-
-Workspace.
-
-Accounts.
-
-OAuth.
-
-Queue.
-
-Worker.
-
-tetap bekerja.
+Tidak perlu membuat endpoint scheduling terpisah jika tidak diperlukan.
 
 ==================================================
-105. UI TESTING
+POST CREATE API
 ==================================================
 
-Jika project memiliki component test:
+Audit existing Create Post flow terlebih dahulu.
 
-tambahkan:
+Cari:
 
-Review status.
+    createPostAction
+    createPost
+    createDraft
+    publishDraft
+    scheduling logic
+    media upload logic
 
-Submit button.
+Public API jangan duplicate logic.
 
-Approve button permission.
+Target konsep:
 
-Request changes dialog.
+    Public API
+       ↓
+    existing service/domain
+       ↓
+    post
+       ↓
+    post_platforms
+       ↓
+    queue
+       ↓
+    worker
 
-Timeline rendering.
+Jika existing Create Post flow membutuhkan browser-specific
+media upload/session behavior, jangan memaksakan API untuk memakai
+browser implementation.
 
-==================================================
-106. TYPE SAFETY
-==================================================
-
-Jangan gunakan:
-
-any
-
-tanpa alasan.
-
-Gunakan inferred types.
-
-Drizzle types.
-
-Schema validation.
-
-==================================================
-107. FILE ORGANIZATION
-==================================================
-
-Kemungkinan struktur:
-
-src/lib/domain/
-
-reviews.ts
-
-
-src/lib/validation/
-
-review-schemas.ts
-
-
-src/components/posts/review/
-
-review-panel.tsx
-
-review-status-badge.tsx
-
-review-timeline.tsx
-
-review-actions.tsx
-
-
-src/app/api/posts/[id]/
-
-review/
-
-submit-review/
-
-approve/
-
-request-changes/
-
-
-Sesuaikan dengan existing route convention.
-
-Jangan duplicate architecture.
+Desain API media upload secara terpisah jika memang diperlukan.
 
 ==================================================
-108. DOKUMENTASI
+MEDIA API
 ==================================================
 
-Buat:
+Audit bagaimana media sekarang di-upload.
 
-docs/PHASE-16A-CONTENT-APPROVAL-WORKFLOW.md
+Cari:
 
+    Supabase Storage
+    signed URL
+    upload route
+    media asset
+    pending media
+    MIME validation
+    size validation
 
-Dokumentasi harus menjelaskan:
+Jangan membuat API:
 
-Architecture.
+    POST /api/v1/posts
 
-State machine.
+yang menerima file besar secara tidak efisien jika architecture existing
+menggunakan Storage.
 
-Permissions.
+Jika diperlukan, Public API MVP dapat:
 
-API.
+    1. Create media/upload session
+    2. Upload to storage
+    3. Create post referencing media
 
-Database.
+Tetapi jangan implementasikan kompleksitas tersebut jika existing
+architecture sudah menyediakan mekanisme reusable.
 
-RLS.
-
-Notifications.
-
-Webhooks.
-
-Security.
-
-Approval invalidation.
-
-Backward compatibility.
-
-Known limitations.
-
-==================================================
-109. API DOCS
-==================================================
-
-Update:
-
-docs/API-INTERNAL.md
-
-Tambahkan:
-
-GET review.
-
-Submit review.
-
-Approve.
-
-Request changes.
-
-Errors.
-
-Permissions.
-
-State rules.
+Audit dahulu.
 
 ==================================================
-110. MASTER PLAN
+IDEMPOTENCY
 ==================================================
+
+Untuk mutating Public API, implementasikan idempotency jika existing
+architecture sudah memiliki infrastructure.
+
+Minimal:
+
+    POST /api/v1/posts
+    POST /api/v1/posts/:id/publish
+
+dapat menerima:
+
+    Idempotency-Key: <unique-key>
+
+Jangan membuat duplicate post/publish akibat retry dari client.
+
+Audit existing idempotency implementation terlebih dahulu.
+
+Jika sudah ada:
+
+    reuse.
+
+Jika belum:
+
+    implementasi minimal yang aman.
+
+Jangan menyimpan entire response indefinitely.
+
+Tetapkan TTL yang reasonable sesuai existing Redis architecture.
+
+==================================================
+RATE LIMITING
+==================================================
+
+Audit existing rate limiter.
+
+Gunakan infrastructure existing jika tersedia.
+
+Public API rate limit harus dipisahkan dari browser/session traffic.
+
+Concept:
+
+    API key
+       ↓
+    rate limit
+
+bukan hanya IP.
+
+Tetap pertimbangkan IP sebagai abuse signal jika architecture
+existing mendukung.
+
+Jangan membuat rate limit yang terlalu agresif sampai mengganggu
+normal API usage.
+
+Jika belum ada documented default, gunakan conservative MVP limit
+dan dokumentasikan.
+
+Jangan mengklaim angka tersebut sebagai final product policy jika belum
+ditetapkan.
+
+==================================================
+ERROR CONTRACT
+==================================================
+
+Public API harus memiliki error response konsisten.
+
+Target konsep:
+
+    {
+      "error": {
+        "code": "..."
+        "message": "..."
+      }
+    }
+
+HTTP status harus konsisten.
+
+Contoh:
+
+    401
+    invalid/missing API key
+
+    403
+    valid key tetapi permission tidak cukup
+
+    404
+    resource tidak ditemukan / tidak boleh diakses
+
+    409
+    idempotency/conflict
+
+    422
+    validation error
+
+    429
+    rate limit
+
+    500
+    unexpected internal error
+
+Jangan expose stack trace.
+
+Jangan expose database error mentah.
+
+Jangan expose provider credential.
+
+==================================================
+RESOURCE OWNERSHIP
+==================================================
+
+Public API key hanya boleh mengakses resource milik workspace/account
+yang terkait dengan key.
+
+Contoh:
+
+    API Key Workspace A
+          ↓
+    GET /api/v1/posts/post-owned-by-B
+
+harus ditolak atau diperlakukan sebagai not found sesuai security policy.
+
+Jangan sampai API key dapat enumerate resource workspace lain.
+
+Audit semua query.
+
+Pastikan filtering workspace/owner dilakukan di database/domain layer,
+bukan hanya UI.
+
+==================================================
+PUBLISH API
+==================================================
+
+Public API publish harus menggunakan publish flow existing.
+
+JANGAN:
+
+    Public API
+       ↓
+    direct Meta API
+
+JANGAN:
+
+    Public API
+       ↓
+    direct Instagram API
+
+JANGAN:
+
+    Public API
+       ↓
+    direct Facebook API
+
+Harus:
+
+    Public API
+       ↓
+    existing domain/service
+       ↓
+    post platform
+       ↓
+    BullMQ
+       ↓
+    publish worker
+       ↓
+    provider
+       ↓
+    social platform
+
+Dengan demikian:
+
+    frontend
+    public API
+
+menggunakan publishing engine yang sama.
+
+==================================================
+SOCIAL ACCOUNT API
+==================================================
+
+Jika expose:
+
+    GET /api/v1/accounts
+
+response hanya boleh berisi data aman.
+
+Contoh:
+
+    id
+    platform
+    username
+    displayName
+    status
+    connectedAt
+
+Jangan pernah mengembalikan:
+
+    access token
+    refresh token
+    encrypted token
+    client secret
+    OAuth state
+    provider credential
+
+Jangan expose credential metadata yang dapat membantu mengambil secret.
+
+==================================================
+OAUTH BOUNDARY
+==================================================
+
+Public API TIDAK boleh menjadi cara untuk:
+
+    retrieve OAuth token
+    retrieve Facebook token
+    retrieve Instagram token
+    retrieve TikTok token
+    retrieve Threads token
+
+Public API hanya dapat menggunakan connected account yang sudah dimiliki
+workspace.
+
+OAuth tetap menggunakan flow existing:
+
+    Facebook OAuth
+    Instagram Standalone OAuth
+    TikTok OAuth
+    Threads OAuth
+
+Jangan menyatukan OAuth dengan API key.
+
+==================================================
+ADMIN API / MANUAL IMPORT
+==================================================
+
+Audit endpoint sementara:
+
+    /api/admin/instagram/import-token
+
+Endpoint tersebut BUKAN Public API.
+
+Jangan expose melalui:
+
+    /api/v1
+
+Jika importer sudah tidak dibutuhkan lagi dan standalone Instagram OAuth
+sudah terbukti bekerja, rekomendasikan penghapusannya.
+
+Jangan menghapusnya secara otomatis jika masih dibutuhkan untuk migrasi
+tanpa terlebih dahulu memastikan dependency.
+
+==================================================
+API KEY MANAGEMENT UI/API
+==================================================
+
+Audit existing Settings page.
+
+Jika sesuai architecture, tambahkan:
+
+    Settings
+      ↓
+    API Keys
+
+Minimal UI:
+
+    API Keys
+      - Name
+      - Created
+      - Last used
+      - Status
+      - Revoke
+
+Create:
+
+    Create API Key
+      ↓
+    Name
+      ↓
+    Permissions
+      ↓
+    Generate
+      ↓
+    Show secret ONCE
+
+Jangan tampilkan secret lagi setelah modal/page ditutup.
+
+Jika menambahkan UI membutuhkan perubahan besar, implementasikan backend
+API key infrastructure dahulu dan dokumentasikan UI sebagai follow-up.
+
+Jangan melakukan redesign Settings.
+
+==================================================
+API KEY MANAGEMENT ENDPOINTS
+==================================================
+
+Jika existing architecture cocok, gunakan internal authenticated routes
+untuk management key.
+
+Contoh:
+
+    POST   /api/api-keys
+    GET    /api/api-keys
+    DELETE /api/api-keys/:id
+
+PERHATIAN:
+
+Endpoint management ini adalah INTERNAL APP API.
+
+Jangan menggunakan Public API key untuk membuat/revoke API key.
+
+User harus authenticated melalui normal application auth.
+
+==================================================
+DATABASE MIGRATION
+==================================================
+
+Jika perlu tabel baru:
+
+    buat migration kecil dan additive.
+
+Jangan destructive migration.
+
+Jangan mengubah existing social account schema jika tidak diperlukan.
 
 Jangan mengubah:
 
-Master Plan
+    post_platforms
+    social_accounts
 
-kecuali user secara eksplisit meminta.
+hanya untuk menambahkan API key.
 
-Master Plan dianggap:
-
-planning document.
-
-==================================================
-111. MIGRATION SAFETY
-==================================================
-
-Sebelum migration:
-
-Audit migration terakhir.
-
-Gunakan nomor berikutnya.
-
-Jangan rename migration lama.
-
-Jangan edit applied migration.
+Jika workspace model existing lebih tepat daripada user_id,
+gunakan workspace ownership sesuai architecture.
 
 ==================================================
-112. LIVE DATABASE
+SECURITY AUDIT
 ==================================================
 
-Jika:
+Sebelum selesai, audit:
 
-db:migrate
+1. API key entropy.
+2. Hashing.
+3. Timing-safe comparison jika diperlukan.
+4. Authorization.
+5. Workspace isolation.
+6. Permission/scopes.
+7. Rate limit.
+8. Idempotency.
+9. Replay behavior.
+10. Revocation.
+11. Expiration jika digunakan.
+12. Logging.
+13. Error messages.
+14. Input validation.
+15. SSRF risk jika API menerima URL.
+16. File upload abuse.
+17. Resource enumeration.
+18. Mass assignment.
+19. SQL injection protection.
+20. Secret leakage.
 
-gagal karena:
+Jika Public API menerima external URLs:
 
-environment.
+    jangan fetch arbitrary URLs
 
-sandbox.
+tanpa SSRF protection.
 
-connection.
+Jika tidak diperlukan untuk MVP:
 
-Jangan mengklaim migration sudah diterapkan live.
-
-Laporkan:
-
-- migration generated
-- local/PGlite validation
-- live migration status
-
-secara jujur.
-
-==================================================
-113. JANGAN MELAKUKAN INI
-==================================================
-
-Jangan:
-
-- rewrite seluruh posts domain
-- rewrite worker
-- rewrite queue
-- rewrite notification system
-- rewrite webhook system
-- mengganti permission architecture
-- mengganti database ORM
-- mengubah RLS existing tanpa alasan
-- membuat approval system terpisah dari workspace
-- menyimpan token
-- expose credential
-- membuat approval wajib untuk existing post
-- membuat frontend authorization sebagai satu-satunya protection
-- membuat status publishing baru jika approval state terpisah lebih aman
+    jangan implementasikan URL fetching.
 
 ==================================================
-114. IMPLEMENTATION ORDER
+DOCUMENTATION
 ==================================================
 
-Kerjakan dengan urutan:
-
-STEP 1
-
-Audit existing:
-
-posts.
-
-draft.
-
-permissions.
-
-authorization.
-
-workspace.
-
-notifications.
-
-webhooks.
-
-queue.
-
-worker.
-
-schema.
-
-migrations.
-
-
-STEP 2
-
-Tentukan:
-
-approval architecture.
-
-
-STEP 3
-
-Implement:
-
-database schema.
-
-
-STEP 4
-
-Generate:
-
-Drizzle migration.
-
-
-STEP 5
-
-Implement:
-
-Supabase RLS.
-
-
-STEP 6
-
-Implement:
-
-permissions.
-
-
-STEP 7
-
-Implement:
-
-state machine.
-
-
-STEP 8
-
-Implement:
-
-domain layer.
-
-
-STEP 9
-
-Integrate:
-
-post edit invalidation.
-
-
-STEP 10
-
-Implement:
-
-publish guard.
-
-
-STEP 11
-
-Implement:
-
-API.
-
-
-STEP 12
-
-Integrate:
-
-notifications.
-
-
-STEP 13
-
-Integrate:
-
-webhooks.
-
-
-STEP 14
-
-Integrate:
-
-worker defense.
-
-
-STEP 15
-
-Implement:
-
-UI.
-
-
-STEP 16
-
-Add:
-
-Dashboard summary jika efisien.
-
-
-STEP 17
-
-Testing.
-
-
-STEP 18
-
-Validation.
+Buat/update dokumentasi Public API.
+
+Misalnya:
+
+    docs/API-PUBLIC.md
+
+Jika repository memiliki dokumentasi API existing,
+gunakan file tersebut daripada membuat duplicate.
+
+Dokumentasi minimal:
+
+    Authentication
+    API keys
+    Permissions
+    Base URL
+    Versioning
+    Endpoints
+    Request examples
+    Response examples
+    Errors
+    Rate limits
+    Idempotency
+    Resource ownership
+    Pagination
+    Security
+
+Contoh request:
+
+    curl \
+      -H "Authorization: Bearer ap_live_xxx" \
+      https://example.com/api/v1/posts
+
+Jangan menggunakan secret nyata.
 
 ==================================================
-115. VALIDATION WAJIB
+PAGINATION
 ==================================================
 
-Jalankan:
+Audit existing list endpoints.
 
-npm run lint
+Untuk:
 
-npm run typecheck
+    GET /api/v1/posts
 
-npm test
+gunakan pagination yang konsisten.
 
-npm run test:integration
+Jika existing app sudah menggunakan:
 
-atau:
+    cursor
+    limit
+    offset
 
-npm run test:all
+reuse jika cocok.
 
-sesuai repository.
+Jangan membuat pagination system baru tanpa alasan.
 
+Tetapkan maximum page size.
 
-Jalankan:
+Jangan memungkinkan:
 
-npm run build
-
-
-Jalankan:
-
-git diff --check
-
-
-Jika tersedia:
-
-npm run db:generate
-
-Jalankan migration validation existing.
+    ?limit=999999999
 
 ==================================================
-116. JIKA VALIDATION GAGAL
+FILTERING / SORTING
 ==================================================
 
-Jangan langsung mengubah unrelated code.
+Public API list posts minimal boleh memiliki filter yang memang didukung
+existing domain/query layer.
 
-Identifikasi:
+Contoh jika mudah:
 
-apakah error:
+    status
+    platform
+    date range
 
-baru
-
-atau:
-
-pre-existing.
-
-Perbaiki hanya error yang disebabkan Phase 16A.
-
-Jika error pre-existing:
-
-laporkan.
+Jangan menambahkan query language kompleks.
 
 ==================================================
-117. COMMIT
+OBSERVABILITY
 ==================================================
 
-JANGAN:
+Public API harus punya request/correlation ID jika existing system
+sudah memilikinya.
 
-git commit.
+Safe log:
 
-JANGAN:
+    requestId
+    API key id
+    route
+    method
+    status
+    duration
+    workspace id jika policy memperbolehkan
 
-git push.
+Jangan log:
 
-Kecuali user meminta.
+    Authorization
+    raw API key
+    social token
+    OAuth code
+    client secret
 
 ==================================================
-118. FINAL REPORT
+PHASE 6 — IMPLEMENTATION PLAN
 ==================================================
 
-Setelah selesai laporkan:
+Sebelum coding, tampilkan:
 
-# PHASE 16A COMPLETE
+## Current API Architecture
 
-Dengan struktur:
+## API Inventory
 
-1.
+## Internal vs Public Classification
 
-SUMMARY
+## Existing Auth Architecture
 
+## Existing Permission Architecture
 
-2.
+## Existing Rate Limit Architecture
 
-APPROVAL ARCHITECTURE
+## Existing Idempotency Architecture
 
+## Existing Database Structure
 
-3.
+## Proposed API Key Architecture
 
-DATABASE CHANGES
+## Proposed Public API v1
 
+## Files To Modify
 
-4.
+## Files To Create
 
-STATE MACHINE
+## Files That Must NOT Be Modified
 
+## Database Migration Required?
 
-5.
+## Risks
 
-PERMISSIONS
+## Backward Compatibility
 
+Kemudian implementasikan.
 
-6.
+Jangan berhenti setelah audit jika tidak ada blocker.
 
-API
+==================================================
+PHASE 7 — TESTING
+==================================================
 
+Tambahkan tests untuk API key:
 
-7.
+1. Create API key.
+2. Raw key hanya muncul saat creation.
+3. Raw key tidak tersimpan plaintext.
+4. Correct key authenticates.
+5. Wrong key rejected.
+6. Revoked key rejected.
+7. Expired key rejected jika expiration digunakan.
+8. Permission denied.
+9. Workspace isolation.
+10. last_used_at behavior.
+11. API key tidak muncul di logs.
 
-UI
+Public API:
 
+12. GET posts.
+13. GET post detail.
+14. POST create post.
+15. Publish.
+16. Cancel.
+17. Accounts.
+18. Validation errors.
+19. Unauthorized.
+20. Forbidden.
+21. Not found.
+22. Rate limit.
+23. Idempotency.
+24. Duplicate request behavior.
+25. Pagination.
 
-8.
+Regression:
 
-NOTIFICATIONS
+26. Existing frontend API tests.
+27. Existing Facebook tests.
+28. Existing Instagram tests.
+29. Existing OAuth tests.
+30. Existing worker tests.
+31. Existing publishing tests.
 
-
-9.
-
-WEBHOOKS
-
-
-10.
-
-QUEUE / WORKER SAFETY
-
-
-11.
-
-RLS
-
-
-12.
-
-SECURITY
-
-
-13.
-
-TESTS
-
-
-14.
-
+==================================================
 VALIDATION
-
-
-15.
-
-MIGRATION STATUS
-
-
-16.
-
-FILES CHANGED
-
-
-17.
-
-BACKWARD COMPATIBILITY
-
-
-18.
-
-KNOWN LIMITATIONS
-
-
-19.
-
-GIT STATUS
-
-
-==================================================
-119. SUCCESS CRITERIA
 ==================================================
 
-Phase 16A dianggap berhasil jika:
+Jalankan:
 
-Draft dapat:
+    npm run lint
+    npm run typecheck
+    npm test
+    npm run test:integration
+    npm run test:all
+    npm run build
+    git diff --check
 
-Submit for Review.
+Jika migration dibuat:
 
+    npm run db:generate
+    npm run db:migrate
 
-Reviewer dapat:
+Jangan gunakan:
 
-Approve.
+    drizzle push
 
+untuk production.
 
-Reviewer dapat:
-
-Request Changes.
-
-
-Editor dapat:
-
-Edit.
-
-Resubmit.
-
-
-Approved content dapat:
-
-Publish.
-
-Schedule.
-
-
-Unapproved content:
-
-tidak dapat publish jika approval workflow aktif.
-
-
-Existing posts:
-
-tetap publish tanpa approval.
-
-
-Approval invalidated ketika content berubah.
-
-
-Permissions:
-
-server-side enforced.
-
-
-Workspace isolation:
-
-aman.
-
-
-Notifications:
-
-berfungsi.
-
-
-Webhook events:
-
-berfungsi.
-
-
-Worker:
-
-defense in depth.
-
-
-No secret leakage.
-
-
-No cross-workspace access.
-
-
-No duplicate review events.
-
-
-Race conditions ditangani.
-
-
-Lint:
-
-PASS.
-
-
-Typecheck:
-
-PASS.
-
-
-Tests:
-
-PASS.
-
-
-Build:
-
-PASS.
-
-
-git diff --check:
-
-PASS.
-
-
-Tidak ada commit.
-
-Tidak ada push.
-
+Jangan mengklaim test berhasil jika command belum benar-benar dijalankan.
 
 ==================================================
-120. PRIORITAS UTAMA
+MANUAL TEST
 ==================================================
 
-Prioritas implementasi:
+Setelah automated tests:
 
-1.
+1. Login ke AutoPost.
+2. Buka Settings.
+3. Create API Key.
+4. Copy secret.
+5. Panggil:
 
-Security
+    GET /api/v1/accounts
 
+6. Panggil:
 
-2.
+    GET /api/v1/posts
 
-Workspace isolation
+7. Create post melalui Public API.
+8. Pastikan post masuk database.
+9. Jika publish dipanggil, pastikan masuk BullMQ.
+10. Pastikan worker memproses job.
+11. Pastikan provider tetap bekerja.
 
+Kemudian:
 
-3.
+12. Revoke API key.
+13. Panggil API lagi.
+14. Pastikan 401.
 
-Correct state machine
+Test workspace isolation jika tersedia.
 
+==================================================
+COMPATIBILITY TEST
+==================================================
 
-4.
+Pastikan setelah implementasi:
 
-Backward compatibility
+    Frontend
+       ↓
+    Existing API
 
+tetap berjalan.
 
-5.
+Dan:
 
-Server authorization
+    Public API
+       ↓
+    New /api/v1
+       ↓
+    Existing domain/service
+       ↓
+    Existing queue/worker/provider
 
+Tidak ada duplicate publishing engine.
 
-6.
+==================================================
+FINAL REPORT
+==================================================
 
-Approval invalidation
+Berikan:
 
+# Public API v1 Implementation Report
 
-7.
+## Status
 
-Publish guard
+    DONE / BLOCKED
 
+## Current API Audit
 
-8.
+Jumlah endpoint dan kategorinya.
 
-Audit history
+## API Key Architecture
 
+Jelaskan:
 
-9.
+    generation
+    storage
+    hashing
+    authentication
+    permissions
+    revocation
 
-Notifications
+## Public API v1
 
+Daftar endpoint final.
 
-10.
+## Authentication
 
-Webhooks
+Cara API key digunakan.
 
+## Permissions
 
-11.
+Daftar permission final.
 
-UI
+## Rate Limit
 
+Implementasi aktual.
 
-12.
+## Idempotency
 
-Dashboard enhancement
+Implementasi aktual.
 
+## Database
 
-Jangan mengorbankan arsitektur existing demi fitur cepat.
+Migration yang dibuat atau:
 
-Audit terlebih dahulu sebelum implementasi.
+    NO DATABASE CHANGE
 
-Gunakan pola existing AutoPost-v1.
+## Files Changed
 
-Implementasikan Phase 16A secara production-oriented,
-minimal,
-aman,
-workspace-aware,
-dan extensible untuk:
+Daftar file aktual.
 
-PHASE 16B
+## Files Created
 
-Content Pipeline / Kanban Workflow
+Daftar file aktual.
+
+## Files Not Modified
+
+Pastikan:
+
+    Master Plan
+    Facebook OAuth
+    Instagram OAuth
+    worker
+    provider publishing
+
+tidak berubah kecuali ada dependency yang dijelaskan.
+
+## Tests
+
+Tampilkan hasil aktual:
+
+    npm run lint
+    npm run typecheck
+    npm test
+    npm run test:integration
+    npm run test:all
+    npm run build
+    git diff --check
+
+## Manual Test
+
+Langkah yang harus dilakukan.
+
+## Environment Variables
+
+Tambahkan hanya yang diperlukan.
+
+Update `.env.example` tanpa secret.
+
+## Security Notes
+
+Ringkas hasil security audit.
+
+## Follow-up
+
+Pisahkan:
+
+    REQUIRED BEFORE PRODUCTION
 
 dan:
 
-PHASE 16C
+    OPTIONAL FUTURE IMPROVEMENTS
 
-Automation Rules Engine.
+Jangan mengerjakan future improvements jika tidak diperlukan untuk MVP.
+
+## Git
+
+Pastikan:
+
+    NO COMMIT
+    NO PUSH
+
+==================================================
+PRINSIP AKHIR
+==================================================
+
+Prioritas:
+
+1. Jangan rusak existing system.
+2. Public API harus versioned.
+3. API key harus aman.
+4. API key harus workspace-scoped.
+5. Permission harus least privilege.
+6. Tidak ada raw secret di database.
+7. Tidak ada secret di logs.
+8. Tidak ada duplicate business logic.
+9. Tidak ada duplicate publishing engine.
+10. Public API menggunakan domain/service existing.
+11. BullMQ dan worker tetap menjadi execution engine.
+12. Facebook OAuth tetap bekerja.
+13. Instagram Standalone OAuth tetap bekerja.
+14. Frontend existing tetap bekerja.
+15. Master Plan tidak disentuh.
+16. Perubahan seminimal mungkin.
+17. Jangan commit/push.

@@ -5,6 +5,7 @@ import { and, asc, desc, eq, exists, gte, inArray, lt, or, sql } from "drizzle-o
 import { db } from "@/lib/db";
 import {
   contentTemplates,
+  campaigns,
   mediaAssets,
   postExecutions,
   postMedia,
@@ -16,18 +17,23 @@ import {
   type Post,
   type PostPlatform,
 } from "@/lib/db/schema";
-import { AppError, humanErrorMessage, isAuthFailure } from "@/lib/errors";
+import { AppError, humanErrorMessage } from "@/lib/errors";
 import { logger } from "@/lib/logger";
+import { measurePerf, perfLoggingEnabled } from "@/lib/perf";
 import { derivePostStatus, type Platform, type PostStatus } from "@/lib/status";
 import { getProvider } from "@/providers/social";
 import { createSignedMediaUrl, removeMediaObject } from "@/lib/storage";
 import { enqueuePublishJob, removePublishJob } from "@/lib/queue/publish";
+import { PUBLISH_QUEUE_NAME } from "@/lib/queue";
 import {
   accountLabelFor,
+  getAccountRecordsForWorkspace,
   getAccountRecord,
   listAccountSummaries,
 } from "@/lib/domain/accounts";
 import { getAnalyticsOverview, getPostAnalyticsDetail } from "@/lib/domain/analytics";
+import { getCampaignPostIntelligence } from "@/lib/domain/campaign-intelligence";
+import { getPostIntelligenceSummary, summaryToCampaignIntelligencePost } from "@/lib/domain/post-intelligence";
 import { MAX_ATTEMPTS } from "@/lib/domain/executions";
 import type {
   DashboardData,
@@ -47,6 +53,7 @@ import { requireWorkspacePermission } from "@/lib/auth/authorization";
 import { hasPermission } from "@/lib/auth/permissions";
 import { notifyContentReviewEvent, notifyPostEvent } from "@/lib/domain/notifications";
 import { emitWebhookEventSafely } from "@/lib/webhooks/events";
+import { logPublishTrace } from "@/lib/publishing/trace";
 
 export type CreatePostMedia = {
   storageKey: string | null;
@@ -66,6 +73,8 @@ export type CreatePostInput = {
   scheduledAt: Date | null;
   media: CreatePostMedia;
   targets: Array<{ platform: Platform; socialAccountId: string }>;
+  campaignId?: string | null;
+  publishTraceId?: string;
 };
 
 export type DraftTargetInput = {
@@ -80,11 +89,13 @@ export type DraftInput = {
   timezone: string;
   media: CreatePostMedia | null;
   targets: DraftTargetInput[];
+  campaignId?: string | null;
 };
 
 export type PublishDraftInput = Omit<DraftInput, "postId"> & {
   postId: string;
   scheduledAt: Date | null;
+  publishTraceId?: string;
 };
 
 function toMediaAsset(media: CreatePostMedia): MediaAsset {
@@ -106,6 +117,26 @@ function assertMediaOwnership(userId: string, media: CreatePostMedia | null): vo
   }
 }
 
+async function resolveCampaignForPost(
+  tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
+  userId: string,
+  workspaceId: string,
+  campaignId: string | null | undefined,
+): Promise<string | null | undefined> {
+  if (campaignId === undefined) return undefined;
+  if (campaignId === null) return null;
+  const authorization = await requireWorkspacePermission(userId, "campaigns:manage_posts", workspaceId);
+  const [campaign] = await tx
+    .select({ id: campaigns.id, status: campaigns.status })
+    .from(campaigns)
+    .where(and(eq(campaigns.id, campaignId), eq(campaigns.workspaceId, workspaceId)))
+    .limit(1);
+  if (!campaign) throw new AppError("not_found", "We couldn't find that campaign.");
+  if (campaign.status !== "draft" && campaign.status !== "active") throw new AppError("conflict", "Only draft or active campaigns can receive posts.");
+  if (!hasPermission(authorization.role, "campaigns:manage_posts")) throw new AppError("forbidden", "You don't have permission to add posts to campaigns.");
+  return campaign.id;
+}
+
 /**
  * Creates the post, its media row and one target per platform, then enqueues
  * one BullMQ job per target. The transaction commits before publishing starts,
@@ -113,8 +144,9 @@ function assertMediaOwnership(userId: string, media: CreatePostMedia | null): vo
  */
 export async function createPost(
   input: CreatePostInput,
+  workspaceIdOverride?: string,
 ): Promise<{ postId: string; status: PostStatus }> {
-  const authorization = await requireWorkspacePermission(input.userId, "posts:create");
+  const authorization = await requireWorkspacePermission(input.userId, "posts:create", workspaceIdOverride);
   const workspaceId = authorization.workspaceId;
   assertMediaOwnership(input.userId, input.media);
   if (input.targets.length === 0) {
@@ -131,8 +163,15 @@ export async function createPost(
 
   const mediaAsset = toMediaAsset(input.media);
 
+  const accounts = await measurePerf("[PERF][db]", "create.accountValidation", () => getAccountRecordsForWorkspace(
+    input.userId,
+    workspaceId,
+    input.targets.map((target) => target.socialAccountId),
+  ), { queryCount: 1 });
+  const accountsById = new Map(accounts.map((account) => [account.id, account]));
+
   for (const target of input.targets) {
-    const account = await getAccountRecord(input.userId, target.socialAccountId);
+    const account = accountsById.get(target.socialAccountId) ?? null;
     if (!account || account.platform !== target.platform) {
       throw new AppError(
         "forbidden",
@@ -167,11 +206,13 @@ export async function createPost(
   const initialStatus: PostStatus = requiresApproval ? "draft" : isScheduled ? "scheduled" : "processing";
 
   const created = await db.transaction(async (tx) => {
+    const campaignId = await resolveCampaignForPost(tx, input.userId, workspaceId, input.campaignId);
     const [post] = await tx
       .insert(posts)
       .values({
         userId: input.userId,
         workspaceId,
+        ...(campaignId === undefined ? {} : { campaignId }),
         contentText: input.contentText,
         timezone: input.timezone,
         scheduledAt: requiresApproval ? null : input.scheduledAt,
@@ -209,6 +250,12 @@ export async function createPost(
     return { postId: post.id, targets };
   });
 
+  logPublishTrace(input.publishTraceId, "POST_CREATED", {
+    postId: created.postId,
+    status: initialStatus,
+    targetCount: created.targets.length,
+  });
+
   // Enqueue outside the transaction: a Redis hiccup must not roll back the post.
   void emitWebhookEventSafely({ workspaceId, type: "post.created", data: { postId: created.postId, status: initialStatus } });
   if (initialStatus === "processing") void emitWebhookEventSafely({ workspaceId, type: "post.publishing", data: { postId: created.postId, status: initialStatus } });
@@ -219,11 +266,26 @@ export async function createPost(
       : 0;
 
     try {
+      logPublishTrace(input.publishTraceId, "QUEUE_ENQUEUE_START", {
+        postId: created.postId,
+        postPlatformId: target.id,
+        attempt: 1,
+        queue: PUBLISH_QUEUE_NAME,
+      });
       const jobId = await enqueuePublishJob({
         postPlatformId: target.id,
         attempt: 1,
         delayMs,
         maxAttempts: MAX_ATTEMPTS,
+        publishTraceId: input.publishTraceId,
+      });
+
+      logPublishTrace(input.publishTraceId, "QUEUE_ENQUEUE_SUCCESS", {
+        postId: created.postId,
+        postPlatformId: target.id,
+        attempt: 1,
+        queue: PUBLISH_QUEUE_NAME,
+        jobId,
       });
 
       if (jobId) {
@@ -233,6 +295,13 @@ export async function createPost(
           .where(eq(postPlatforms.id, target.id));
       }
     } catch (error) {
+      logPublishTrace(input.publishTraceId, "QUEUE_ENQUEUE_FAILED", {
+        postId: created.postId,
+        postPlatformId: target.id,
+        attempt: 1,
+        queue: PUBLISH_QUEUE_NAME,
+        code: "QUEUE_ENQUEUE_FAILED",
+      });
       // Leave the target pending; the worker's recovery sweep picks it up.
       logger.error("enqueue failed", {
         postPlatformId: target.id,
@@ -355,6 +424,7 @@ export async function saveDraft(
   const result = await db.transaction(async (tx) => {
     const [workspace] = await tx.select({ approvalRequired: workspaces.approvalRequired }).from(workspaces).where(eq(workspaces.id, workspaceId)).limit(1);
     if (!workspace) throw new AppError("not_found", "Workspace not found.");
+    const campaignId = await resolveCampaignForPost(tx, input.userId, workspaceId, input.campaignId);
     let postId = input.postId;
     let invalidatedEventId: string | null = null;
     if (postId) {
@@ -388,6 +458,7 @@ export async function saveDraft(
           approvedAt: null,
           lastReviewComment: null,
           cancelledAt: null,
+          ...(campaignId !== undefined ? { campaignId } : {}),
           updatedAt: new Date(),
         })
         .where(eq(posts.id, postId));
@@ -402,6 +473,7 @@ export async function saveDraft(
           scheduledAt: null,
           status: "draft",
           approvalStatus: workspace.approvalRequired ? "draft" : "not_required",
+          campaignId: campaignId ?? null,
         })
         .returning({ id: posts.id });
       postId = created.id;
@@ -518,6 +590,12 @@ export async function publishDraft(
     return { postId: updated.id, targets, oldStorageKeys };
   });
 
+  logPublishTrace(input.publishTraceId, "POST_UPDATED", {
+    postId: result.postId,
+    status: initialStatus,
+    targetCount: result.targets.length,
+  });
+
   await cleanupUnreferencedMedia(input.userId, result.oldStorageKeys);
 
   void emitWebhookEventSafely({ workspaceId, type: "post.publishing", data: { postId: result.postId, status: initialStatus } });
@@ -527,11 +605,25 @@ export async function publishDraft(
       ? Math.max(0, input.scheduledAt.getTime() - Date.now())
       : 0;
     try {
+      logPublishTrace(input.publishTraceId, "QUEUE_ENQUEUE_START", {
+        postId: result.postId,
+        postPlatformId: target.id,
+        attempt: 1,
+        queue: PUBLISH_QUEUE_NAME,
+      });
       const jobId = await enqueuePublishJob({
         postPlatformId: target.id,
         attempt: 1,
         delayMs,
         maxAttempts: MAX_ATTEMPTS,
+        publishTraceId: input.publishTraceId,
+      });
+      logPublishTrace(input.publishTraceId, "QUEUE_ENQUEUE_SUCCESS", {
+        postId: result.postId,
+        postPlatformId: target.id,
+        attempt: 1,
+        queue: PUBLISH_QUEUE_NAME,
+        jobId,
       });
       if (jobId) {
         await db
@@ -540,6 +632,13 @@ export async function publishDraft(
           .where(eq(postPlatforms.id, target.id));
       }
     } catch (error) {
+      logPublishTrace(input.publishTraceId, "QUEUE_ENQUEUE_FAILED", {
+        postId: result.postId,
+        postPlatformId: target.id,
+        attempt: 1,
+        queue: PUBLISH_QUEUE_NAME,
+        code: "QUEUE_ENQUEUE_FAILED",
+      });
       logger.error("draft publish enqueue failed", {
         postPlatformId: target.id,
         error: error instanceof Error ? error.message : String(error),
@@ -605,7 +704,7 @@ async function loadTargets(
   const map = new Map<string, PlatformTarget[]>();
   if (postIds.length === 0) return map;
 
-  const rows = await db
+  const rows = await measurePerf("[PERF][db]", "history.platformTargets", () => db
     .select({
       postId: postPlatforms.postId,
       id: postPlatforms.id,
@@ -620,11 +719,13 @@ async function loadTargets(
       accountDisplayName: socialAccounts.displayName,
       accountPlatform: socialAccounts.platform,
       accountId: socialAccounts.id,
+      accountStatus: socialAccounts.status,
+      accountTokenExpiresAt: socialAccounts.tokenExpiresAt,
     })
     .from(postPlatforms)
     .leftJoin(socialAccounts, eq(socialAccounts.id, postPlatforms.socialAccountId))
     .where(inArray(postPlatforms.postId, postIds))
-    .orderBy(asc(postPlatforms.createdAt));
+    .orderBy(asc(postPlatforms.createdAt)), { queryCount: 1 });
 
   for (const row of rows) {
     const list = map.get(row.postId) ?? [];
@@ -648,8 +749,15 @@ function toPlatformTarget(row: {
   accountDisplayName: string | null;
   accountPlatform: Platform | null;
   accountId: string | null;
+  accountStatus: "active" | "needs_reconnect" | "disconnected" | null;
+  accountTokenExpiresAt: Date | null;
 }): PlatformTarget {
   const errorCode = row.lastErrorCode;
+  const accountNeedsReconnect =
+    row.accountStatus === "needs_reconnect" ||
+    row.accountStatus === "disconnected" ||
+    (row.accountTokenExpiresAt !== null &&
+      row.accountTokenExpiresAt.getTime() <= Date.now());
   return {
     id: row.id,
     platform: row.platform,
@@ -663,7 +771,11 @@ function toPlatformTarget(row: {
         ? humanErrorMessage(row.platform, errorCode)
         : null,
     canRetry: row.status === "failed",
-    needsReconnect: row.status === "failed" && isAuthFailure(errorCode),
+    // `lastErrorCode` describes the previous execution. Whether retry is
+    // currently allowed must follow the account state at read time, so a
+    // successful reconnect does not leave the historical auth error blocking
+    // the button.
+    needsReconnect: row.status === "failed" && accountNeedsReconnect,
     accountLabel: row.accountId
       ? accountLabelFor({
           platform: row.accountPlatform ?? row.platform,
@@ -679,6 +791,7 @@ function toPlatformTarget(row: {
 function toPostSummary(post: Post, targets: PlatformTarget[]): PostSummary {
   return {
     id: post.id,
+    campaignId: post.campaignId,
     contentText: post.contentText,
     status: post.status,
     timezone: post.timezone,
@@ -712,9 +825,14 @@ export async function listScheduledPosts(userId: string): Promise<PostSummary[]>
 export async function listCalendarPosts(
   userId: string,
   range: { start: Date; end: Date },
+  campaignId?: string,
 ): Promise<CalendarPost[]> {
   const workspaceId = await getActiveWorkspaceId(userId);
   if (range.start.getTime() >= range.end.getTime()) return [];
+  if (campaignId) {
+    const [campaign] = await db.select({ id: campaigns.id }).from(campaigns).where(and(eq(campaigns.id, campaignId), eq(campaigns.workspaceId, workspaceId))).limit(1);
+    if (!campaign) throw new AppError("not_found", "We couldn't find that campaign.");
+  }
 
   const rows = await db
     .select()
@@ -723,6 +841,7 @@ export async function listCalendarPosts(
       and(
         eq(posts.userId, userId),
         eq(posts.workspaceId, workspaceId),
+        ...(campaignId ? [eq(posts.campaignId, campaignId)] : []),
         inArray(posts.status, ["scheduled", "processing", "failed", "partial_failure"]),
         gte(posts.scheduledAt, range.start),
         lt(posts.scheduledAt, range.end),
@@ -732,6 +851,14 @@ export async function listCalendarPosts(
     .limit(500);
 
   const summaries = await summarize(rows);
+  const campaignIds = [...new Set(summaries.flatMap((post) => post.campaignId ? [post.campaignId] : []))];
+  const campaignNames = campaignIds.length === 0
+    ? new Map<string, string>()
+    : new Map((await db
+      .select({ id: campaigns.id, name: campaigns.name })
+      .from(campaigns)
+      .where(and(eq(campaigns.workspaceId, workspaceId), inArray(campaigns.id, campaignIds))))
+      .map((campaign) => [campaign.id, campaign.name] as const));
   return summaries.flatMap((post) => {
     if (
       post.status !== "scheduled" &&
@@ -758,6 +885,8 @@ export async function listCalendarPosts(
 
     return [{
       id: post.id,
+      campaignId: post.campaignId,
+      campaignName: post.campaignId ? campaignNames.get(post.campaignId) ?? null : null,
       status: post.status,
       scheduledAt: post.scheduledAt,
       timezone: post.timezone,
@@ -858,7 +987,7 @@ export async function listHistoryPostsPage(
         : posts.createdAt;
   const order = query.sort === "oldest" ? asc(sortColumn) : desc(sortColumn);
 
-  const [countRows, rows] = await Promise.all([
+  const [countRows, rows] = await measurePerf("[PERF][db]", "history.count+rows", () => Promise.all([
     db
       .select({ count: sql<number>`count(*)` })
       .from(posts)
@@ -870,7 +999,7 @@ export async function listHistoryPostsPage(
       .orderBy(order, desc(posts.createdAt))
       .limit(query.pageSize)
       .offset((query.page - 1) * query.pageSize),
-  ]);
+  ]), { queryCount: 2 });
 
   const total = Number(countRows[0]?.count ?? 0);
   const totalPages = Math.max(1, Math.ceil(total / query.pageSize));
@@ -900,40 +1029,50 @@ export async function listHistoryPosts(
   return result.items;
 }
 
-export async function getPostSummary(
+async function loadPostSummary(
   userId: string,
   postId: string,
-): Promise<PostSummary | null> {
+): Promise<{ summary: PostSummary; workspaceId: string } | null> {
   const authorization = await requireWorkspacePermission(userId, "posts:view");
   const workspaceId = authorization.workspaceId;
   const ownerCondition = hasPermission(authorization.role, "content:review") ? eq(posts.workspaceId, workspaceId) : and(eq(posts.userId, userId), eq(posts.workspaceId, workspaceId));
-  const [post] = await db
+  const [post] = await measurePerf("[PERF][db]", "history.detail.summary", () => db
     .select()
     .from(posts)
     .where(and(eq(posts.id, postId), ownerCondition))
-    .limit(1);
+    .limit(1), { queryCount: 1 });
 
   if (!post) return null;
 
   const targets = await loadTargets([post.id]);
-  return toPostSummary(post, targets.get(post.id) ?? []);
+  return { summary: toPostSummary(post, targets.get(post.id) ?? []), workspaceId };
+}
+
+export async function getPostSummary(
+  userId: string,
+  postId: string,
+): Promise<PostSummary | null> {
+  return (await loadPostSummary(userId, postId))?.summary ?? null;
 }
 
 export async function getPostDetail(
   userId: string,
   postId: string,
 ): Promise<PostDetail | null> {
-  const summary = await getPostSummary(userId, postId);
-  if (!summary) return null;
+  const perfStartedAt = Date.now();
+  const loaded = await loadPostSummary(userId, postId);
+  if (!loaded) return null;
+  const { summary, workspaceId } = loaded;
 
-  const [mediaRow] = await db
-    .select()
-    .from(postMedia)
-    .where(eq(postMedia.postId, postId))
-    .limit(1);
+  const mediaPromise = (async (): Promise<MediaSummary | null> => {
+    const [mediaRow] = await measurePerf("[PERF][db]", "history.detail.media", () => db
+      .select()
+      .from(postMedia)
+      .where(eq(postMedia.postId, postId))
+      .limit(1), { queryCount: 1 });
 
-  let media: MediaSummary | null = null;
-  if (mediaRow) {
+    if (!mediaRow) return null;
+
     let previewUrl: string | null = mediaRow.sourceUrl;
     if (!previewUrl && mediaRow.storageKey) {
       try {
@@ -943,7 +1082,7 @@ export async function getPostDetail(
       }
     }
 
-    media = {
+    return {
       id: mediaRow.id,
       mediaType: mediaRow.mediaType,
       mimeType: mediaRow.mimeType,
@@ -955,17 +1094,29 @@ export async function getPostDetail(
       storageKey: mediaRow.storageKey,
       sourceUrl: mediaRow.sourceUrl,
     };
-  }
+  })();
 
-  const executions = await db
+  const executionsPromise = measurePerf("[PERF][db]", "history.detail.executions", () => db
     .select()
     .from(postExecutions)
     .innerJoin(postPlatforms, eq(postPlatforms.id, postExecutions.postPlatformId))
     .where(eq(postPlatforms.postId, postId))
-    .orderBy(asc(postExecutions.attemptNumber));
-  const analytics = await getPostAnalyticsDetail(userId, postId);
+    .orderBy(asc(postExecutions.attemptNumber)), { queryCount: 1 });
+  const analyticsPromise = getPostAnalyticsDetail(userId, postId, workspaceId);
+  const campaignIntelligencePromise = summary.campaignId
+    ? getPostIntelligenceSummary(userId, summary.campaignId, postId, workspaceId)
+      .then((derived) => derived ? summaryToCampaignIntelligencePost(derived) : getCampaignPostIntelligence(userId, summary.campaignId!, postId))
+      .catch(() => null)
+    : Promise.resolve(null);
 
-  return {
+  const [media, executions, analytics, campaignIntelligence] = await Promise.all([
+    mediaPromise,
+    executionsPromise,
+    analyticsPromise,
+    campaignIntelligencePromise,
+  ]);
+
+  const detail = {
     ...summary,
     media,
     executions: executions.map((row) => ({
@@ -985,7 +1136,18 @@ export async function getPostDetail(
       executedAt: row.post_executions.executedAt,
     })),
     analytics,
+    campaignIntelligence,
   };
+
+  if (perfLoggingEnabled()) {
+    logger.info("[PERF][history-detail]", {
+      durationMs: Date.now() - perfStartedAt,
+      targetCount: detail.platforms.length,
+      hasCampaign: Boolean(detail.campaignId),
+    });
+  }
+
+  return detail;
 }
 
 export async function getDashboardData(userId: string): Promise<DashboardData> {
@@ -1245,13 +1407,6 @@ export async function retryPlatform(
       throw new AppError(
         "validation_failed",
         humanErrorMessage(row.platform, "token_expired"),
-      );
-    }
-
-    if (row.lastErrorCode && isAuthFailure(row.lastErrorCode)) {
-      throw new AppError(
-        "validation_failed",
-        humanErrorMessage(row.platform, "account_needs_reconnect"),
       );
     }
 

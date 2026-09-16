@@ -19,6 +19,7 @@ import {
 } from "@/lib/db/schema";
 import { AppError } from "@/lib/errors";
 import { notifyInvitationReceived, notifyWorkspaceMemberEvent } from "@/lib/domain/notifications";
+import { unassignReviewerForMember } from "@/lib/domain/reviews";
 import { emitWebhookEventSafely } from "@/lib/webhooks/events";
 import { logger } from "@/lib/logger";
 
@@ -38,6 +39,7 @@ export type InvitationSummary = {
 
 export type WorkspaceMemberSummary = {
   id: string;
+  userId: string;
   displayName: string;
   role: WorkspaceRole;
   status: "active";
@@ -353,6 +355,7 @@ export async function listWorkspaceMembers(userId: string): Promise<WorkspaceMem
 
   return rows.map((row) => ({
     id: row.id,
+    userId: row.userId,
     displayName: row.displayName?.trim() || "Workspace member",
     role: row.role,
     status: "active",
@@ -497,6 +500,7 @@ export async function updateWorkspaceMemberRole(
     )
     .returning({ id: workspaceMembers.id, role: workspaceMembers.role });
   if (!updated) throw new AppError("conflict", "This member changed before your update.");
+  if (role !== "admin") await unassignReviewerForMember(authorization.workspaceId, target.userId, userId);
   void emitWebhookEventSafely({ workspaceId: authorization.workspaceId, type: "workspace.member_role_changed", data: { memberId: target.userId, oldRole: target.role, newRole: updated.role } });
   return { id: updated.id, role: updated.role as InvitableWorkspaceRole };
 }
@@ -530,5 +534,6 @@ export async function removeWorkspaceMember(userId: string, memberId: string): P
         eq(workspaceMembers.workspaceId, authorization.workspaceId),
       ),
     );
+  await unassignReviewerForMember(authorization.workspaceId, target.userId, userId);
   void emitWebhookEventSafely({ workspaceId: authorization.workspaceId, type: "workspace.member_removed", data: { memberId: target.userId } });
 }

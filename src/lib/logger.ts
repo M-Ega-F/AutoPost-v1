@@ -3,6 +3,9 @@ const SENSITIVE_KEY_PATTERN =
 
 const BEARER_PATTERN = /(bearer\s+)[A-Za-z0-9._~+/=-]+/gi;
 
+const QUERY_SECRET_PATTERN =
+  /((?:^|[?&\s])(?:access_token|refresh_token|client_secret|appsecret_proof|api[-_]?key)=)[^&#\s]+/gi;
+
 const LONG_SECRET_PATTERN =
   /\b(?:EAA[A-Za-z0-9]{20,}|[A-Za-z0-9_-]{40,}\.[A-Za-z0-9_-]{10,})\b/g;
 
@@ -11,6 +14,7 @@ const REDACTED = "[redacted]";
 function redactString(value: string): string {
   return value
     .replace(BEARER_PATTERN, `$1${REDACTED}`)
+    .replace(QUERY_SECRET_PATTERN, `$1${REDACTED}`)
     .replace(LONG_SECRET_PATTERN, REDACTED);
 }
 

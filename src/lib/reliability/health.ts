@@ -8,7 +8,9 @@ import { db, postPlatforms, posts } from "@/lib/db";
 import { logger } from "@/lib/logger";
 import {
   getAnalyticsQueue,
+  getCampaignAutomationQueue,
   getPublishQueue,
+  getReviewAutomationQueue,
   getWebhookQueue,
   getRedisClient,
 } from "@/lib/queue";
@@ -32,7 +34,7 @@ export type ReliabilityJobKind = "failed" | "stuck";
 
 export type ReliabilityJob = {
   kind: ReliabilityJobKind;
-  queue: "publishing" | "analytics" | "webhooks";
+  queue: "publishing" | "analytics" | "webhooks" | "reviewAutomation" | "campaignAutomation";
   platform: string | null;
   attemptsMade: number;
   maxAttempts: number;
@@ -42,7 +44,7 @@ export type ReliabilityJob = {
 };
 
 export type QueueHealth = {
-  name: "publishing" | "analytics" | "webhooks";
+  name: "publishing" | "analytics" | "webhooks" | "reviewAutomation" | "campaignAutomation";
   status: HealthStatus;
   counts: {
     waiting: number | null;
@@ -75,11 +77,18 @@ export type ReliabilitySnapshot = {
     activeCount: number;
     staleCount: number;
     lastSeenAt: string | null;
+    metrics: {
+      evaluationsProcessed: number;
+      evaluationFailures: number;
+      lastEvaluationAt: string | null;
+    };
   };
   queues: {
     publishing: QueueHealth;
     analytics: QueueHealth;
     webhooks: QueueHealth;
+    reviewAutomation: QueueHealth;
+    campaignAutomation: QueueHealth;
   };
   attention: {
     failedCount: number;
@@ -89,7 +98,7 @@ export type ReliabilitySnapshot = {
   jobs: ReliabilityJob[];
 };
 
-type QueueKey = "publishing" | "analytics" | "webhooks";
+type QueueKey = "publishing" | "analytics" | "webhooks" | "reviewAutomation" | "campaignAutomation";
 type ReliabilityState = "failed" | "active" | "waiting" | "delayed";
 type ObservedJob = Job<Record<string, unknown>>;
 
@@ -318,6 +327,9 @@ function publicQueue(raw: RawQueueHealth, visibleJobs: ReliabilityJob[], now: nu
 type WorkerHeartbeat = {
   workerId: string;
   lastSeenAt: number;
+  evaluationsProcessed: number;
+  evaluationFailures: number;
+  lastEvaluationAt: number | null;
 };
 
 function workerKey(workerId: string): string {
@@ -331,11 +343,12 @@ export function createWorkerHeartbeat(options: {
   startedAt?: number;
   intervalMs?: number;
   onError?: (error: unknown) => void;
-}): { start: () => void; stop: () => Promise<void> } {
+}): { start: () => void; update: (next: { evaluationsProcessed?: number; evaluationFailures?: number; lastEvaluationAt?: number }) => void; stop: () => Promise<void> } {
   const startedAt = options.startedAt ?? Date.now();
   const intervalMs = options.intervalMs ?? Math.floor(RELIABILITY_THRESHOLDS.workerStaleMs / 3);
   let timer: NodeJS.Timeout | undefined;
   let stopped = false;
+  const metrics = { evaluationsProcessed: 0, evaluationFailures: 0, lastEvaluationAt: 0 };
 
   const beat = async (): Promise<void> => {
     if (stopped) return;
@@ -354,6 +367,12 @@ export function createWorkerHeartbeat(options: {
         String(startedAt),
         "lastSeenAt",
         String(lastSeenAt),
+        "evaluationsProcessed",
+        String(metrics.evaluationsProcessed),
+        "evaluationFailures",
+        String(metrics.evaluationFailures),
+        "lastEvaluationAt",
+        String(metrics.lastEvaluationAt),
       );
       await options.client.expire(key, RELIABILITY_THRESHOLDS.heartbeatTtlSeconds);
     } catch (error) {
@@ -367,6 +386,10 @@ export function createWorkerHeartbeat(options: {
       void beat();
       timer = setInterval(() => void beat(), intervalMs);
       timer.unref();
+    },
+    update: (next: Partial<typeof metrics>) => {
+      Object.assign(metrics, next);
+      void beat();
     },
     stop: async () => {
       stopped = true;
@@ -393,7 +416,7 @@ async function workerHealth(client: IORedis, now: number): Promise<ReliabilitySn
     } while (cursor !== "0");
 
     if (keys.length === 0) {
-      return { status: "offline", activeCount: 0, staleCount: 0, lastSeenAt: null };
+      return { status: "offline", activeCount: 0, staleCount: 0, lastSeenAt: null, metrics: { evaluationsProcessed: 0, evaluationFailures: 0, lastEvaluationAt: null } };
     }
 
     // The pipeline is intentionally bounded by the key set returned by SCAN;
@@ -407,19 +430,21 @@ async function workerHealth(client: IORedis, now: number): Promise<ReliabilitySn
       if (!value || typeof value !== "object") continue;
       const record = value as Record<string, string>;
       const lastSeenAt = Number(record.lastSeenAt);
-      if (record.workerId && Number.isFinite(lastSeenAt)) records.push({ workerId: record.workerId, lastSeenAt });
+      if (record.workerId && Number.isFinite(lastSeenAt)) records.push({ workerId: record.workerId, lastSeenAt, evaluationsProcessed: count(record.evaluationsProcessed) ?? 0, evaluationFailures: count(record.evaluationFailures) ?? 0, lastEvaluationAt: count(record.lastEvaluationAt) || null });
     }
     const active = records.filter((record) => now - record.lastSeenAt < RELIABILITY_THRESHOLDS.workerStaleMs);
     const lastSeenAt = records.reduce<number | null>((latest, record) => latest === null ? record.lastSeenAt : Math.max(latest, record.lastSeenAt), null);
+    const latestEvaluationAt = records.reduce<number | null>((latest, record) => record.lastEvaluationAt === null ? latest : latest === null ? record.lastEvaluationAt : Math.max(latest, record.lastEvaluationAt), null);
     return {
       status: active.length > 0 ? "healthy" : "degraded",
       activeCount: active.length,
       staleCount: records.length - active.length,
       lastSeenAt: lastSeenAt === null ? null : new Date(lastSeenAt).toISOString(),
+      metrics: { evaluationsProcessed: records.reduce((sum, record) => sum + record.evaluationsProcessed, 0), evaluationFailures: records.reduce((sum, record) => sum + record.evaluationFailures, 0), lastEvaluationAt: latestEvaluationAt === null ? null : new Date(latestEvaluationAt).toISOString() },
     };
   } catch (error) {
     logger.warn("reliability worker inspection failed", { error: error instanceof Error ? error.message : String(error) });
-    return { status: "offline", activeCount: 0, staleCount: 0, lastSeenAt: null };
+    return { status: "offline", activeCount: 0, staleCount: 0, lastSeenAt: null, metrics: { evaluationsProcessed: 0, evaluationFailures: 0, lastEvaluationAt: null } };
   }
 }
 
@@ -455,20 +480,22 @@ export async function getReliabilitySnapshot(workspaceId: string, now = Date.now
       checkedAt,
       overall: "offline",
       redis: { status: redis.status, latencyMs: redis.latencyMs },
-      worker: { status: "offline", activeCount: 0, staleCount: 0, lastSeenAt: null },
-      queues: { publishing: emptyQueue("publishing"), analytics: emptyQueue("analytics"), webhooks: emptyQueue("webhooks") },
+      worker: { status: "offline", activeCount: 0, staleCount: 0, lastSeenAt: null, metrics: { evaluationsProcessed: 0, evaluationFailures: 0, lastEvaluationAt: null } },
+      queues: { publishing: emptyQueue("publishing"), analytics: emptyQueue("analytics"), webhooks: emptyQueue("webhooks"), reviewAutomation: emptyQueue("reviewAutomation"), campaignAutomation: emptyQueue("campaignAutomation") },
       attention: { failedCount: 0, stuckCount: 0, finalFailureCount: 0 },
       jobs: [],
     };
   }
 
-  const [publishingRaw, analyticsRaw, webhooksRaw, worker] = await Promise.all([
+  const [publishingRaw, analyticsRaw, webhooksRaw, reviewAutomationRaw, campaignAutomationRaw, worker] = await Promise.all([
     collectQueue(getPublishQueue(), "publishing", now),
     collectQueue(getAnalyticsQueue(), "analytics", now),
     collectQueue(getWebhookQueue(), "webhooks", now),
+    collectQueue(getReviewAutomationQueue(), "reviewAutomation", now),
+    collectQueue(getCampaignAutomationQueue(), "campaignAutomation", now),
     workerHealth(redis.client, now),
   ]);
-  const allObservations = [...publishingRaw.jobs, ...analyticsRaw.jobs, ...webhooksRaw.jobs];
+  const allObservations = [...publishingRaw.jobs, ...analyticsRaw.jobs, ...webhooksRaw.jobs, ...reviewAutomationRaw.jobs, ...campaignAutomationRaw.jobs];
   const platforms = await visiblePlatforms(
     workspaceId,
     allObservations.map((job) => job.targetId).filter((id): id is string => Boolean(id)),
@@ -482,13 +509,15 @@ export async function getReliabilitySnapshot(workspaceId: string, now = Date.now
     publishing: publicQueue(publishingRaw, jobs.filter((job) => job.queue === "publishing"), now),
     analytics: publicQueue(analyticsRaw, jobs.filter((job) => job.queue === "analytics"), now),
     webhooks: publicQueue(webhooksRaw, jobs.filter((job) => job.queue === "webhooks"), now),
+    reviewAutomation: publicQueue(reviewAutomationRaw, jobs.filter((job) => job.queue === "reviewAutomation"), now),
+    campaignAutomation: publicQueue(campaignAutomationRaw, jobs.filter((job) => job.queue === "campaignAutomation"), now),
   };
   const attention = {
     failedCount: jobs.filter((job) => job.kind === "failed").length,
     stuckCount: jobs.filter((job) => job.kind === "stuck").length,
     finalFailureCount: jobs.filter((job) => job.finalFailure).length,
   };
-  const overall: HealthStatus = worker.status !== "healthy" || queues.publishing.status !== "healthy" || queues.analytics.status !== "healthy" || queues.webhooks.status !== "healthy"
+  const overall: HealthStatus = worker.status !== "healthy" || queues.publishing.status !== "healthy" || queues.analytics.status !== "healthy" || queues.webhooks.status !== "healthy" || queues.reviewAutomation.status !== "healthy" || queues.campaignAutomation.status !== "healthy"
     ? "degraded"
     : "healthy";
   return { checkedAt, overall, redis: { status: redis.status, latencyMs: redis.latencyMs }, worker, queues, attention, jobs };

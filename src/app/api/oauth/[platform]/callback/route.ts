@@ -15,7 +15,7 @@ import { verifyOAuthState } from "@/providers/social/http";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-type OAuthErrorCode = "denied" | "not_configured" | "token" | "unknown";
+type OAuthErrorCode = "denied" | "no_pages" | "not_configured" | "token" | "unknown";
 
 function isPlatform(value: string): value is Platform {
   return (PLATFORMS as readonly string[]).includes(value);
@@ -128,7 +128,11 @@ export async function GET(
   }
 
   const expectedState = request.cookies.get(`oauth_state_${platform}`)?.value;
-  if (!expectedState || expectedState !== state) {
+  // The cookie stores the original opaque state. Providers receive a signed
+  // payload that carries that value in `sid`, so compare the verified payload
+  // instead of comparing the raw cookie with the encoded signed state.
+  const signedState = verifyOAuthState(state);
+  if (!expectedState || !signedState || signedState.sid !== expectedState) {
     logger.warn("oauth callback rejected: state mismatch", { platform });
     return errorRedirect(origin, platform, "denied");
   }
@@ -139,7 +143,6 @@ export async function GET(
   ).toString();
 
   try {
-    const signedState = verifyOAuthState(state);
     if (
       !signedState ||
       signedState.userId !== userId ||
@@ -161,7 +164,8 @@ export async function GET(
     const saved = await saveConnectedAccounts(userId, drafts, signedState.workspaceId);
 
     if (saved.length === 0) {
-      return errorRedirect(origin, platform, "denied");
+      logger.warn("oauth callback returned no publishable accounts", { platform });
+      return errorRedirect(origin, platform, "no_pages");
     }
 
     return successRedirect(origin, platform, saved);

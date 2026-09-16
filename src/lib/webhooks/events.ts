@@ -20,8 +20,8 @@ export function isWebhookEventType(value: unknown): value is WebhookEventType {
 function safeData(data: Record<string, unknown>): Record<string, unknown> {
   const allowed = new Set([
     "postId", "status", "platform", "publishedAt", "scheduledAt", "failureReason",
-    "accountId", "memberId", "oldRole", "newRole", "invitationId", "analyticsSnapshotId",
-    "webhookId", "reason", "actorId", "reviewStatus", "reviewEventId",
+    "accountId", "memberId", "oldRole", "newRole", "invitationId", "analyticsSnapshotId", "optimizationActionId", "experimentId", "resultId", "winnerVariantId",
+    "webhookId", "reason", "actorId", "reviewStatus", "reviewEventId", "reviewerId", "reviewDueAt", "commentId", "automationEvent", "campaignId", "campaignName", "campaignStatus", "campaignObjective", "eventType", "state", "milestone", "metric", "targetValue", "currentValue", "progressPercent", "severity", "daysRemaining", "intelligenceType", "recommendationType", "underperformingCount", "topPerformerId", "dataQuality", "confidence", "statisticalStatus", "uplift", "sampleSize", "evaluatedAt",
   ]);
   const result: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(data)) {

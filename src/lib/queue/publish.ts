@@ -9,10 +9,13 @@ import { getPublishQueue } from "@/lib/queue";
 export type PublishJobData = {
   postPlatformId: string;
   attempt: number;
+  publishTraceId?: string;
 };
 
 export function publishJobId(postPlatformId: string, attempt: number): string {
-  return `${postPlatformId}:${attempt}`;
+  // BullMQ 5.81.4 reserves colon-delimited custom IDs for repeatable-job
+  // formats. Keep this deterministic per target/attempt without a colon.
+  return `${postPlatformId}-${attempt}`;
 }
 
 export type EnqueueInput = {
@@ -21,6 +24,7 @@ export type EnqueueInput = {
   /** Milliseconds to wait before the job becomes visible. */
   delayMs?: number;
   maxAttempts?: number;
+  publishTraceId?: string;
 };
 
 export async function enqueuePublishJob(
@@ -39,7 +43,11 @@ export async function enqueuePublishJob(
 
   const job = await queue.add(
     "publish",
-    { postPlatformId: input.postPlatformId, attempt: input.attempt },
+    {
+      postPlatformId: input.postPlatformId,
+      attempt: input.attempt,
+      ...(input.publishTraceId ? { publishTraceId: input.publishTraceId } : {}),
+    },
     {
       jobId: publishJobId(input.postPlatformId, input.attempt),
       ...options,

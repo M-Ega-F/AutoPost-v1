@@ -2,6 +2,7 @@ import { getUserId } from "@/lib/auth/server";
 import { apiError, apiErrorFromUnknown, apiSuccess, apiValidationError } from "@/lib/api/response";
 import { savePostAsTemplateForUser } from "@/lib/domain/reuse";
 import { logger } from "@/lib/logger";
+import { withPerfRequest } from "@/lib/perf";
 import { consumeRateLimit } from "@/lib/rate-limit";
 import { saveAsTemplateSchema } from "@/lib/validation/schemas";
 
@@ -9,6 +10,10 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }): Promise<Response> {
+  return withPerfRequest("POST /api/posts/:id/save-as-template", () => saveAsTemplateRoute(request, params));
+}
+
+async function saveAsTemplateRoute(request: Request, params: Promise<{ id: string }>): Promise<Response> {
   const userId = await getUserId();
   const { id } = await params;
   if (!userId) return apiError({ status: 401, code: "UNAUTHORIZED", message: "Please log in to continue." });

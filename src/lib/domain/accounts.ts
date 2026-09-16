@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, ne } from "drizzle-orm";
 
 import { decryptSecret, encryptSecret } from "@/lib/crypto/tokens";
 import { db } from "@/lib/db";
@@ -21,6 +21,7 @@ import { removePublishJob } from "@/lib/queue/publish";
 import { derivePostStatus } from "@/lib/status";
 import { AppError, humanErrorMessage } from "@/lib/errors";
 import { logger } from "@/lib/logger";
+import { measurePerf } from "@/lib/perf";
 import { platformCapabilitiesFor } from "@/lib/platform-capabilities";
 import { getActiveWorkspaceId } from "@/lib/domain/workspaces";
 import { requireWorkspacePermission } from "@/lib/auth/authorization";
@@ -66,10 +67,15 @@ export async function listAccountSummaries(
   userId: string,
 ): Promise<AccountSummary[]> {
   const workspaceId = await getActiveWorkspaceId(userId);
-  const rows = await db
-    .select()
-    .from(socialAccounts)
-    .where(and(eq(socialAccounts.userId, userId), eq(socialAccounts.workspaceId, workspaceId)));
+  const rows = await measurePerf(
+    "[PERF][db]",
+    "accounts.summaries",
+    () => db
+      .select()
+      .from(socialAccounts)
+      .where(and(eq(socialAccounts.userId, userId), eq(socialAccounts.workspaceId, workspaceId))),
+    { queryCount: 1 },
+  );
 
   const byPlatform = new Map<Platform, SocialAccountRecord>();
   for (const row of rows) {
@@ -117,16 +123,54 @@ export async function listAccountSummaries(
 
 export async function listActiveAccounts(userId: string) {
   const workspaceId = await getActiveWorkspaceId(userId);
-  const rows = await db
-    .select()
-    .from(socialAccounts)
-    .where(
-      and(
-        eq(socialAccounts.userId, userId),
-        eq(socialAccounts.workspaceId, workspaceId),
-        eq(socialAccounts.status, "active"),
+  return listActiveAccountsForWorkspace(userId, workspaceId);
+}
+
+export async function listActiveAccountsForWorkspace(
+  userId: string,
+  workspaceId: string,
+) {
+  const rows = await measurePerf(
+    "[PERF][db]",
+    "accounts.active",
+    () => db
+      .select()
+      .from(socialAccounts)
+      .where(
+        and(
+          eq(socialAccounts.userId, userId),
+          eq(socialAccounts.workspaceId, workspaceId),
+          eq(socialAccounts.status, "active"),
+        ),
       ),
-    );
+    { queryCount: 1 },
+  );
+  return rows.map(toRecord);
+}
+
+export async function getAccountRecordsForWorkspace(
+  userId: string,
+  workspaceId: string,
+  accountIds: readonly string[],
+): Promise<SocialAccountRecord[]> {
+  if (accountIds.length === 0) return [];
+
+  const rows = await measurePerf(
+    "[PERF][db]",
+    "accounts.validation",
+    () => db
+      .select()
+      .from(socialAccounts)
+      .where(
+        and(
+          eq(socialAccounts.userId, userId),
+          eq(socialAccounts.workspaceId, workspaceId),
+          inArray(socialAccounts.id, accountIds),
+        ),
+      ),
+    { queryCount: 1 },
+  );
+
   return rows.map(toRecord);
 }
 
@@ -278,7 +322,13 @@ export async function listAccountManagementSummaries(
   const rows = await db
     .select()
     .from(socialAccounts)
-    .where(and(eq(socialAccounts.userId, userId), eq(socialAccounts.workspaceId, workspaceId)));
+    .where(
+      and(
+        eq(socialAccounts.userId, userId),
+        eq(socialAccounts.workspaceId, workspaceId),
+        ne(socialAccounts.status, "disconnected"),
+      ),
+    );
   const usage = await usageForAccounts(
     rows.map((row) => row.id),
     userId,
@@ -376,6 +426,9 @@ export async function saveConnectedAccounts(
       )
       .limit(1);
 
+    let accountId = existing[0]?.id ?? null;
+    const encryptedAccessToken = encryptSecret(draft.accessToken);
+
     const values = {
       userId,
       workspaceId: resolvedWorkspaceId,
@@ -384,7 +437,7 @@ export async function saveConnectedAccounts(
       username: draft.username ?? null,
       displayName: draft.displayName ?? null,
       avatarUrl: draft.avatarUrl ?? null,
-      encryptedAccessToken: encryptSecret(draft.accessToken),
+      encryptedAccessToken,
       encryptedRefreshToken: draft.refreshToken
         ? encryptSecret(draft.refreshToken)
         : null,
@@ -398,7 +451,6 @@ export async function saveConnectedAccounts(
       updatedAt: new Date(),
     };
 
-    let accountId = existing[0]?.id ?? null;
     if (existing.length > 0) {
       await db
         .update(socialAccounts)
@@ -466,6 +518,8 @@ export async function markAccountNeedsReconnect(
 /**
  * Removes the link between the app and the account: drops the stored tokens,
  * fails any pending targets that pointed at it, and removes their queue jobs.
+ * Unreferenced accounts are deleted; referenced accounts remain as tokenless
+ * tombstones so historical targets keep their foreign-key relationship.
  */
 export async function disconnectAccount(
   userId: string,
@@ -474,6 +528,7 @@ export async function disconnectAccount(
   await requireWorkspacePermission(userId, "accounts:disconnect");
   const workspaceId = await getActiveWorkspaceId(userId);
   const jobIds: Array<string | null> = [];
+  let accountDeleted = false;
 
   await db.transaction(async (tx) => {
     const [account] = await tx
@@ -508,17 +563,6 @@ export async function disconnectAccount(
       );
     }
 
-    await tx
-      .update(socialAccounts)
-      .set({
-        status: "disconnected",
-        encryptedAccessToken: "",
-        encryptedRefreshToken: null,
-        tokenExpiresAt: null,
-        updatedAt: new Date(),
-      })
-      .where(eq(socialAccounts.id, accountId));
-
     const pending = await tx
       .select({ id: postPlatforms.id, postId: postPlatforms.postId, jobId: postPlatforms.bullmqJobId })
       .from(postPlatforms)
@@ -532,51 +576,85 @@ export async function disconnectAccount(
         ),
       );
 
-    if (pending.length === 0) return;
-
-    const postIds = new Set(pending.map((row) => row.postId));
-    jobIds.push(...pending.map((row) => row.jobId));
-
-    await tx
-      .update(postPlatforms)
-      .set({
-        status: "failed",
-        lastErrorCode: "account_disconnected",
-        lastErrorMessage: humanErrorMessage(account.platform, "account_disconnected"),
-        bullmqJobId: null,
-        updatedAt: new Date(),
-      })
-      .where(
-        and(
-          inArray(postPlatforms.id, pending.map((row) => row.id)),
-          eq(postPlatforms.status, "pending"),
-        ),
-      );
-
-    for (const postId of postIds) {
-      const targets = await tx
-        .select({ status: postPlatforms.status })
-        .from(postPlatforms)
-        .where(eq(postPlatforms.postId, postId));
-
-      const next = derivePostStatus(
-        targets.map((row) => row.status),
-        { scheduled: false },
-      );
+    if (pending.length > 0) {
+      const postIds = new Set(pending.map((row) => row.postId));
+      jobIds.push(...pending.map((row) => row.jobId));
 
       await tx
-        .update(posts)
-        .set({ status: next, updatedAt: new Date() })
-        .where(eq(posts.id, postId));
+        .update(postPlatforms)
+        .set({
+          status: "failed",
+          lastErrorCode: "account_disconnected",
+          lastErrorMessage: humanErrorMessage(account.platform, "account_disconnected"),
+          bullmqJobId: null,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            inArray(postPlatforms.id, pending.map((row) => row.id)),
+            eq(postPlatforms.status, "pending"),
+          ),
+        );
+
+      for (const postId of postIds) {
+        const targets = await tx
+          .select({ status: postPlatforms.status })
+          .from(postPlatforms)
+          .where(eq(postPlatforms.postId, postId));
+
+        const next = derivePostStatus(
+          targets.map((row) => row.status),
+          { scheduled: false },
+        );
+
+        await tx
+          .update(posts)
+          .set({ status: next, updatedAt: new Date() })
+          .where(eq(posts.id, postId));
+      }
+    }
+
+    // Keep historical targets intact. A referenced account becomes a
+    // tokenless tombstone; an account with no targets can be removed fully.
+    const [reference] = await tx
+      .select({ id: postPlatforms.id })
+      .from(postPlatforms)
+      .where(eq(postPlatforms.socialAccountId, accountId))
+      .limit(1);
+
+    if (reference) {
+      await tx
+        .update(socialAccounts)
+        .set({
+          status: "disconnected",
+          encryptedAccessToken: "",
+          encryptedRefreshToken: null,
+          tokenExpiresAt: null,
+          updatedAt: new Date(),
+        })
+        .where(eq(socialAccounts.id, accountId));
+    } else {
+      await tx
+        .delete(socialAccounts)
+        .where(
+          and(
+            eq(socialAccounts.id, accountId),
+            eq(socialAccounts.userId, userId),
+            eq(socialAccounts.workspaceId, workspaceId),
+          ),
+        );
+      accountDeleted = true;
     }
   });
 
   for (const jobId of jobIds) {
     await removePublishJob(jobId);
   }
-  await notifyAccountEvent(accountId, "ACCOUNT_DISCONNECTED").catch((error) => {
-    logger.warn("account disconnect notification failed", { accountId, error: error instanceof Error ? error.message : String(error) });
-  });
+  if (!accountDeleted) {
+    await notifyAccountEvent(accountId, "ACCOUNT_DISCONNECTED").catch((error) => {
+      logger.warn("account disconnect notification failed", { accountId, error: error instanceof Error ? error.message : String(error) });
+    });
+  }
 }
 
 export async function markAccountValidated(

@@ -185,6 +185,7 @@ export function CreatePostForm({
   defaultTimezone,
   defaultScheduleTime = "09:00",
   initialMedia,
+  campaignId,
   mode = "create",
   draft,
 }: {
@@ -192,6 +193,7 @@ export function CreatePostForm({
   defaultTimezone: string;
   defaultScheduleTime?: string;
   initialMedia?: MediaAssetSummary | null;
+  campaignId?: string | null;
   mode?: "create" | "draft";
   draft?: DraftDetail;
 }) {
@@ -476,6 +478,7 @@ export function CreatePostForm({
           media: toMediaPayload(postMedia, postMedia.storageKey),
           platforms: values.platforms,
           schedule,
+          campaignId,
         };
         const result = mode === "draft" && draft
           ? await publishDraftAction(draft.id, payload)
@@ -566,6 +569,7 @@ export function CreatePostForm({
       resetUploader,
       router,
       setValue,
+      campaignId,
     ],
   );
 
@@ -601,6 +605,7 @@ export function CreatePostForm({
         media: media ? toMediaPayload(media, media.storageKey) : null,
         platforms: parsed.data.platforms,
         timezone: draft?.timezone ?? defaultTimezone,
+        campaignId,
       });
 
       if (!result.ok) {
@@ -615,7 +620,7 @@ export function CreatePostForm({
       setPendingAction(null);
       router.push(`/drafts/${result.postId}`);
     });
-  }, [defaultTimezone, draft, getValues, persistPendingMedia, router, setValue]);
+  }, [campaignId, defaultTimezone, draft, getValues, persistPendingMedia, router, setValue]);
 
   const cancelSubmit = useCallback(() => {
     if (!isPending && pendingAction === null) return;

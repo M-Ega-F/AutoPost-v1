@@ -2,6 +2,7 @@ import "server-only";
 
 import { decryptSecret } from "@/lib/crypto/tokens";
 import { serverConfig } from "@/lib/env";
+import { logger } from "@/lib/logger";
 import {
   humanErrorMessage,
   isAuthFailure,
@@ -37,12 +38,14 @@ import {
   publishPagePhoto,
   publishPageVideo,
   toContainerStatus,
+  type InstagramAuthSource,
   type InstagramContainerStatus,
 } from "./graph";
 import {
   exchangeCodeForToken,
   exchangeForLongLivedToken,
-  fetchUserPages,
+  fetchInstagramLoginIdentity,
+  fetchFacebookPages,
   metaAuthorizationUrl,
   metaScopesFor,
   readMetaState,
@@ -76,6 +79,15 @@ function pageIdOf(account: SocialAccountRecord): string {
     : account.platformAccountId;
 }
 
+function instagramAuthSourceOf(
+  account: SocialAccountRecord,
+): InstagramAuthSource | undefined {
+  const authSource = metadataOf(account).authSource;
+  return authSource === "instagram_login" || authSource === "facebook_login"
+    ? authSource
+    : undefined;
+}
+
 function accountToken(account: SocialAccountRecord): string {
   if (!account.encryptedAccessToken) {
     throw new ProviderError({
@@ -104,6 +116,7 @@ async function waitForContainer(
   token: string,
   containerId: string,
   platform: Platform,
+  authSource?: InstagramAuthSource,
 ): Promise<InstagramContainerStatus> {
   let status: InstagramContainerStatus = "UNKNOWN";
 
@@ -113,6 +126,7 @@ async function waitForContainer(
     const { data } = await getInstagramContainerStatus({
       token,
       platform,
+      authSource,
       containerId,
     });
 
@@ -148,12 +162,14 @@ async function publishToInstagram(
 ): Promise<PublishResult> {
   const platform = input.account.platform;
   const igUserId = igUserIdOf(input.account);
+  const authSource = instagramAuthSourceOf(input.account);
   const mediaUrl = await input.resolveMediaUrl(input.media);
 
   const container = await createInstagramContainer({
     igUserId,
     token: input.accessToken,
     platform,
+    authSource,
     mediaType: instagramMediaType(input.media),
     mediaUrl,
     caption: input.caption,
@@ -174,6 +190,7 @@ async function publishToInstagram(
     input.accessToken,
     creationId,
     platform,
+    authSource,
   );
 
   if (status === "ERROR" || status === "EXPIRED") {
@@ -203,6 +220,7 @@ async function publishToInstagram(
     igUserId,
     token: input.accessToken,
     platform,
+    authSource,
     creationId,
   });
 
@@ -330,6 +348,7 @@ async function checkInstagramStatus(
   const { data, responseLog } = await getInstagramContainerStatus({
     token: input.accessToken,
     platform,
+    authSource: instagramAuthSourceOf(input.account),
     containerId,
   });
 
@@ -356,6 +375,7 @@ async function checkInstagramStatus(
     igUserId: igUserIdOf(input.account),
     token: input.accessToken,
     platform,
+    authSource: instagramAuthSourceOf(input.account),
     creationId: containerId,
   });
 
@@ -408,7 +428,8 @@ function createMetaProvider(platform: Platform): SocialProvider {
     platform,
 
     isConfigured(): boolean {
-      const { clientId, clientSecret } = serverConfig.meta;
+      const { clientId, clientSecret } =
+        platform === "instagram" ? serverConfig.instagram : serverConfig.meta;
       return Boolean(clientId && clientSecret);
     },
 
@@ -422,11 +443,6 @@ function createMetaProvider(platform: Platform): SocialProvider {
       });
     },
 
-    /**
-     * One Meta grant covers the user's Pages and, through them, the Instagram
-     * business accounts. We hand back a draft for each so connecting once can
-     * light up both platforms.
-     */
     async handleCallback(input): Promise<ConnectedAccountDraft[]> {
       const { userId } = readMetaState(input.state, platform);
       if (userId !== input.userId) {
@@ -446,14 +462,46 @@ function createMetaProvider(platform: Platform): SocialProvider {
         shortLived.accessToken,
         platform,
       );
-      const pages = await fetchUserPages(longLived.accessToken, platform);
 
-      const drafts: ConnectedAccountDraft[] = [];
+      if (platform === "instagram") {
+        const identity = await fetchInstagramLoginIdentity(
+          longLived.accessToken,
+        );
+        const instagramUserId = identity.id ?? shortLived.userId;
+        if (!instagramUserId) {
+          throw new ProviderError({
+            code: "provider_error",
+            message: humanErrorMessage(platform, "provider_error"),
+            retryable: false,
+          });
+        }
 
-      for (const page of pages) {
-        if (!page.id || !page.access_token) continue;
+        return [{
+          platform: "instagram",
+          platformAccountId: instagramUserId,
+          username: identity.username,
+          displayName: identity.username ?? instagramUserId,
+          accessToken: longLived.accessToken,
+          refreshToken: null,
+          tokenExpiresAt: longLived.tokenExpiresAt,
+          scopes: metaScopesFor("instagram"),
+          metadata: {
+            igUserId: instagramUserId,
+            authSource: "instagram_login",
+          },
+        }];
+      }
 
-        drafts.push({
+      const pages = await fetchFacebookPages(longLived.accessToken);
+      logger.info("meta Facebook pages fetched for oauth", {
+        platform,
+        pageCount: pages.length,
+        publishablePageCount: pages.filter((page) => Boolean(page.id && page.access_token)).length,
+      });
+
+      return pages.flatMap((page): ConnectedAccountDraft[] => {
+        if (!page.id || !page.access_token) return [];
+        return [{
           platform: "facebook",
           platformAccountId: page.id,
           displayName: page.name ?? page.id,
@@ -462,26 +510,8 @@ function createMetaProvider(platform: Platform): SocialProvider {
           tokenExpiresAt: longLived.tokenExpiresAt,
           scopes: metaScopesFor("facebook"),
           metadata: { pageId: page.id },
-        });
-
-        const ig = page.instagram_business_account;
-        if (ig?.id) {
-          drafts.push({
-            platform: "instagram",
-            platformAccountId: ig.id,
-            username: ig.username ?? null,
-            displayName: ig.name ?? ig.username ?? null,
-            avatarUrl: ig.profile_picture_url ?? null,
-            accessToken: page.access_token,
-            refreshToken: null,
-            tokenExpiresAt: longLived.tokenExpiresAt,
-            scopes: metaScopesFor("instagram"),
-            metadata: { pageId: page.id, igUserId: ig.id },
-          });
-        }
-      }
-
-      return drafts;
+        }];
+      });
     },
 
     async refreshToken(account): Promise<RefreshResult> {
@@ -497,9 +527,9 @@ function createMetaProvider(platform: Platform): SocialProvider {
           tokenExpiresAt: refreshed.tokenExpiresAt,
         };
       } catch (error) {
-        if (error instanceof ProviderError && isAuthFailure(error.code)) {
-          throw error;
-        }
+        // requestJson has already classified provider responses, including
+        // unknown 401s. Do not replace that classification with token_expired.
+        if (error instanceof ProviderError) throw error;
 
         // Meta has no refresh token: a failed re-exchange means the user has to
         // connect again, which is what `token_expired` communicates upstream.
@@ -517,7 +547,11 @@ function createMetaProvider(platform: Platform): SocialProvider {
         const token = accountToken(account);
 
         if (account.platform === "instagram") {
-          await getInstagramUser(token, igUserIdOf(account), account.platform);
+          if (metadataOf(account).authSource === "instagram_login") {
+            await fetchInstagramLoginIdentity(token);
+          } else {
+            await getInstagramUser(token, igUserIdOf(account), account.platform);
+          }
         } else {
           await getMe(token, account.platform);
         }

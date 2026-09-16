@@ -15,6 +15,7 @@ import {
 import { getSettingsForUser } from "@/lib/services/settings";
 import { createPostSchema, historyQuerySchema } from "@/lib/validation/schemas";
 import { normalizeTimeZone, TIMEZONE_COOKIE } from "@/lib/time";
+import { createPublishTraceId, logPublishTrace } from "@/lib/publishing/trace";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -87,6 +88,8 @@ export async function GET(request: Request): Promise<Response> {
 }
 
 export async function POST(request: Request): Promise<Response> {
+  const publishTraceId = createPublishTraceId();
+  logPublishTrace(publishTraceId, "PUBLISH_REQUEST", { operation: "api-publish" });
   const userId = await getUserId();
   if (!userId) {
     return apiError({
@@ -122,7 +125,7 @@ export async function POST(request: Request): Promise<Response> {
   }
 
   try {
-    const result = await createPostForUser(userId, parsed.data);
+    const result = await createPostForUser(userId, parsed.data, publishTraceId);
     const post = await getPostForUser(userId, result.postId);
     return NextResponse.json(
       { post, postId: result.postId, status: result.status },

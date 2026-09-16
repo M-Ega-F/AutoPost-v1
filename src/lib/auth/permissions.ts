@@ -6,8 +6,15 @@ export type InvitableWorkspaceRole = (typeof INVITABLE_ROLES)[number];
 export const PERMISSIONS = [
   "workspace:view", "workspace:manage", "workspace:update", "workspace:create", "workspace:delete", "workspace:transfer", "workspace:leave", "members:view", "members:manage", "members:invite", "members:update", "members:remove",
   "posts:view", "posts:create", "posts:update", "posts:delete", "posts:publish", "posts:schedule", "posts:cancel", "posts:retry", "posts:duplicate",
+  "campaigns:view", "campaigns:create", "campaigns:update", "campaigns:archive", "campaigns:delete", "campaigns:manage_posts",
   "drafts:create", "drafts:update", "drafts:delete",
   "content:review",
+  "content:comment",
+  "content:comments:view",
+  "content:comments:create",
+  "content:comments:update",
+  "content:comments:delete",
+  "content:comments:resolve",
   "accounts:view", "accounts:connect", "accounts:disconnect", "accounts:manage",
   "templates:view", "templates:create", "templates:update", "templates:delete", "templates:use",
   "media:view", "media:create", "media:delete",
@@ -22,18 +29,18 @@ const allPermissions = new Set<Permission>(PERMISSIONS);
 export const ROLE_PERMISSIONS: Readonly<Record<WorkspaceRole, ReadonlySet<Permission>>> = {
   owner: allPermissions,
   admin: new Set([
-    "workspace:view", "workspace:update", "workspace:leave", "members:view", "members:invite", "members:update", "members:remove", "posts:view", "posts:create", "posts:update", "posts:delete", "posts:publish", "posts:schedule", "posts:cancel", "posts:retry", "posts:duplicate",
-    "drafts:create", "drafts:update", "drafts:delete", "content:review", "accounts:view", "accounts:connect", "accounts:disconnect", "accounts:manage",
+    "workspace:view", "workspace:update", "workspace:leave", "members:view", "members:invite", "members:update", "members:remove", "posts:view", "posts:create", "posts:update", "posts:delete", "posts:publish", "posts:schedule", "posts:cancel", "posts:retry", "posts:duplicate", "campaigns:view", "campaigns:create", "campaigns:update", "campaigns:archive", "campaigns:manage_posts",
+    "drafts:create", "drafts:update", "drafts:delete", "content:review", "content:comment", "content:comments:view", "content:comments:create", "content:comments:update", "content:comments:delete", "content:comments:resolve", "accounts:view", "accounts:connect", "accounts:disconnect", "accounts:manage",
     "templates:view", "templates:create", "templates:update", "templates:delete", "templates:use", "media:view", "media:create", "media:delete",
     "analytics:view", "analytics:refresh", "settings:view", "settings:update",
     "notifications:view", "notifications:update", "webhooks:view", "webhooks:create", "webhooks:update", "webhooks:delete", "webhooks:test",
   ]),
   editor: new Set([
-    "workspace:view", "workspace:create", "workspace:leave", "members:view", "posts:view", "posts:create", "posts:update", "posts:duplicate", "drafts:create", "drafts:update", "drafts:delete",
+    "workspace:view", "workspace:create", "workspace:leave", "members:view", "posts:view", "posts:create", "posts:update", "posts:duplicate", "campaigns:view", "campaigns:create", "campaigns:update", "campaigns:manage_posts", "drafts:create", "drafts:update", "drafts:delete", "content:comment", "content:comments:view", "content:comments:create", "content:comments:update", "content:comments:delete",
     "accounts:view", "templates:view", "templates:create", "templates:update", "templates:use", "media:view", "media:create", "analytics:view", "settings:view", "settings:update",
     "notifications:view", "notifications:update", "webhooks:view",
   ]),
-  viewer: new Set(["workspace:view", "workspace:create", "workspace:leave", "members:view", "posts:view", "accounts:view", "templates:view", "media:view", "analytics:view", "settings:view", "notifications:view", "notifications:update", "webhooks:view"]),
+  viewer: new Set(["workspace:view", "workspace:create", "workspace:leave", "members:view", "posts:view", "campaigns:view", "content:comments:view", "accounts:view", "templates:view", "media:view", "analytics:view", "settings:view", "notifications:view", "notifications:update", "webhooks:view"]),
 };
 
 export function hasPermission(role: WorkspaceRole, permission: Permission): boolean {

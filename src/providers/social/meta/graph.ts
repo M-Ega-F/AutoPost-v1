@@ -8,6 +8,16 @@ function graphBase(): string {
   return `https://graph.facebook.com/${serverConfig.meta.graphVersion}`;
 }
 
+function instagramGraphBase(): string {
+  return `https://graph.instagram.com/${serverConfig.instagram.graphVersion}`;
+}
+
+export type InstagramAuthSource = "instagram_login" | "facebook_login";
+
+function instagramBase(authSource?: InstagramAuthSource): string {
+  return authSource === "instagram_login" ? instagramGraphBase() : graphBase();
+}
+
 function bearer(token: string): Record<string, string> {
   return { Authorization: `Bearer ${token}` };
 }
@@ -23,12 +33,13 @@ function pathWithFields(
   path: string,
   fields: string,
   extra: Record<string, string | number | undefined> = {},
+  baseUrl = graphBase(),
 ): string {
   const params = new URLSearchParams({ fields });
   for (const [key, value] of Object.entries(extra)) {
     if (value !== undefined) params.set(key, String(value));
   }
-  return `${graphBase()}/${path}?${params.toString()}`;
+  return `${baseUrl}/${path}?${params.toString()}`;
 }
 
 /** Instagram container lifecycle: see `status_code` in Meta's docs. */
@@ -68,6 +79,7 @@ export type CreateContainerInput = {
   igUserId: string;
   token: string;
   platform: Platform;
+  authSource?: InstagramAuthSource;
   /** `IMAGE`, `VIDEO` or `REELS`. */
   mediaType: "IMAGE" | "VIDEO" | "REELS";
   mediaUrl: string;
@@ -86,31 +98,47 @@ export async function createInstagramContainer(
   });
 
   return requestJson<{ id?: string }>(
-    `${graphBase()}/${encodeURIComponent(input.igUserId)}/media`,
+    `${instagramBase(input.authSource)}/${encodeURIComponent(input.igUserId)}/media`,
     { method: "POST", headers: formHeaders(input.token), body },
     { platform: input.platform, endpoint: "POST /{ig-user-id}/media" },
   );
 }
 
 export async function publishInstagramContainer(
-  input: { igUserId: string; token: string; platform: Platform; creationId: string },
+  input: {
+    igUserId: string;
+    token: string;
+    platform: Platform;
+    authSource?: InstagramAuthSource;
+    creationId: string;
+  },
 ): Promise<JsonResult<{ id?: string }>> {
   const body = formBody({ creation_id: input.creationId });
 
   return requestJson<{ id?: string }>(
-    `${graphBase()}/${encodeURIComponent(input.igUserId)}/media_publish`,
+    `${instagramBase(input.authSource)}/${encodeURIComponent(input.igUserId)}/media_publish`,
     { method: "POST", headers: formHeaders(input.token), body },
     { platform: input.platform, endpoint: "POST /{ig-user-id}/media_publish" },
   );
 }
 
 export async function getInstagramContainerStatus(
-  input: { token: string; platform: Platform; containerId: string },
+  input: {
+    token: string;
+    platform: Platform;
+    authSource?: InstagramAuthSource;
+    containerId: string;
+  },
 ): Promise<
   JsonResult<{ id?: string; status_code?: string; status?: string }>
 > {
   return requestJson<{ id?: string; status_code?: string; status?: string }>(
-    pathWithFields(encodeURIComponent(input.containerId), "id,status_code,status"),
+    pathWithFields(
+      encodeURIComponent(input.containerId),
+      "id,status_code,status",
+      {},
+      instagramBase(input.authSource),
+    ),
     { method: "GET", headers: bearer(input.token) },
     { platform: input.platform, endpoint: "GET /{ig-container-id}" },
   );

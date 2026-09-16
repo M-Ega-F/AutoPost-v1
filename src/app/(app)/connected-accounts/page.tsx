@@ -31,6 +31,9 @@ export default async function ConnectedAccountsPage() {
           const meta = PLATFORM_META[platform];
           const PlatformIcon = meta.icon;
           const platformAccounts = accountsByPlatform.get(platform) ?? [];
+          const connectedCount = platformAccounts.filter(
+            (account) => account.status === "active",
+          ).length;
           const configured = getProvider(platform).isConfigured();
 
           return (
@@ -41,13 +44,13 @@ export default async function ConnectedAccountsPage() {
                   <div>
                     <h2 id={`${platform}-accounts-heading`} className="text-base font-medium">{meta.label}</h2>
                     <p className="text-sm text-muted-foreground">
-                      {platformAccounts.length === 0 ? "No accounts connected" : `${platformAccounts.length} account${platformAccounts.length === 1 ? "" : "s"} connected`}
+                      {connectedCount === 0 ? "No accounts connected" : `${connectedCount} account${connectedCount === 1 ? "" : "s"} connected`}
                     </p>
                   </div>
                 </div>
                 <ConnectButton
                   platform={platform}
-                  label={platformAccounts.length > 0 ? "Connect another account" : "Connect"}
+                  label={connectedCount > 0 ? "Connect another account" : "Connect"}
                   disabled={!configured}
                 />
               </div>

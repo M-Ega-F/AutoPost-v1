@@ -43,6 +43,13 @@ function optional(...names: string[]): string | undefined {
   return undefined;
 }
 
+function boundedMilliseconds(name: string, fallback: number, minimum: number, maximum: number): number {
+  const raw = read(name);
+  if (!raw) return fallback;
+  const value = Number(raw);
+  return Number.isFinite(value) ? Math.min(maximum, Math.max(minimum, Math.floor(value))) : fallback;
+}
+
 function lazy<T>(factory: () => T): () => T {
   let cached: { value: T } | undefined;
   return () => {
@@ -98,6 +105,13 @@ export const serverConfig = {
     return required("UPSTASH_REDIS_URL", "REDIS_URL");
   },
 
+  get reviewAutomationIntervalMs() {
+    return boundedMilliseconds("REVIEW_AUTOMATION_INTERVAL_MS", 5 * 60_000, 60_000, 60 * 60_000);
+  },
+  get campaignAutomationIntervalMs() {
+    return boundedMilliseconds("CAMPAIGN_AUTOMATION_INTERVAL_MS", 15 * 60_000, 60_000, 60 * 60_000);
+  },
+
   get appUrlOptional(): string | undefined {
     return firstDefined(
       validHttpUrl(read("APP_URL")),
@@ -118,12 +132,24 @@ export const serverConfig = {
 
   get meta() {
     return lazy(() => ({
-      // One Meta app owns both Instagram and Facebook integrations. Keep the
-      // names canonical so a stale provider-specific variable cannot make the
-      // two OAuth flows disagree about whether Meta is configured.
+      // Facebook Login credentials are intentionally separate from the
+      // standalone Instagram Login credentials below.
       clientId: optional("META_CLIENT_ID"),
       clientSecret: optional("META_CLIENT_SECRET"),
-      graphVersion: optional("META_GRAPH_API_VERSION") ?? "v23.0",
+      graphVersion: optional("META_GRAPH_API_VERSION") ?? "v26.0",
+    }))();
+  },
+
+  /**
+   * Instagram Login has its own Instagram App ID and secret. Keep these
+   * credentials separate from Facebook Login so the two OAuth contracts cannot
+   * accidentally drift into one another.
+   */
+  get instagram() {
+    return lazy(() => ({
+      clientId: optional("INSTAGRAM_CLIENT_ID"),
+      clientSecret: optional("INSTAGRAM_CLIENT_SECRET"),
+      graphVersion: optional("INSTAGRAM_GRAPH_API_VERSION") ?? "v26.0",
     }))();
   },
 

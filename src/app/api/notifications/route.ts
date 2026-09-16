@@ -2,6 +2,7 @@ import { getUserId } from "@/lib/auth/server";
 import { apiError, apiErrorFromUnknown, apiMethodNotAllowed, apiSuccess, apiValidationError } from "@/lib/api/response";
 import { getNotifications } from "@/lib/domain/notifications";
 import { NOTIFICATION_TYPES, type NotificationType } from "@/lib/notifications/types";
+import { withPerfRequest } from "@/lib/perf";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -11,6 +12,10 @@ function readBoolean(value: string | null): boolean {
 }
 
 export async function GET(request: Request): Promise<Response> {
+  return withPerfRequest("GET /api/notifications", () => getNotificationsRoute(request));
+}
+
+async function getNotificationsRoute(request: Request): Promise<Response> {
   const userId = await getUserId();
   if (!userId) return apiError({ status: 401, code: "UNAUTHORIZED", message: "Please log in to continue." });
   const url = new URL(request.url);
