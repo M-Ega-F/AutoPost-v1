@@ -3,12 +3,15 @@ import { describe, test } from "node:test";
 
 import {
   captionSchema,
+  changePasswordSchema,
   campaignCreateSchema,
   campaignUpdateSchema,
   createPostSchema,
+  forgotPasswordSchema,
   loginSchema,
   mediaUrlSchema,
   postMediaSchema,
+  resetPasswordSchema,
   saveDraftSchema,
   scheduleSchema,
   settingsUpdateSchema,
@@ -49,6 +52,49 @@ describe("loginSchema", () => {
   test("rejects a malformed email and an empty password", () => {
     assert.equal(loginSchema.safeParse({ email: "nope", password: "hunter2" }).success, false);
     assert.equal(loginSchema.safeParse({ email: "user@example.com", password: "" }).success, false);
+  });
+});
+
+describe("password recovery schemas", () => {
+  test("accepts a valid recovery email", () => {
+    assert.equal(forgotPasswordSchema.safeParse({ email: "user@example.com" }).success, true);
+    assert.equal(forgotPasswordSchema.safeParse({ email: "not-an-email" }).success, false);
+  });
+
+  test("requires matching reset passwords and the minimum length", () => {
+    assert.equal(
+      resetPasswordSchema.safeParse({ password: "new-password", confirmPassword: "new-password" }).success,
+      true,
+    );
+    assert.equal(
+      resetPasswordSchema.safeParse({ password: "short", confirmPassword: "short" }).success,
+      false,
+    );
+    assert.equal(
+      resetPasswordSchema.safeParse({ password: "new-password", confirmPassword: "different" }).success,
+      false,
+    );
+  });
+
+  test("requires the current password and a different matching new password", () => {
+    const valid = {
+      currentPassword: "old-password",
+      newPassword: "new-password",
+      confirmNewPassword: "new-password",
+    };
+    assert.equal(changePasswordSchema.safeParse(valid).success, true);
+    assert.equal(
+      changePasswordSchema.safeParse({ ...valid, currentPassword: "" }).success,
+      false,
+    );
+    assert.equal(
+      changePasswordSchema.safeParse({ ...valid, confirmNewPassword: "different" }).success,
+      false,
+    );
+    assert.equal(
+      changePasswordSchema.safeParse({ ...valid, newPassword: "old-password", confirmNewPassword: "old-password" }).success,
+      false,
+    );
   });
 });
 
@@ -152,6 +198,18 @@ describe("scheduleSchema", () => {
 describe("postMediaSchema", () => {
   test("accepts an uploaded image", () => {
     assert.equal(postMediaSchema.safeParse(VALID_MEDIA).success, true);
+  });
+
+  test("accepts fractional, whole-number, and unknown video durations", () => {
+    for (const duration of [20.4, 20, null]) {
+      const result = postMediaSchema.safeParse({
+        ...VALID_MEDIA,
+        mediaType: "video",
+        mimeType: "video/mp4",
+        duration,
+      });
+      assert.equal(result.success, true, `duration ${String(duration)} should be valid`);
+    }
   });
 
   test("accepts a pasted url image", () => {

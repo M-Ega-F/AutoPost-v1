@@ -12,7 +12,7 @@ export type ImageProbe = { width: number; height: number };
 
 export type VideoProbe = {
   /** Duration in seconds. */
-  duration: number;
+  duration: number | null;
   width?: number;
   height?: number;
 };
@@ -210,6 +210,12 @@ type Box = {
   end: number;
 };
 
+type TrackInfo = {
+  id: number;
+  handler: string;
+  timescale: number;
+};
+
 function readBox(bytes: Uint8Array, offset: number, limit: number): Box | null {
   if (offset < 0 || offset + 8 > limit) return null;
 
@@ -255,7 +261,155 @@ function scanBoxes(
   }
 }
 
-/** MP4 and MOV share the same box structure: `moov.mvhd` carries the duration. */
+function childBoxes(bytes: Uint8Array, start: number, limit: number): Box[] {
+  const boxes: Box[] = [];
+  scanBoxes(bytes, start, limit, (box) => boxes.push(box));
+  return boxes;
+}
+
+function fullBoxFlags(bytes: Uint8Array, start: number, end: number): number | null {
+  if (start < 0 || start + 4 > end) return null;
+  return (bytes[start + 1] << 16) | (bytes[start + 2] << 8) | bytes[start + 3];
+}
+
+function readTrackInfo(bytes: Uint8Array, start: number, end: number): TrackInfo | null {
+  const children = childBoxes(bytes, start, end);
+  const tkhd = children.find((box) => box.type === "tkhd");
+  const mdia = children.find((box) => box.type === "mdia");
+  if (!tkhd || !mdia || tkhd.start + 16 > tkhd.end) return null;
+
+  const mdiaChildren = childBoxes(bytes, mdia.start, mdia.end);
+  const mdhd = mdiaChildren.find((box) => box.type === "mdhd");
+  const hdlr = mdiaChildren.find((box) => box.type === "hdlr");
+  if (!mdhd || !hdlr || hdlr.start + 12 > hdlr.end) return null;
+
+  const version = bytes[mdhd.start];
+  const timescaleOffset = version === 0 ? 12 : version === 1 ? 20 : -1;
+  if (timescaleOffset < 0 || mdhd.start + timescaleOffset + 4 > mdhd.end) return null;
+
+  const timescale = u32be(bytes, mdhd.start + timescaleOffset);
+  if (timescale <= 0) return null;
+
+  return {
+    id: u32be(bytes, tkhd.start + 12),
+    handler: text(bytes, hdlr.start + 8, 4),
+    timescale,
+  };
+}
+
+function readTfhd(bytes: Uint8Array, box: Box): {
+  trackId: number;
+  defaultSampleDuration: number | null;
+} | null {
+  if (box.start + 8 > box.end) return null;
+  const flags = fullBoxFlags(bytes, box.start, box.end);
+  if (flags === null) return null;
+
+  let offset = box.start + 8;
+  const trackId = u32be(bytes, box.start + 4);
+  if (flags & 0x000001) offset += 8; // base-data-offset-present
+  if (flags & 0x000002) offset += 4; // sample-description-index-present
+
+  if (flags & 0x000008) {
+    if (offset + 4 > box.end) return null;
+    return { trackId, defaultSampleDuration: u32be(bytes, offset) };
+  }
+
+  return { trackId, defaultSampleDuration: null };
+}
+
+function readTrex(bytes: Uint8Array, box: Box): { trackId: number; defaultSampleDuration: number } | null {
+  if (box.start + 16 > box.end) return null;
+  return {
+    trackId: u32be(bytes, box.start + 4),
+    defaultSampleDuration: u32be(bytes, box.start + 12),
+  };
+}
+
+function readTrunDuration(
+  bytes: Uint8Array,
+  box: Box,
+  defaultSampleDuration: number | null,
+): number | null {
+  if (box.start + 8 > box.end) return null;
+  const flags = fullBoxFlags(bytes, box.start, box.end);
+  if (flags === null) return null;
+
+  const sampleCount = u32be(bytes, box.start + 4);
+  let offset = box.start + 8;
+  if (flags & 0x000001) offset += 4; // data-offset-present
+  if (flags & 0x000004) offset += 4; // first-sample-flags-present
+
+  const hasSampleDuration = Boolean(flags & 0x000100);
+  if (!hasSampleDuration) {
+    if (defaultSampleDuration === null) return null;
+    const total = sampleCount * defaultSampleDuration;
+    return Number.isSafeInteger(total) ? total : null;
+  }
+
+  let total = 0;
+  for (let index = 0; index < sampleCount; index += 1) {
+    if (offset + 4 > box.end) return null;
+    total += u32be(bytes, offset);
+    offset += 4;
+
+    if (flags & 0x000200) offset += 4; // sample-size-present
+    if (flags & 0x000400) offset += 4; // sample-flags-present
+    if (flags & 0x000800) offset += 4; // sample-composition-time-offset-present
+    if (offset > box.end) return null;
+  }
+
+  return Number.isSafeInteger(total) ? total : null;
+}
+
+/** Reads a fragmented MP4 duration from `moof`/`traf`/`trun` sample metadata. */
+function readFragmentedDuration(
+  bytes: Uint8Array,
+  trackTimescales: Map<number, number>,
+  videoTrackIds: ReadonlySet<number>,
+): number | null {
+  if (videoTrackIds.size === 0) return null;
+
+  const trexDefaults = new Map<number, number>();
+  for (const moov of childBoxes(bytes, 0, bytes.length).filter((box) => box.type === "moov")) {
+    for (const mvex of childBoxes(bytes, moov.start, moov.end).filter((box) => box.type === "mvex")) {
+      for (const trex of childBoxes(bytes, mvex.start, mvex.end).filter((box) => box.type === "trex")) {
+        const parsed = readTrex(bytes, trex);
+        if (parsed) trexDefaults.set(parsed.trackId, parsed.defaultSampleDuration);
+      }
+    }
+  }
+
+  const durationByTrack = new Map<number, number>();
+  for (const moof of childBoxes(bytes, 0, bytes.length).filter((box) => box.type === "moof")) {
+    for (const traf of childBoxes(bytes, moof.start, moof.end).filter((box) => box.type === "traf")) {
+      const tfhd = childBoxes(bytes, traf.start, traf.end).find((box) => box.type === "tfhd");
+      if (!tfhd) continue;
+      const parsedTfhd = readTfhd(bytes, tfhd);
+      if (!parsedTfhd || !videoTrackIds.has(parsedTfhd.trackId)) continue;
+
+      const timescale = trackTimescales.get(parsedTfhd.trackId);
+      if (!timescale) return null;
+      const defaultSampleDuration =
+        parsedTfhd.defaultSampleDuration ?? trexDefaults.get(parsedTfhd.trackId) ?? null;
+      let fragmentUnits = 0;
+
+      for (const trun of childBoxes(bytes, traf.start, traf.end).filter((box) => box.type === "trun")) {
+        const duration = readTrunDuration(bytes, trun, defaultSampleDuration);
+        if (duration === null) return null;
+        fragmentUnits += duration;
+      }
+
+      const current = durationByTrack.get(parsedTfhd.trackId) ?? 0;
+      durationByTrack.set(parsedTfhd.trackId, current + fragmentUnits / timescale);
+    }
+  }
+
+  const duration = Math.max(...durationByTrack.values(), 0);
+  return duration > 0 && Number.isFinite(duration) ? duration : null;
+}
+
+/** MP4 and MOV normally use `moov.mvhd`; fragmented files may leave it at zero. */
 function readMvhdDuration(bytes: Uint8Array, start: number, end: number): number | null {
   if (start + 4 > end) return null;
 
@@ -312,17 +466,27 @@ function probeIsoBmff(bytes: Uint8Array): {
     width: null,
     height: null,
   };
+  const trackTimescales = new Map<number, number>();
+  const videoTrackIds = new Set<number>();
 
   scanBoxes(bytes, 0, bytes.length, (box) => {
     if (box.type !== "moov") return;
 
     scanBoxes(bytes, box.start, box.end, (child) => {
-      if (child.type === "mvhd" && result.duration === null) {
-        result.duration = readMvhdDuration(bytes, child.start, child.end);
+      if (child.type === "mvhd" && !(result.duration && result.duration > 0)) {
+        const duration = readMvhdDuration(bytes, child.start, child.end);
+        if (duration !== null && duration > 0) result.duration = duration;
         return;
       }
 
-      if (child.type === "trak" && result.width === null) {
+      if (child.type === "trak") {
+        const track = readTrackInfo(bytes, child.start, child.end);
+        if (track) {
+          trackTimescales.set(track.id, track.timescale);
+          if (track.handler === "vide") videoTrackIds.add(track.id);
+        }
+
+        if (result.width !== null) return;
         scanBoxes(bytes, child.start, child.end, (leaf) => {
           if (leaf.type !== "tkhd" || result.width !== null) return;
           const size = readTkhdSize(bytes, leaf.start, leaf.end);
@@ -334,6 +498,10 @@ function probeIsoBmff(bytes: Uint8Array): {
       }
     });
   });
+
+  if (!(result.duration && result.duration > 0)) {
+    result.duration = readFragmentedDuration(bytes, trackTimescales, videoTrackIds);
+  }
 
   return result;
 }
@@ -429,7 +597,7 @@ export function probeVideo(bytes: Uint8Array, mimeType: string): VideoProbe | nu
     if (duration === null && width === null) return null;
 
     return {
-      duration: duration ?? 0,
+      duration,
       ...(width !== null && height !== null ? { width, height } : {}),
     };
   });

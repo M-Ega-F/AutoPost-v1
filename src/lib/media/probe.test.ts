@@ -8,6 +8,7 @@ import {
   probeVideo,
   sniffMimeType,
 } from "@/lib/media/probe";
+import { validateMediaLimits } from "@/providers/social/http";
 
 /* -------------------------------------------------------------------------- */
 /* Synthetic builders — every buffer is assembled by hand so the tests never   */
@@ -137,6 +138,43 @@ function mp4Buffer(options: {
   return bytes(ftyp, moov);
 }
 
+/** Fragmented MP4: `mvhd` is zero, while `tfhd` supplies sample duration. */
+function fragmentedMp4Buffer(options: {
+  timescale: number;
+  sampleDuration: number;
+  sampleCounts: number[];
+  width: number;
+  height: number;
+}): Uint8Array {
+  const mdhd = box(
+    "mdhd",
+    bytes([0x00], zeroes(3), u32be(0), u32be(0), u32be(options.timescale), u32be(0), zeroes(4)),
+  );
+  const hdlr = box("hdlr", bytes([0x00], zeroes(3), u32be(0), ascii("vide"), zeroes(12)));
+  const mdia = box("mdia", bytes(mdhd, hdlr));
+  const trak = box("trak", bytes(tkhdV0(options.width, options.height), mdia));
+  const trex = box(
+    "trex",
+    bytes([0x00], zeroes(3), u32be(1), u32be(1), u32be(0), u32be(0), u32be(0)),
+  );
+  const moov = box("moov", bytes(mvhdV0(1000, 0), trak, box("mvex", trex)));
+  const ftyp = box(
+    "ftyp",
+    bytes(ascii("isom"), u32be(0), ascii("isom"), ascii("mp42")),
+  );
+
+  const moofs = options.sampleCounts.flatMap((sampleCount) => {
+    const tfhd = box(
+      "tfhd",
+      bytes([0x00], [0x02, 0x00, 0x08], u32be(1), u32be(options.sampleDuration)),
+    );
+    const trun = box("trun", bytes([0x00], [0x00, 0x00, 0x01], u32be(sampleCount), u32be(0)));
+    return [box("moof", box("traf", bytes(tfhd, trun))), box("mdat", bytes(zeroes(1)))];
+  });
+
+  return bytes(ftyp, moov, ...moofs);
+}
+
 /* -------------------------------------------------------------------------- */
 
 describe("sniffMimeType", () => {
@@ -238,6 +276,21 @@ describe("probeVideo", () => {
     assert.equal(probeVideo(buffer, "video/mp4")?.duration, 12.5);
   });
 
+  test("reads duration from fragmented MP4 sample metadata", () => {
+    const buffer = fragmentedMp4Buffer({
+      timescale: 15_360,
+      sampleDuration: 512,
+      sampleCounts: [250, 250, 112],
+      width: 720,
+      height: 1280,
+    });
+
+    const result = probeVideo(buffer, "video/mp4");
+    assert.equal(result?.width, 720);
+    assert.equal(result?.height, 1280);
+    assert.ok(result?.duration !== null && Math.abs(result.duration - 20.4) < 1e-9);
+  });
+
   test("MOV shares the box structure", () => {
     const buffer = mp4Buffer({
       brand: "qt  ",
@@ -322,7 +375,30 @@ describe("probeMedia", () => {
     const result = probeMedia(buffer, "video/mp4");
     assert.equal(result.width, 640);
     assert.equal(result.height, 360);
-    assert.equal(result.duration, 0);
+    assert.equal(result.duration, null);
+  });
+
+  test("fragmented MP4 duration keeps a valid video compatible", () => {
+    const buffer = fragmentedMp4Buffer({
+      timescale: 15_360,
+      sampleDuration: 512,
+      sampleCounts: [250, 250, 112],
+      width: 720,
+      height: 1280,
+    });
+    const probed = probeMedia(buffer, "video/mp4");
+    const media = {
+      mediaType: "video" as const,
+      mimeType: "video/mp4",
+      storageKey: "user-1/fragmented.mp4",
+      sourceUrl: null,
+      fileSize: buffer.byteLength,
+      ...probed,
+    };
+
+    for (const platform of ["instagram", "facebook", "tiktok"] as const) {
+      assert.deepEqual(validateMediaLimits(platform, media, ""), { ok: true });
+    }
   });
 });
 

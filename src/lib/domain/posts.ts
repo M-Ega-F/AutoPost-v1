@@ -18,7 +18,7 @@ import {
   type PostPlatform,
 } from "@/lib/db/schema";
 import { AppError, humanErrorMessage } from "@/lib/errors";
-import { logger } from "@/lib/logger";
+import { logger, sanitize } from "@/lib/logger";
 import { measurePerf, perfLoggingEnabled } from "@/lib/perf";
 import { derivePostStatus, type Platform, type PostStatus } from "@/lib/status";
 import { getProvider } from "@/providers/social";
@@ -115,6 +115,25 @@ function assertMediaOwnership(userId: string, media: CreatePostMedia | null): vo
   if (media?.storageKey && !media.storageKey.startsWith(`${userId}/`)) {
     throw new AppError("forbidden", "That media file does not belong to your account.");
   }
+}
+
+function diagnosticError(error: unknown): {
+  errorName: string;
+  errorMessage: string;
+} {
+  const name = error instanceof Error ? error.name : "UnknownError";
+  const message = error instanceof Error ? error.message : String(error);
+  const safeName = sanitize(name);
+  const safeMessage = sanitize(message);
+
+  return {
+    errorName:
+      typeof safeName === "string" ? safeName.slice(0, 120) : "UnknownError",
+    errorMessage:
+      typeof safeMessage === "string"
+        ? safeMessage.slice(0, 500)
+        : "[unavailable]",
+  };
 }
 
 async function resolveCampaignForPost(
@@ -596,7 +615,27 @@ export async function publishDraft(
     targetCount: result.targets.length,
   });
 
-  await cleanupUnreferencedMedia(input.userId, result.oldStorageKeys);
+  logger.info("[PUBLISH-DIAGNOSTIC]", {
+    marker: "CLEANUP_START",
+    postId: result.postId,
+    publishTraceId: input.publishTraceId,
+  });
+  try {
+    await cleanupUnreferencedMedia(input.userId, result.oldStorageKeys);
+    logger.info("[PUBLISH-DIAGNOSTIC]", {
+      marker: "CLEANUP_SUCCESS",
+      postId: result.postId,
+      publishTraceId: input.publishTraceId,
+    });
+  } catch (error) {
+    logger.error("[PUBLISH-DIAGNOSTIC]", {
+      marker: "CLEANUP_FAILED",
+      postId: result.postId,
+      publishTraceId: input.publishTraceId,
+      ...diagnosticError(error),
+    });
+    throw error;
+  }
 
   void emitWebhookEventSafely({ workspaceId, type: "post.publishing", data: { postId: result.postId, status: initialStatus } });
 
@@ -630,6 +669,12 @@ export async function publishDraft(
           .update(postPlatforms)
           .set({ bullmqJobId: jobId, updatedAt: new Date() })
           .where(eq(postPlatforms.id, target.id));
+        logger.info("[PUBLISH-DIAGNOSTIC]", {
+          marker: "BULLMQ_JOB_ID_UPDATED",
+          postId: result.postId,
+          postPlatformId: target.id,
+          publishTraceId: input.publishTraceId,
+        });
       }
     } catch (error) {
       logPublishTrace(input.publishTraceId, "QUEUE_ENQUEUE_FAILED", {

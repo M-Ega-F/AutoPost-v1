@@ -3,7 +3,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { getUserId } from "@/lib/auth/server";
 import { loginUrlWithNext } from "@/lib/auth/redirect";
 import { saveConnectedAccounts } from "@/lib/domain/accounts";
-import { isMissingConfigError, resolveAppUrl } from "@/lib/env";
+import { isMissingConfigError, resolveAppUrl, resolveOAuthAppUrl } from "@/lib/env";
 import { AppError, ProviderError, isAuthFailure } from "@/lib/errors";
 import { logger } from "@/lib/logger";
 import { consumeRateLimit } from "@/lib/rate-limit";
@@ -139,7 +139,7 @@ export async function GET(
 
   const redirectUri = new URL(
     `/api/oauth/${platform}/callback`,
-    resolveAppUrl(origin),
+    resolveOAuthAppUrl(platform, origin),
   ).toString();
 
   try {

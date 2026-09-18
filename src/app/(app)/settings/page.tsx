@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 
 import { LogoutButton } from "@/components/settings/logout-button";
+import { ChangePasswordForm } from "@/components/settings/change-password-form";
 import { SettingsForm } from "@/components/settings/settings-form";
 import { PageHeader } from "@/components/shared/page-header";
 import { Card } from "@/components/ui/card";
@@ -41,6 +42,8 @@ export default async function SettingsPage() {
           timezone={settings.timezone}
           defaultScheduleTime={settings.defaultScheduleTime}
         />
+
+        <ChangePasswordForm />
 
         <div className="space-y-2 border-t border-border pt-6">
           <h2 className="text-base font-medium">Danger zone</h2>

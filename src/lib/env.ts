@@ -198,6 +198,21 @@ export function resolveAppUrl(fallbackOrigin?: string): string {
   return serverConfig.appUrl;
 }
 
+/**
+ * A Quick Tunnel hostname is the public origin in development. Use it for
+ * TikTok's exact-match redirect URI instead of a local APP_URL value.
+ */
+export function resolveOAuthAppUrl(platform: string, fallbackOrigin?: string): string {
+  if (platform === "tiktok" && process.env.NODE_ENV !== "production" && fallbackOrigin) {
+    const parsed = new URL(fallbackOrigin);
+    if (parsed.protocol === "https:" && parsed.hostname.endsWith(".trycloudflare.com")) {
+      return parsed.origin;
+    }
+  }
+
+  return resolveAppUrl(fallbackOrigin);
+}
+
 export function isMissingConfigError(error: unknown): error is MissingConfigError {
   return error instanceof MissingConfigError;
 }

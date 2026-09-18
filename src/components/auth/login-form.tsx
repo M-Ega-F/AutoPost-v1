@@ -8,12 +8,13 @@ import { useForm } from "react-hook-form";
 import { z } from "zod";
 
 import { loginAction } from "@/lib/actions/auth";
-import { DEFAULT_AUTHENTICATED_ROUTE } from "@/lib/auth/redirect";
+import { DEFAULT_AUTHENTICATED_ROUTE, forgotPasswordUrlWithNext } from "@/lib/auth/redirect";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import Link from "next/link";
 
 const NETWORK_ERROR =
   "We couldn't reach the server. Check your connection and try again.";
@@ -108,6 +109,7 @@ export function LoginForm({ next }: { next: string }) {
 
       <form
         noValidate
+        method="post"
         onSubmit={handleSubmit(onSubmit)}
         className="space-y-6"
       >
@@ -144,6 +146,14 @@ export function LoginForm({ next }: { next: string }) {
               {errors.password.message}
             </p>
           ) : null}
+          <div className="flex justify-end">
+            <Link
+              href={forgotPasswordUrlWithNext(next)}
+              className="text-xs text-primary underline-offset-4 hover:underline"
+            >
+              Forgot password?
+            </Link>
+          </div>
         </div>
 
         <Button type="submit" size="lg" className="w-full" disabled={isPending}>

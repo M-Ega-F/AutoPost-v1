@@ -4,7 +4,7 @@ import { SignupForm } from "@/components/auth/signup-form";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
 import { getCurrentUser } from "@/lib/auth/server";
-import { safeNextPath } from "@/lib/auth/redirect";
+import { loginUrlWithNext, safeNextPath } from "@/lib/auth/redirect";
 
 export default async function SignupPage({
   searchParams,
@@ -26,7 +26,7 @@ export default async function SignupPage({
       <div className="flex w-full max-w-sm flex-col items-center gap-2">
         <SignupForm next={next} />
         <Button variant="ghost" size="sm" asChild className="h-11 px-3 text-muted-foreground md:h-9">
-          <a href="/login">Already have an account? Log in</a>
+          <a href={loginUrlWithNext(next)}>Already have an account? Log in</a>
         </Button>
       </div>
     </main>

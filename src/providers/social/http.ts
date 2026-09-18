@@ -707,6 +707,13 @@ export function validateMediaLimits(
     );
   }
 
+  if (media.mediaType === "video" && media.duration === null) {
+    return validationError(
+      "unsupported_media",
+      humanErrorMessage(platform, "unsupported_media"),
+    );
+  }
+
   if (media.fileSize !== null && media.fileSize > limits.maxBytes) {
     return validationError(
       "media_too_large",

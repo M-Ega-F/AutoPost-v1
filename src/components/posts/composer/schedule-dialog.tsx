@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
+import { Input } from "@/components/ui/input";
 import {
   Dialog,
   DialogContent,
@@ -30,17 +31,13 @@ import {
 import {
   TIMEZONES,
   formatDateTimeUtc,
-  formatDate,
   formatTime,
-  formatTimeOption,
-  timeOptions,
   timeZoneLabel,
   zonedTimeToUtc,
 } from "@/lib/time";
 
 export type ScheduleValue = { date: string; time: string; timezone: string };
 
-const TIME_OPTIONS = timeOptions();
 const DEFAULT_TIME = "09:00";
 
 /** Wall-clock time, refreshed so a slot can quietly slip into the past. */
@@ -61,13 +58,49 @@ function toDateString(date: Date): string {
   return format(date, "yyyy-MM-dd");
 }
 
-type ScheduleSlot = { date: Date; time: string; timezone: string };
+/** Date-only values stay independent from the user's system timezone. */
+function fromDateString(value: string): Date {
+  const [year, month, day] = value
+    .split("-")
+    .map((part) => Number.parseInt(part, 10));
+  return new Date(year, month - 1, day);
+}
+
+function normalizeTime(value: string): string {
+  const match = /^(\d{1,2}):(\d{1,2})$/.exec(value.trim());
+  if (!match) return DEFAULT_TIME;
+
+  const hour = Number.parseInt(match[1], 10);
+  const minute = Number.parseInt(match[2], 10);
+  if (hour > 23 || minute > 59) return DEFAULT_TIME;
+
+  return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+}
+
+function timeParts(value: string): [string, string] {
+  const [hour, minute] = normalizeTime(value).split(":");
+  return [hour, minute];
+}
+
+function numericTimePart(value: string): string {
+  return value.replace(/\D/g, "").slice(0, 2);
+}
+
+function validTimeValue(hour: string, minute: string): string | null {
+  if (!/^\d{2}$/.test(hour) || !/^\d{2}$/.test(minute)) return null;
+
+  const hourValue = Number.parseInt(hour, 10);
+  const minuteValue = Number.parseInt(minute, 10);
+  if (hourValue > 23 || minuteValue > 59) return null;
+
+  return `${hour}:${minute}`;
+}
+
+type ScheduleSlot = { date: string; time: string; timezone: string };
 
 /** Today at the saved default time, or tomorrow once that slot has passed. */
 function firstSlot(timezone: string, requestedTime: string): ScheduleSlot {
-  const defaultTime = TIME_OPTIONS.includes(requestedTime)
-    ? requestedTime
-    : DEFAULT_TIME;
+  const defaultTime = normalizeTime(requestedTime);
   const today = startOfToday();
 
   try {
@@ -77,7 +110,7 @@ function firstSlot(timezone: string, requestedTime: string): ScheduleSlot {
       timezone,
     );
     if (todayAtNine.getTime() > Date.now()) {
-      return { date: today, time: defaultTime, timezone };
+      return { date: toDateString(today), time: defaultTime, timezone };
     }
   } catch {
     // Unresolvable zone: fall through to tomorrow.
@@ -85,7 +118,7 @@ function firstSlot(timezone: string, requestedTime: string): ScheduleSlot {
 
   const tomorrow = new Date(today);
   tomorrow.setDate(tomorrow.getDate() + 1);
-  return { date: tomorrow, time: defaultTime, timezone };
+  return { date: toDateString(tomorrow), time: defaultTime, timezone };
 }
 
 export function ScheduleDialog({
@@ -144,16 +177,23 @@ function ScheduleFields({
   const now = useNow();
   const [slot, setSlot] = useState(() => firstSlot(defaultTimezone, defaultTime));
   const { date, time, timezone } = slot;
+  const [hourInput, setHourInput] = useState(() => timeParts(time)[0]);
+  const [minuteInput, setMinuteInput] = useState(() => timeParts(time)[1]);
 
   const today = useMemo(() => startOfToday(), []);
+  const enteredTime = validTimeValue(hourInput, minuteInput);
+  const hourInvalid = hourInput.length === 2 && Number(hourInput) > 23;
+  const minuteInvalid = minuteInput.length === 2 && Number(minuteInput) > 59;
 
   const scheduledAt = useMemo(() => {
+    if (!enteredTime) return null;
+
     try {
-      return zonedTimeToUtc(toDateString(date), time, timezone);
+      return zonedTimeToUtc(date, enteredTime, timezone);
     } catch {
       return null;
     }
-  }, [date, time, timezone]);
+  }, [date, enteredTime, timezone]);
 
   const isPast =
     scheduledAt !== null && now > 0 && scheduledAt.getTime() <= now;
@@ -167,8 +207,8 @@ function ScheduleFields({
   );
 
   function confirm() {
-    if (scheduledAt === null || isPast) return;
-    onConfirm({ date: toDateString(date), time, timezone });
+    if (scheduledAt === null || isPast || enteredTime === null) return;
+    onConfirm({ date, time: enteredTime, timezone });
   }
 
   return (
@@ -184,17 +224,17 @@ function ScheduleFields({
                 className="h-11 w-full justify-start sm:h-9"
               >
                 <CalendarDays aria-hidden="true" />
-                {formatDate(date, timezone)}
+                {format(fromDateString(date), "MMM d, yyyy")}
               </Button>
             </PopoverTrigger>
             <PopoverContent className="w-auto p-0" align="start">
               <Calendar
                 mode="single"
-                selected={date}
+                selected={fromDateString(date)}
                 onSelect={(next) =>
                   setSlot((current) => ({
                     ...current,
-                    date: next ?? current.date,
+                    date: next ? toDateString(next) : current.date,
                   }))
                 }
                 disabled={{ before: today }}
@@ -206,23 +246,50 @@ function ScheduleFields({
 
         <div className="space-y-2">
           <Label htmlFor="schedule-time">Time</Label>
-          <Select
-            value={time}
-            onValueChange={(value) =>
-              setSlot((current) => ({ ...current, time: value }))
-            }
-          >
-            <SelectTrigger id="schedule-time" className="h-11 w-full sm:h-9">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent className="max-h-64">
-              {TIME_OPTIONS.map((option) => (
-                <SelectItem key={option} value={option}>
-                  {formatTimeOption(option)}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <div className="flex items-center gap-2">
+            <Input
+              id="schedule-time"
+              type="text"
+              inputMode="numeric"
+              pattern="[0-9]*"
+              maxLength={2}
+              value={hourInput}
+              onChange={(event) => setHourInput(numericTimePart(event.target.value))}
+              onBlur={() => setHourInput((value) => value.padStart(2, "0"))}
+              placeholder="09"
+              aria-label="Hour"
+              aria-invalid={hourInvalid || undefined}
+              className="h-11 w-20 text-center font-mono tabular-nums sm:h-9"
+            />
+            <span className="text-muted-foreground" aria-hidden="true">
+              :
+            </span>
+            <Input
+              id="schedule-time-minute"
+              type="text"
+              inputMode="numeric"
+              pattern="[0-9]*"
+              maxLength={2}
+              value={minuteInput}
+              onChange={(event) =>
+                setMinuteInput(numericTimePart(event.target.value))
+              }
+              onBlur={() => setMinuteInput((value) => value.padStart(2, "0"))}
+              placeholder="00"
+              aria-label="Minute"
+              aria-invalid={minuteInvalid || undefined}
+              className="h-11 w-20 text-center font-mono tabular-nums sm:h-9"
+            />
+            <span className="text-xs text-muted-foreground">24-hour</span>
+          </div>
+          {hourInvalid ? (
+            <p className="text-xs text-destructive">Hour must be between 00 and 23.</p>
+          ) : null}
+          {minuteInvalid ? (
+            <p className="text-xs text-destructive">
+              Minute must be between 00 and 59.
+            </p>
+          ) : null}
         </div>
 
         <div className="space-y-2">

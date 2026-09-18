@@ -70,3 +70,9 @@ export function loginUrlWithNext(next: string | null | undefined): string {
   if (target === DEFAULT_AUTHENTICATED_ROUTE) return LOGIN_ROUTE;
   return `${LOGIN_ROUTE}?next=${encodeURIComponent(target)}`;
 }
+
+export function forgotPasswordUrlWithNext(next: string | null | undefined): string {
+  const target = safeNextPath(next);
+  if (target === DEFAULT_AUTHENTICATED_ROUTE) return "/forgot-password";
+  return `/forgot-password?next=${encodeURIComponent(target)}`;
+}

@@ -8,7 +8,8 @@ import { useForm } from "react-hook-form";
 
 import { signupAction } from "@/lib/actions/auth";
 import { loginUrlWithNext } from "@/lib/auth/redirect";
-import { Alert, AlertDescription } from "@/components/ui/alert";
+import type { SignupFailure } from "@/lib/auth/signup";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -21,7 +22,7 @@ const NETWORK_ERROR =
 
 export function SignupForm({ next }: { next: string }) {
   const [isPending, startTransition] = useTransition();
-  const [formError, setFormError] = useState<string | null>(null);
+  const [formError, setFormError] = useState<SignupFailure | null>(null);
 
   const {
     register,
@@ -44,10 +45,10 @@ export function SignupForm({ next }: { next: string }) {
           confirmPassword: values.confirmPassword,
           next,
         });
-        if (!result.ok) setFormError(result.message);
+        if (!result.ok) setFormError(result);
       } catch (error) {
         unstable_rethrow(error);
-        setFormError(NETWORK_ERROR);
+        setFormError({ ok: false, message: NETWORK_ERROR });
       }
     });
   }
@@ -121,7 +122,23 @@ export function SignupForm({ next }: { next: string }) {
         {formError ? (
           <Alert variant="destructive" className="border-destructive-border">
             <AlertCircle aria-hidden="true" />
-            <AlertDescription>{formError}</AlertDescription>
+            {formError.code === "email_already_registered" ? (
+              <>
+                <AlertTitle>Email sudah terdaftar</AlertTitle>
+                <AlertDescription>
+                  Email ini sudah digunakan. {" "}
+                  <a
+                    href={loginUrlWithNext(next)}
+                    className="font-medium underline underline-offset-4"
+                  >
+                    Silakan login
+                  </a>{" "}
+                  atau gunakan email lain.
+                </AlertDescription>
+              </>
+            ) : (
+              <AlertDescription>{formError.message}</AlertDescription>
+            )}
           </Alert>
         ) : null}
 
@@ -140,7 +157,7 @@ export function SignupForm({ next }: { next: string }) {
       <div className="flex w-full items-center justify-center gap-2">
         <span className="text-sm text-muted-foreground">Already have an account?</span>
         <a
-          href={loginUrlWithNext(null)}
+          href={loginUrlWithNext(next)}
           className="text-sm font-medium underline-offset-4 hover:underline"
         >
           Log in

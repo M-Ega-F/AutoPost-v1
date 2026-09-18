@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 
 import { requireUserId } from "@/lib/auth/server";
 import { AppError, errorMessageForUser } from "@/lib/errors";
-import { logger } from "@/lib/logger";
+import { logger, sanitize } from "@/lib/logger";
 import { perfLoggingEnabled, withPerfRequest } from "@/lib/perf";
 import { createPublishTraceId, logPublishTrace } from "@/lib/publishing/trace";
 import { consumeRateLimit } from "@/lib/rate-limit";
@@ -89,6 +89,25 @@ function fail(error: unknown, fallback: string): ActionResult {
     return { ok: false, message: error.message, code: error.code };
   }
   return { ok: false, message: errorMessageForUser(error, fallback) };
+}
+
+function diagnosticError(error: unknown): {
+  errorName: string;
+  errorMessage: string;
+} {
+  const name = error instanceof Error ? error.name : "UnknownError";
+  const message = error instanceof Error ? error.message : String(error);
+  const safeName = sanitize(name);
+  const safeMessage = sanitize(message);
+
+  return {
+    errorName:
+      typeof safeName === "string" ? safeName.slice(0, 120) : "UnknownError",
+    errorMessage:
+      typeof safeMessage === "string"
+        ? safeMessage.slice(0, 500)
+        : "[unavailable]",
+  };
 }
 
 export async function createPostAction(
@@ -232,13 +251,29 @@ export async function publishDraftAction(
       return { ok: false, message: parsed.error.issues[0]?.message ?? "Invalid post." };
     }
     const result = await publishDraftForUser(userId, postId, parsed.data, publishTraceId);
+    logger.info("[PUBLISH-DIAGNOSTIC]", {
+      marker: "REVALIDATE_START",
+      postId,
+      publishTraceId,
+    });
     revalidatePath("/drafts");
     revalidatePath(`/drafts/${postId}`);
     revalidatePath("/dashboard");
     revalidatePath("/scheduled");
     revalidatePath("/history");
+    logger.info("[PUBLISH-DIAGNOSTIC]", {
+      marker: "REVALIDATE_SUCCESS",
+      postId,
+      publishTraceId,
+    });
     return { ok: true, postId: result.postId, status: result.status };
   } catch (error) {
+    logger.error("[PUBLISH-DIAGNOSTIC]", {
+      marker: "PUBLISH_ACTION_FAILED",
+      postId,
+      publishTraceId,
+      ...diagnosticError(error),
+    });
     return fail(error, "We couldn't publish this draft. Try again.");
   }
 }

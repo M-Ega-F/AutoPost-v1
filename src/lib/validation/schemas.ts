@@ -95,10 +95,54 @@ export const signupSchema = z
       .max(200, { message: "Enter your email and password." }),
     confirmPassword: z.string().min(1, "Password is required."),
   })
-.refine((data) => data.password === data.confirmPassword, {
+  .refine((data) => data.password === data.confirmPassword, {
       message: "Passwords don&apos;t match.",
       path: ["confirmPassword"],
     });
+
+const passwordInputSchema = z
+  .string()
+  .min(1, { message: "Password is required." })
+  .min(8, { message: "Password must be at least 8 characters." })
+  .max(200, { message: "Password must be 200 characters or fewer." });
+
+export const forgotPasswordSchema = z.object({
+  email: z
+    .string()
+    .trim()
+    .min(1, { message: "Enter your email address." })
+    .email({ message: "Enter a valid email address." }),
+});
+
+export const resetPasswordSchema = z
+  .object({
+    password: passwordInputSchema,
+    confirmPassword: z.string().min(1, { message: "Confirm your password." }),
+  })
+  .refine((data) => data.password === data.confirmPassword, {
+    message: "Passwords don’t match.",
+    path: ["confirmPassword"],
+  });
+
+export const changePasswordSchema = z
+  .object({
+    currentPassword: z
+      .string()
+      .min(1, { message: "Enter your current password." })
+      .max(200, { message: "Enter your current password." }),
+    newPassword: passwordInputSchema,
+    confirmNewPassword: z
+      .string()
+      .min(1, { message: "Confirm your new password." }),
+  })
+  .refine((data) => data.newPassword === data.confirmNewPassword, {
+    message: "Passwords don’t match.",
+    path: ["confirmNewPassword"],
+  })
+  .refine((data) => data.currentPassword !== data.newPassword, {
+    message: "Choose a new password different from your current password.",
+    path: ["newPassword"],
+  });
 
 export const captionSchema = z.object({
   caption: z

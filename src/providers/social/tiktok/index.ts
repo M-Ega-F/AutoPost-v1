@@ -265,7 +265,7 @@ async function publishVideo(
 ): Promise<PublishResult> {
   const postInfo = {
     title: titleFor(input.caption),
-    privacy_level: "PUBLIC_TO_EVERYONE",
+    privacy_level: "SELF_ONLY",
     disable_comment: false,
     disable_duet: false,
     disable_stitch: false,
@@ -366,7 +366,7 @@ async function publishPhoto(
       body: jsonBody({
         post_info: {
           title: titleFor(input.caption),
-          privacy_level: "PUBLIC_TO_EVERYONE",
+          privacy_level: "SELF_ONLY",
           disable_comment: false,
         },
         source_info: {

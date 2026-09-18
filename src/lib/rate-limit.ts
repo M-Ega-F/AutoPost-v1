@@ -18,6 +18,9 @@ export type RateLimitRule = {
 export const RATE_LIMITS = {
   login: { limit: 10, windowMs: 5 * 60_000 },
   signup: { limit: 10, windowMs: 5 * 60_000 },
+  passwordRecovery: { limit: 5, windowMs: 15 * 60_000 },
+  passwordReset: { limit: 10, windowMs: 15 * 60_000 },
+  changePassword: { limit: 10, windowMs: 15 * 60_000 },
   createPost: { limit: 20, windowMs: 60_000 },
   saveDraft: { limit: 60, windowMs: 60_000 },
   publishNow: { limit: 20, windowMs: 60_000 },

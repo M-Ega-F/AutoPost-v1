@@ -4,6 +4,7 @@ import {
   boolean,
   check,
   type AnyPgColumn,
+  doublePrecision,
   index,
   integer,
   numeric,
@@ -1139,7 +1140,7 @@ export const postMedia = pgTable(
     fileSize: bigint("file_size", { mode: "number" }),
     width: integer("width"),
     height: integer("height"),
-    duration: integer("duration"),
+    duration: doublePrecision("duration"),
     position: integer("position").notNull().default(0),
     createdAt: timestamp("created_at", {
       withTimezone: true,

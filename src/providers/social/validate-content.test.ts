@@ -249,6 +249,14 @@ describe("provider.validateContent", () => {
         expectFailure(result, "unsupported_media", platform);
       });
 
+      test("a video with unknown duration is rejected safely", async () => {
+        expectFailure(
+          await validate(provider, platform, video({ duration: null })),
+          "unsupported_media",
+          platform,
+        );
+      });
+
       test("the failure message names the platform", async () => {
         const result = await validate(provider, platform, media({ mimeType: "image/gif" }));
         assert.equal(result.ok, false);

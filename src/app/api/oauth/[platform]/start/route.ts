@@ -4,7 +4,7 @@ import { NextResponse } from "next/server";
 
 import { getCurrentUser } from "@/lib/auth/server";
 import { loginUrlWithNext } from "@/lib/auth/redirect";
-import { isMissingConfigError, resolveAppUrl, serverConfig } from "@/lib/env";
+import { isMissingConfigError, resolveAppUrl, resolveOAuthAppUrl, serverConfig } from "@/lib/env";
 import { logger } from "@/lib/logger";
 import { consumeRateLimit } from "@/lib/rate-limit";
 import { getProvider } from "@/providers/social";
@@ -127,7 +127,7 @@ export async function GET(
     const state = randomBytes(24).toString("base64url");
     const redirectUri = new URL(
       `/api/oauth/${platform}/callback`,
-      resolveAppUrl(origin),
+      resolveOAuthAppUrl(platform, origin),
     ).toString();
 
     const providerCookies: Array<{ name: string; value: string; maxAge: number }> = [];

@@ -80,8 +80,29 @@ export async function POST(request: Request): Promise<Response> {
 
     const form = await request.formData().catch(() => null);
     const file = form?.get("file");
+    const isFile = file instanceof File;
+    const fileName = isFile ? file.name : null;
+    const fileType = isFile ? file.type : null;
+    const fileSize = isFile ? file.size : null;
+    let byteLength: number | null = null;
+    let detectedMime: string | null = null;
+    let extension = "";
+    const contentType = request.headers.get("content-type")?.split(";", 1)[0]?.trim() ?? null;
+    const logUploadDiagnostic = () => {
+      logger.info("media upload diagnostic", {
+        isFile,
+        fileName,
+        fileType,
+        fileSize,
+        byteLength,
+        detectedMime,
+        extension,
+        contentType,
+      });
+    };
 
-    if (!(file instanceof File) || file.size === 0) {
+    if (!isFile || file.size === 0) {
+      logUploadDiagnostic();
       return NextResponse.json({ message: MESSAGE_UNSUPPORTED }, { status: 400 });
     }
 
@@ -90,7 +111,9 @@ export async function POST(request: Request): Promise<Response> {
     }
 
     const bytes = new Uint8Array(await file.arrayBuffer());
+    byteLength = bytes.byteLength;
     if (bytes.byteLength === 0) {
+      logUploadDiagnostic();
       return NextResponse.json({ message: MESSAGE_UNSUPPORTED }, { status: 400 });
     }
 
@@ -101,18 +124,22 @@ export async function POST(request: Request): Promise<Response> {
     // The client's `type` is only a hint: magic bytes decide, and the extension
     // is a secondary signal that must agree with an accepted type when present.
     const mimeType = sniffMimeType(bytes);
+    detectedMime = mimeType;
     if (!mimeType) {
+      logUploadDiagnostic();
       return NextResponse.json({ message: MESSAGE_UNSUPPORTED }, { status: 400 });
     }
 
     const name = file.name ?? "";
-    const extension = name.includes(".") ? `.${name.split(".").pop()?.toLowerCase()}` : "";
+    extension = name.includes(".") ? `.${name.split(".").pop()?.toLowerCase()}` : "";
     if (extension && !(ACCEPTED_UPLOAD_EXTENSIONS as readonly string[]).includes(extension)) {
+      logUploadDiagnostic();
       return NextResponse.json({ message: MESSAGE_UNSUPPORTED }, { status: 400 });
     }
 
     const mediaType = mimeTypeToMediaType(mimeType);
     if (!mediaType) {
+      logUploadDiagnostic();
       return NextResponse.json({ message: MESSAGE_UNSUPPORTED }, { status: 400 });
     }
 
