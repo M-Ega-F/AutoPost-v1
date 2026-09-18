@@ -18,6 +18,11 @@ export type StoredObject = {
   mimeType: string;
 };
 
+export type MediaUploadIntent = {
+  storageKey: string;
+  signedUrl: string;
+};
+
 function bucket() {
   return serverConfig.mediaBucket;
 }
@@ -128,6 +133,28 @@ export async function uploadMediaObject(
   }
 
   return { storageKey, fileSize: file.size, mimeType: file.type };
+}
+
+export async function createMediaUploadIntent(
+  userId: string,
+  fileName: string,
+): Promise<MediaUploadIntent> {
+  await ensureMediaBucket();
+
+  const storageKey = storageKeyFor(userId, fileName);
+  const supabase = getServiceSupabase();
+  const { data, error } = await supabase.storage
+    .from(bucket())
+    .createSignedUploadUrl(storageKey, { upsert: false });
+
+  if (error || !data?.signedUrl) {
+    throw new AppError(
+      "server_error",
+      "We couldn't prepare the media upload. Try again.",
+    );
+  }
+
+  return { storageKey, signedUrl: data.signedUrl };
 }
 
 export async function removeMediaObject(storageKey: string): Promise<void> {
