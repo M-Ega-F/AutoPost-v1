@@ -1783,3 +1783,33 @@ The diagnostic logs only the post ID, platform names, and timestamp. It does not
 ## Validation and next check
 
 The next runtime check must restart the web process from this repository and perform one fresh draft publish. Capture the web process output containing `[PUBLISH-ENTRY]`, `[POST-TRACE] PUBLISH_REQUEST`, and enqueue events, then capture the separate worker output containing `WORKER_JOB_RECEIVED` and later events. Compare the non-secret `publishTraceId` across streams. The action timing line alone remains insufficient evidence of queue or Meta execution.
+
+# Performance Phase 4 — Safe Read-Path and Draft-Publish Optimization
+
+Tanggal: 2026-09-18
+
+## Evidence
+
+The existing audit already showed that `createPost` uses one batched account query, but `publishDraft` still called `getAccountRecord` inside the target loop. That made account validation scale as one workspace/account lookup per target. The same loop then performed provider validation serially, which remains unchanged because provider validation order and first-error behavior are part of the existing contract.
+
+`listAccountSummaries` also used `select()` and therefore fetched encrypted access/refresh-token columns even though the function only returns account display metadata. The tokens were not sent to the client, but fetching them was unnecessary database work and unnecessary handling of sensitive columns.
+
+## Changes
+
+1. `publishDraft` now resolves all requested accounts with the existing workspace-scoped `getAccountRecordsForWorkspace` batch query, then validates targets in the original order.
+2. `listAccountSummaries` now selects only the columns required by its response: account ID, platform, platform account ID, username, display name, avatar URL, and status.
+
+No caching, schema/index migration, queue/worker change, provider change, OAuth change, polling change, or media-upload change was made.
+
+## Static Query Comparison
+
+| Operation | Before | After |
+|---|---:|---:|
+| Draft account validation for `N` targets | `N` account queries | `1` batch query |
+| Account summary columns | Full `social_accounts` row including encrypted credential columns | 7 non-credential columns |
+
+These are source-level query-count/column comparisons. A production latency percentage was not claimed because no authenticated controlled before/after benchmark was available in this run.
+
+## Validation
+
+The existing unit and integration suites cover draft publishing, account ownership/status validation, account summaries, queue lifecycle, worker execution, and provider behavior. Full validation after this phase is recorded in the final response. No credentials, tokens, or private media were logged.

@@ -28,7 +28,6 @@ import { PUBLISH_QUEUE_NAME } from "@/lib/queue";
 import {
   accountLabelFor,
   getAccountRecordsForWorkspace,
-  getAccountRecord,
   listAccountSummaries,
 } from "@/lib/domain/accounts";
 import { getAnalyticsOverview, getPostAnalyticsDetail } from "@/lib/domain/analytics";
@@ -545,8 +544,20 @@ export async function publishDraft(
   }
 
   const mediaAsset = toMediaAsset(input.media);
+  const accounts = await measurePerf(
+    "[PERF][db]",
+    "publishDraft.accountValidation",
+    () => getAccountRecordsForWorkspace(
+      input.userId,
+      workspaceId,
+      input.targets.map((target) => target.socialAccountId),
+    ),
+    { queryCount: 1 },
+  );
+  const accountsById = new Map(accounts.map((account) => [account.id, account]));
+
   for (const target of input.targets) {
-    const account = await getAccountRecord(input.userId, target.socialAccountId);
+    const account = accountsById.get(target.socialAccountId) ?? null;
     if (!account || account.platform !== target.platform) {
       throw new AppError("forbidden", "We couldn't find that account. Reconnect it and try again.");
     }

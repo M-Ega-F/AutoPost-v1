@@ -71,17 +71,24 @@ export async function listAccountSummaries(
     "[PERF][db]",
     "accounts.summaries",
     () => db
-      .select()
+      .select({
+        id: socialAccounts.id,
+        platform: socialAccounts.platform,
+        platformAccountId: socialAccounts.platformAccountId,
+        username: socialAccounts.username,
+        displayName: socialAccounts.displayName,
+        avatarUrl: socialAccounts.avatarUrl,
+        status: socialAccounts.status,
+      })
       .from(socialAccounts)
       .where(and(eq(socialAccounts.userId, userId), eq(socialAccounts.workspaceId, workspaceId))),
     { queryCount: 1 },
   );
 
-  const byPlatform = new Map<Platform, SocialAccountRecord>();
+  const byPlatform = new Map<Platform, (typeof rows)[number]>();
   for (const row of rows) {
-    const record = toRecord(row);
-    if (record.status === "disconnected") continue;
-    byPlatform.set(record.platform, record);
+    if (row.status === "disconnected") continue;
+    byPlatform.set(row.platform, row);
   }
 
   return ([
