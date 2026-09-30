@@ -3,7 +3,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { AlertCircle, Loader2 } from "lucide-react";
 import { unstable_rethrow } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 
@@ -14,6 +14,10 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  formatLoginCooldownClock,
+  formatLoginCooldownMessage,
+} from "@/lib/auth/login-cooldown";
 import Link from "next/link";
 
 const NETWORK_ERROR =
@@ -45,9 +49,45 @@ const loginSchema = z.object({
 
 type LoginValues = z.infer<typeof loginSchema>;
 
-export function LoginForm({ next }: { next: string }) {
+export function LoginForm({
+  next,
+  initialCooldownSeconds = 0,
+}: {
+  next: string;
+  initialCooldownSeconds?: number;
+}) {
   const [isPending, startTransition] = useTransition();
   const [formError, setFormError] = useState<string | null>(null);
+  const [cooldownSeconds, setCooldownSeconds] = useState(() =>
+    Math.max(0, Math.ceil(initialCooldownSeconds)),
+  );
+  const [cooldownAnnouncement, setCooldownAnnouncement] = useState(() =>
+    initialCooldownSeconds > 0
+      ? "Login is temporarily disabled because of too many attempts."
+      : "",
+  );
+  const previousCooldownSeconds = useRef(cooldownSeconds);
+
+  const cooldownActive = cooldownSeconds > 0;
+
+  useEffect(() => {
+    if (cooldownSeconds > 0 && previousCooldownSeconds.current === 0) {
+      setCooldownAnnouncement("Login is temporarily disabled because of too many attempts.");
+    } else if (cooldownSeconds === 0 && previousCooldownSeconds.current > 0) {
+      setCooldownAnnouncement("Login cooldown ended. You can try logging in again.");
+    }
+    previousCooldownSeconds.current = cooldownSeconds;
+  }, [cooldownSeconds]);
+
+  useEffect(() => {
+    if (!cooldownActive) return;
+
+    const timeout = window.setTimeout(() => {
+      setCooldownSeconds((current) => Math.max(0, current - 1));
+    }, 1_000);
+
+    return () => window.clearTimeout(timeout);
+  }, [cooldownActive, cooldownSeconds]);
 
   const {
     register,
@@ -61,6 +101,8 @@ export function LoginForm({ next }: { next: string }) {
   });
 
   function onSubmit(values: LoginValues) {
+    if (cooldownActive) return;
+
     setFormError(null);
     startTransition(async () => {
       try {
@@ -69,7 +111,14 @@ export function LoginForm({ next }: { next: string }) {
           password: values.password,
           next,
         });
-        if (!result.ok) setFormError(result.message);
+        if (!result.ok) {
+          if (result.code === "RATE_LIMITED") {
+            setCooldownSeconds(Math.max(1, result.retryAfterSeconds ?? 1));
+            setFormError(null);
+          } else {
+            setFormError(result.message);
+          }
+        }
       } catch (error) {
         unstable_rethrow(error);
         setFormError(NETWORK_ERROR);
@@ -100,12 +149,30 @@ export function LoginForm({ next }: { next: string }) {
         ) : null}
       </div>
 
-      {formError ? (
+      {cooldownActive ? (
+        <Alert
+          id="login-cooldown-message"
+          role="status"
+          aria-live="off"
+          aria-atomic="true"
+          variant="destructive"
+          className="border-destructive-border"
+        >
+          <AlertCircle aria-hidden="true" />
+          <AlertDescription>
+            {formatLoginCooldownMessage(cooldownSeconds)}
+          </AlertDescription>
+        </Alert>
+      ) : formError ? (
         <Alert variant="destructive" className="border-destructive-border">
           <AlertCircle aria-hidden="true" />
           <AlertDescription>{formError}</AlertDescription>
         </Alert>
       ) : null}
+
+      <p className="sr-only" aria-live="polite" aria-atomic="true">
+        {cooldownAnnouncement}
+      </p>
 
       <form
         noValidate
@@ -156,12 +223,20 @@ export function LoginForm({ next }: { next: string }) {
           </div>
         </div>
 
-        <Button type="submit" size="lg" className="w-full" disabled={isPending}>
+        <Button
+          type="submit"
+          size="lg"
+          className="w-full"
+          disabled={isPending || cooldownActive}
+          aria-describedby={cooldownActive ? "login-cooldown-message" : undefined}
+        >
           {isPending ? (
             <>
               <Loader2 className="size-4 animate-spin" aria-hidden="true" />
               Logging in…
             </>
+          ) : cooldownActive ? (
+            <>Try again in {formatLoginCooldownClock(cooldownSeconds)}</>
           ) : (
             "Log in"
           )}

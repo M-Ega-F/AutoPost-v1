@@ -1,10 +1,12 @@
 import Link from "next/link";
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 
 import { LoginForm } from "@/components/auth/login-form";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
 import { DEFAULT_AUTHENTICATED_ROUTE, safeNextPath } from "@/lib/auth/redirect";
+import { getLoginCooldown, getTrustedClientIp } from "@/lib/auth/login-rate-limit";
 import { getCurrentUser } from "@/lib/auth/server";
 
 export default async function LoginPage({
@@ -19,6 +21,9 @@ export default async function LoginPage({
   const user = await getCurrentUser();
   if (user) redirect(next);
 
+  const clientIp = getTrustedClientIp(await headers());
+  const loginCooldown = await getLoginCooldown(clientIp);
+
   const signupUrl =
     next && next !== DEFAULT_AUTHENTICATED_ROUTE
       ? `/signup?next=${encodeURIComponent(next)}`
@@ -30,7 +35,10 @@ export default async function LoginPage({
         <ThemeToggle />
       </div>
       <div className="flex w-full max-w-sm flex-col items-center gap-2">
-        <LoginForm next={next} />
+        <LoginForm
+          next={next}
+          initialCooldownSeconds={loginCooldown.retryAfterSeconds}
+        />
 
         <Button
           variant="ghost"

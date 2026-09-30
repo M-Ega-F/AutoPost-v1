@@ -6,6 +6,11 @@ import { redirect } from "next/navigation";
 
 import { createSupabaseServerClient, requireUser } from "@/lib/auth/server";
 import { safeNextPath } from "@/lib/auth/redirect";
+import {
+  getTrustedClientIp,
+  LOGIN_COOLDOWN_MESSAGE,
+  runLoginAttempt,
+} from "@/lib/auth/login-rate-limit";
 import { consumeRateLimit } from "@/lib/rate-limit";
 import {
   checkPasswordBreach,
@@ -27,7 +32,9 @@ import {
   type SignupFailure,
 } from "@/lib/auth/signup";
 
-export type LoginResult = { ok: true } | { ok: false; message: string };
+export type LoginResult =
+  | { ok: true }
+  | { ok: false; message: string; code?: "RATE_LIMITED"; retryAfterSeconds?: number };
 
 export type SignupResult = { ok: true } | SignupFailure;
 
@@ -216,21 +223,31 @@ export async function loginAction(input: {
   }
 
   const headerList = await headers();
-  const ip =
-    headerList.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
+  const ip = getTrustedClientIp(headerList);
 
-  const limit = consumeRateLimit("login", ip);
-  if (!limit.ok) {
+  const attempt = await runLoginAttempt({
+    identity: ip,
+    signIn: async () => {
+      const supabase = await createSupabaseServerClient();
+      return supabase.auth.signInWithPassword({ email, password });
+    },
+  });
+
+  if (attempt.kind === "cooldown") {
     return {
       ok: false,
-      message: "Too many attempts. Try again in a few minutes.",
+      message: LOGIN_COOLDOWN_MESSAGE,
+      code: "RATE_LIMITED",
+      retryAfterSeconds: attempt.retryAfterSeconds,
     };
   }
 
-  const supabase = await createSupabaseServerClient();
-  const { error } = await supabase.auth.signInWithPassword({ email, password });
+  if (attempt.kind === "success") {
+    // Only ever lands on an internal path: safeNextPath rejects everything else.
+    redirect(safeNextPath(input.next));
+  }
 
-  if (error) {
+  if (attempt.kind === "invalid_credentials" || attempt.kind === "other_error") {
     if (process.env.NODE_ENV === "development") {
       console.error("[auth] password sign-in failed", {
         emailPresent: email.length > 0,
@@ -238,17 +255,21 @@ export async function loginAction(input: {
         passwordPresent: password.length > 0,
         passwordLength: password.length,
         passwordModified: false,
-        status: error.status ?? null,
-        code: error.code ?? null,
-        message: error.message ?? null,
+        status:
+          typeof attempt.error === "object" && attempt.error !== null && "status" in attempt.error
+            ? (attempt.error as { status?: unknown }).status ?? null
+            : null,
+        code:
+          typeof attempt.error === "object" && attempt.error !== null && "code" in attempt.error
+            ? (attempt.error as { code?: unknown }).code ?? null
+            : null,
       });
     }
-    // Never distinguish unknown email from wrong password.
+    // Never distinguish unknown email from wrong password or other Auth errors.
     return { ok: false, message: "Incorrect email or password. Try again." };
   }
 
-  // Only ever lands on an internal path: safeNextPath rejects everything else.
-  redirect(safeNextPath(input.next));
+  return { ok: false, message: "Incorrect email or password. Try again." };
 }
 
 export async function logoutAction(): Promise<void> {
