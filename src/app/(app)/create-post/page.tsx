@@ -26,13 +26,15 @@ export default async function CreatePostPage({
     cookies(),
   ]);
 
-  const settings = await getSettingsForUser(
-    user.id,
-    normalizeTimeZone(cookieStore.get(TIMEZONE_COOKIE)?.value),
-  );
-  const initialMedia = params?.mediaId
-    ? await getMediaAssetForUser(user.id, params.mediaId).catch(() => null)
-    : null;
+  const [settings, initialMedia] = await Promise.all([
+    getSettingsForUser(
+      user.id,
+      normalizeTimeZone(cookieStore.get(TIMEZONE_COOKIE)?.value),
+    ),
+    params?.mediaId
+      ? getMediaAssetForUser(user.id, params.mediaId).catch(() => null)
+      : Promise.resolve(null),
+  ]);
 
   return (
     <>

@@ -54,7 +54,7 @@ export function AppHeader({
   const activeWorkspace = workspaces.find((workspace) => workspace.id === activeWorkspaceId);
 
   return (
-    <header className="sticky top-0 z-30 flex h-14 items-center gap-2 border-b border-primary/30 bg-background/75 px-4 shadow-[0_8px_28px_hsl(var(--neon-purple)/0.10)] backdrop-blur-xl md:px-6 lg:px-8">
+    <header className="sticky top-0 z-30 flex h-14 items-center gap-2 border-b border-border bg-background px-4 md:px-6 lg:px-8">
       <Button
         type="button"
         variant="ghost"

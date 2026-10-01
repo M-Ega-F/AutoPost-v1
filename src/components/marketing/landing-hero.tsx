@@ -9,18 +9,18 @@ import { PLATFORMS, PLATFORM_META } from "@/lib/status";
 export function LandingHero({ createPostHref }: { createPostHref: string }) {
   return (
     <section aria-labelledby="landing-hero-title">
-      <Card className="relative isolate overflow-hidden rounded-lg border-primary/45 bg-card/75 p-4 shadow-[0_0_42px_hsl(var(--neon-purple)/0.20)] md:p-6">
+      <Card className="relative isolate overflow-hidden rounded-lg border-primary/45 bg-card p-4 md:p-6">
         <span
           aria-hidden="true"
-          className="pointer-events-none absolute -top-16 -right-10 size-40 rounded-full border-[18px] border-neon-cyan/70 shadow-[0_0_28px_hsl(var(--neon-cyan)/0.45)]"
+          className="pointer-events-none absolute -top-16 -right-10 size-40 rounded-full border-[18px] border-info/30"
         />
         <span
           aria-hidden="true"
-          className="pointer-events-none absolute right-24 bottom-5 size-3 rounded-full bg-neon-pink shadow-[0_0_16px_hsl(var(--neon-pink)/0.90)]"
+          className="pointer-events-none absolute right-24 bottom-5 size-3 rounded-full bg-primary"
         />
 
         <div className="relative z-10 flex flex-col gap-4">
-          <span className="grid size-10 place-items-center rounded-md bg-primary text-primary-foreground shadow-[0_0_24px_hsl(var(--primary)/0.55)]">
+          <span className="grid size-10 place-items-center rounded-md bg-primary text-primary-foreground">
             <Sparkles className="size-5" aria-hidden="true" />
           </span>
           <h1

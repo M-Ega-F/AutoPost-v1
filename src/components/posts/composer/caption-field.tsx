@@ -50,7 +50,7 @@ export function CaptionField({
   const counterTone = overLimit
     ? "text-destructive"
     : length >= limit * 0.9
-      ? "text-[hsl(var(--warning))]"
+      ? "text-warning"
       : "text-muted-foreground";
 
   const hint = limitHint(platforms, limit);

@@ -33,7 +33,7 @@ export default async function InvitationPage({ params }: Context) {
 
   return (
     <main className="flex min-h-dvh items-center justify-center bg-background px-4 py-10">
-      <section className="w-full max-w-md rounded-xl border border-primary/20 bg-card/90 p-6 shadow-[0_0_26px_hsl(var(--neon-purple)/0.10)]">
+      <section className="w-full max-w-md rounded-xl border border-border bg-card p-6">
         <p className="text-sm font-medium text-primary">Workspace invitation</p>
         <h1 className="mt-2 text-2xl font-semibold">Join {invitation.workspaceName}</h1>
         <p className="mt-2 text-sm text-muted-foreground">You were invited as a {invitation.role}. Confirm below to get access.</p>

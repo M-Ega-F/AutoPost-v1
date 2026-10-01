@@ -37,7 +37,7 @@ export function SidebarNav({
               "flex h-11 items-center gap-3 rounded-md px-3 text-sm transition-colors lg:h-10",
               FOCUS_RING,
               active
-                ? "border border-primary/50 bg-accent font-medium text-accent-foreground shadow-[0_0_18px_hsl(var(--primary)/0.18)]"
+                ? "border border-primary/50 bg-accent font-medium text-accent-foreground"
                 : "border border-transparent text-muted-foreground hover:border-primary/30 hover:bg-accent/60 hover:text-foreground",
             )}
           >
@@ -52,9 +52,9 @@ export function SidebarNav({
 
 export function AppSidebar() {
   return (
-    <div className="flex h-full flex-col border-r border-primary/30 bg-card/80 shadow-[8px_0_32px_hsl(var(--neon-purple)/0.10)] backdrop-blur-xl">
+    <div className="flex h-full flex-col border-r border-border bg-card">
       <div className="flex h-14 shrink-0 items-center gap-2 border-b border-primary/20 px-4">
-        <span className="grid size-8 place-items-center rounded-md bg-primary text-primary-foreground shadow-[0_0_18px_hsl(var(--primary)/0.55)]">
+        <span className="grid size-8 place-items-center rounded-md bg-primary text-primary-foreground">
           <Sparkles className="size-4" aria-hidden="true" />
         </span>
         <span className="text-sm font-semibold tracking-tight">AutoPost</span>

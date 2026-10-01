@@ -1,1037 +1,1062 @@
-Anda bertindak sebagai Senior Backend Engineer yang bertanggung jawab memperbaiki
-implementasi TikTok Content Posting API pada repository AutoPost-v1.
+Saya ingin melakukan REWORK TOTAL COLOR SYSTEM pada AutoPost.
 
-============================================================
-TUJUAN
-============================================================
-
-Implementasikan seluruh corrective action P0 yang sudah terbukti dari
-TIKTOK CONTENT POSTING API COMPLIANCE AUDIT.
-
-Tujuan akhirnya:
-
-AutoPost harus mengikuti flow Direct Post TikTok secara benar:
-
-    Query Creator Info
-            ↓
-    Validate creator capabilities
-            ↓
-    Validate privacy_level
-            ↓
-    Video Init
-            ↓
-    pilih transfer method
-       ↙             ↘
-FILE_UPLOAD      PULL_FROM_URL
-     ↓                 ↓
-PUT upload          TikTok pull
-     ↘               ↙
-          publish_id
-              ↓
-       Get Post Status
-              ↓
-      published / failed
-
-Implementasi harus tetap mempertahankan arsitektur AutoPost yang sekarang.
-
-JANGAN melakukan redesign besar.
-
-============================================================
-SOURCE OF TRUTH
-============================================================
-
-Repository:
-
-C:\Users\aldis\Documents\Codex\AutoPost-v1
-
-Master Plan:
-
-C:\Users\aldis\Documents\Codex\AutoPost-v1\.agents\plans\Master Plan.md
-
-Master Plan adalah source of truth.
-
-WAJIB:
-
-- JANGAN mengubah Master Plan.
-- JANGAN overwrite Master Plan.
-- JANGAN mengedit isi Master Plan.
-- Jangan membuat plan baru yang menggantikan Master Plan.
-
-Audit yang menjadi dasar implementasi adalah hasil:
-
-TIKTOK CONTENT POSTING API COMPLIANCE AUDIT
-
-Temuan utama:
-
-1. creator_info/query belum dipanggil.
-2. privacy_level hardcoded SELF_ONLY.
-3. creator capability belum divalidasi.
-4. max_video_post_duration_sec belum digunakan.
-5. semua media mencoba PULL_FROM_URL terlebih dahulu.
-6. FILE_UPLOAD belum benar untuk file >64 MB.
-7. Content-Length belum dikirim.
-8. MIME upload selalu video/mp4.
-9. PULL_FROM_URL belum divalidasi requirement-nya.
-
-Implementasi kali ini HANYA fokus pada P0 tersebut.
-
-============================================================
-ATURAN BESAR
-============================================================
-
-JANGAN:
-
-- mengubah Facebook provider
-- mengubah Instagram provider
-- mengubah Threads provider
-- mengubah OAuth provider lain
-- mengubah queue architecture
-- mengganti BullMQ
-- mengganti Redis
-- mengganti Supabase
-- mengubah database schema kecuali benar-benar terbukti mutlak diperlukan
-- membuat migration jika tidak diperlukan
-- memindahkan worker architecture
-- membuat provider architecture baru
-- membuat abstraction baru yang tidak diperlukan
-- mengubah public API
-- mengubah authentication
-- mengubah authorization
-- mengubah UI besar
-- mengubah Create Post flow secara besar
-- menghapus /api/media/upload
-- mengubah direct media upload architecture yang sudah ada
-- mengubah Master Plan
-
-JANGAN:
-
-- commit
-- push
-- force push
-- reset git
-- checkout branch lain
-- menghapus perubahan user
-- menggunakan git clean
-- menggunakan git restore terhadap perubahan yang bukan milik task ini
-
-JANGAN log:
-
-- access token
-- refresh token
-- client secret
-- Authorization header
-- signed media URL
-- TikTok upload_url
-- cookies
-- session token
-- Supabase service role key
-
-============================================================
-PRINSIP IMPLEMENTASI
-============================================================
-
-1. Evidence first.
-
-Sebelum mengubah kode:
-
-- baca implementasi TikTok saat ini
-- pahami provider contract
-- pahami executePublishJob
-- pahami media/storage flow
-- pahami existing error mapping
-- pahami existing tests
-
-2. Reuse existing architecture.
-
-Jangan membuat TikTok publishing system baru.
-
-Perbaiki provider yang sudah ada.
-
-3. Minimal change.
-
-Jika satu fungsi dapat diperbaiki tanpa refactor besar,
-lakukan perubahan lokal.
-
-4. Backward compatibility.
-
-Pastikan perubahan tidak merusak:
-
-- existing TikTok OAuth
-- existing connected accounts
-- existing publish queue
-- retry
-- execution state
-- history
-- Facebook
-- Instagram
-- Threads
-
-============================================================
-PHASE 0 — PRE-IMPLEMENTATION AUDIT
-============================================================
-
-Sebelum coding, inspect minimal:
-
-src/providers/social/tiktok/index.ts
-
-src/providers/social/tiktok/index.test.ts
-
-src/providers/social/http.ts
-
-src/providers/social/types.ts
-
-src/lib/publishing/execute.ts
-
-src/lib/domain/executions.ts
-
-src/lib/storage/index.ts
-
-src/lib/validation/limits.ts
-
-src/workers/publish-worker.ts
-
-src/lib/queue/publish.ts
-
-Cari semua:
-
-- TikTok API endpoint
-- publishVideo()
-- initVideoPost()
-- uploadBytes()
-- getPublishStatus()
-- validateContent()
-- privacy_level
-- SELF_ONLY
-- PUBLIC_TO_EVERYONE
-- MUTUAL_FOLLOW_FRIENDS
-- PULL_FROM_URL
-- FILE_UPLOAD
-- video_size
-- chunk_size
-- total_chunk_count
-- Content-Range
-- Content-Type
-- Content-Length
-- createSignedMediaUrl()
-- error mapping
-
-Setelah memahami kode, baru implementasikan.
-
-============================================================
-P0-1 — IMPLEMENT QUERY CREATOR INFO
-============================================================
-
-Tambahkan penggunaan endpoint resmi:
-
-POST
-
-https://open.tiktokapis.com/v2/post/publish/creator_info/query/
-
-Header:
-
-Authorization: Bearer <token>
-
-Content-Type: application/json; charset=UTF-8
-
-Gunakan existing HTTP abstraction.
-
-JANGAN membuat HTTP client kedua.
-
-JANGAN bypass existing requestJson()/HTTP helper jika existing abstraction
-memang sesuai.
-
-Response yang harus dapat diparsing:
-
-data:
-- creator_avatar_url
-- creator_username
-- creator_nickname
-- privacy_level_options
-- comment_disabled
-- duet_disabled
-- stitch_disabled
-- max_video_post_duration_sec
-
-error:
-- code
-- message
-- log_id
-
-Buat internal typed representation yang sesuai dengan architecture
-yang sudah ada.
-
-Jangan menyimpan access token ke result.
-
-============================================================
-P0-2 — CREATOR INFO HARUS TERJADI SEBELUM VIDEO INIT
-============================================================
-
-Flow video Direct Post harus menjadi:
-
-publishVideo()
-    ↓
-Query Creator Info
-    ↓
-Validate creator information
-    ↓
-Build post_info
-    ↓
-Video Init
-
-Creator Info TIDAK boleh dipanggil setelah video/init.
-
-Jangan:
-
-Video Init
-↓
-Creator Info
-
-Harus:
-
-Creator Info
-↓
-Video Init
-
-============================================================
-P0-3 — VALIDASI PRIVACY LEVEL
-============================================================
-
-Saat ini provider menggunakan:
-
-SELF_ONLY
-
-hardcoded.
-
-Jangan sekadar mengganti hardcode dengan value lain.
-
-Gunakan:
-
-creator_info.privacy_level_options
-
-sebagai sumber validasi.
-
-Aturan:
-
-privacy level yang akan digunakan harus ada di:
-
-creator_info.privacy_level_options
-
-Jika tidak tersedia:
-
-- jangan melakukan Video Init
-- return provider error yang jelas
-- jangan fallback diam-diam ke PUBLIC_TO_EVERYONE
-- jangan fallback diam-diam ke SELF_ONLY
-- jangan membuat request TikTok yang pasti invalid
+TUJUAN:
+Menyamakan seluruh warna UI AutoPost dengan reference design yang diberikan.
 
 PENTING:
+Ini adalah COLOR SYSTEM REWORK SAJA.
 
-Untuk MVP saat ini, jika UI/domain AutoPost belum memiliki user-selectable
-TikTok privacy setting, pertahankan default existing:
+JANGAN mengubah:
+- business logic
+- data fetching
+- server actions
+- API
+- database
+- schema
+- migration
+- authentication
+- authorization
+- OAuth
+- queue
+- BullMQ
+- worker
+- provider
+- publishing flow
+- validation logic
+- state management
+- routing
+- URL
+- layout structure
+- component hierarchy
+- spacing
+- sizing
+- typography
+- responsive behavior
+- animation behavior
 
-SELF_ONLY
+JANGAN melakukan redesign layout.
 
-TETAPI:
+JANGAN membuat komponen UI baru kecuali benar-benar diperlukan untuk mengganti token warna pada existing component.
 
-SELF_ONLY harus divalidasi terhadap:
+JANGAN mengubah Master Plan:
 
-privacy_level_options
+.agents/plans/Master Plan.md
+
+JANGAN commit.
+JANGAN push.
+
+==================================================
+REFERENCE DESIGN
+==================================================
+
+Gunakan gambar reference yang diberikan sebagai SOURCE OF TRUTH VISUAL:
+
+Light Mode:
+- clean white background
+- very light slate surfaces
+- indigo primary
+- dark navy text
+- subtle slate borders
+- semantic colors untuk status
+
+Dark Mode:
+- deep navy background
+- dark slate surfaces
+- indigo primary/accent
+- muted slate text
+- subtle dark borders
+- GREEN khusus untuk analytics/performance chart
+- green dapat digunakan sebagai active/positive accent yang memang terlihat pada reference
+- jangan mengubah seluruh dark mode menjadi green theme
+
+Visual target:
+
+LIGHT MODE
+White / near-white UI
+        ↓
+Indigo primary
+        ↓
+Slate text/border
+        ↓
+Green / orange / red hanya untuk semantic states
+
+DARK MODE
+Deep navy background
+        ↓
+Dark slate surfaces
+        ↓
+Indigo primary
+        ↓
+GREEN analytics/chart accent
+        ↓
+Semantic status colors
+
+==================================================
+TARGET COLOR TOKENS
+==================================================
+
+Gunakan token-based system.
+
+Jangan menyebarkan hardcoded hex color ke seluruh component.
+
+Semua warna harus berasal dari centralized design tokens / CSS variables / Tailwind theme yang sudah digunakan project.
+
+Jika codebase sudah memiliki shadcn/ui token system:
+GUNAKAN DAN PERBARUI SYSTEM TERSEBUT.
+
+Jangan membuat color system kedua yang paralel.
+
+--------------------------------------------------
+LIGHT MODE
+--------------------------------------------------
+
+Target palette:
+
+Primary:
+#4F46E5
+
+Primary hover:
+#4338CA
+
+Primary light / subtle:
+gunakan tint Indigo yang sangat ringan dan konsisten dengan primary.
+
+Background:
+#F8FAFC
+
+Surface / Card:
+#FFFFFF
+
+Surface Alt:
+#F1F5F9
+
+Foreground / Text:
+#0F172A
+
+Muted Text:
+#64748B
+
+Border:
+#E2E8F0
+
+Input background:
+#FFFFFF
+
+Ring / Focus:
+#4F46E5
+
+Info:
+#2563EB
+
+Success:
+#16A34A
+
+Warning:
+#D97706
+
+Danger / Destructive:
+#DC2626
+
+--------------------------------------------------
+DARK MODE
+--------------------------------------------------
+
+Target palette:
+
+Background:
+#0F172A
+
+Surface:
+#111827
+
+Surface Alt:
+#1E293B
+
+Foreground / Text:
+#F8FAFC
+
+Muted Text:
+#94A3B8
+
+Border:
+#334155
+
+Primary:
+#6366F1
+
+Primary Hover:
+gunakan indigo yang sedikit lebih terang/kuat daripada primary.
+
+Primary subtle:
+gunakan translucent/tinted indigo yang tetap readable pada navy.
+
+Ring / Focus:
+#6366F1
+
+Info:
+#3B82F6
+
+Success:
+#22C55E
+
+Warning:
+#F59E0B
+
+Danger:
+#EF4444
+
+==================================================
+DARK MODE ANALYTICS / GRAPH
+==================================================
+
+INI WAJIB.
+
+Untuk chart/performance graph pada DARK MODE:
+
+gunakan HIJAU sebagai warna utama data visualization.
+
+Target utama:
+
+#22C55E
+
+Jika membutuhkan secondary green:
+gunakan variasi green yang masih berada dalam keluarga warna yang sama.
+
+Contoh:
+
+Primary graph:
+#22C55E
+
+Secondary graph:
+#10B981
+
+Graph area/fill:
+gunakan translucent green.
+
+JANGAN menggunakan indigo sebagai line chart utama pada dark mode.
+
+Light mode tetap boleh menggunakan Indigo untuk graph sesuai reference.
 
 Jadi:
 
-existing default:
-SELF_ONLY
+LIGHT:
+chart → Indigo
 
-+
+DARK:
+chart → Green
 
-creator_info.privacy_level_options.includes("SELF_ONLY")
+==================================================
+COLOR SEMANTICS
+==================================================
 
-baru:
+Pertahankan semantic meaning.
 
-Video Init
+SUCCESS:
+green
 
-Jangan memperkenalkan UI privacy selector baru dalam task ini.
+WARNING:
+orange/amber
 
-============================================================
-P0-4 — VALIDASI CREATOR CAPABILITY
-============================================================
+ERROR:
+red
 
-Gunakan hasil Creator Info untuk memvalidasi capability yang relevan.
+INFO:
+blue
 
-Minimal audit dan implementasikan validation untuk:
+Jangan mengganti semantic colors menjadi indigo hanya demi konsistensi brand.
 
-comment_disabled
-duet_disabled
-stitch_disabled
-max_video_post_duration_sec
+Contoh:
+
+Berhasil:
+green
+
+Gagal:
+red
+
+Peringatan:
+orange
+
+Informasi:
+blue
+
+Brand / action:
+indigo
+
+Analytics dark:
+green
+
+==================================================
+SHADCN/UI
+==================================================
+
+Audit semua komponen shadcn/ui yang digunakan.
+
+Update color tokens secara centralized.
+
+Periksa minimal:
+
+- Button
+- Badge
+- Card
+- Input
+- Textarea
+- Select
+- Dropdown Menu
+- Dialog
+- Alert Dialog
+- Sheet
+- Popover
+- Tooltip
+- Tabs
+- Checkbox
+- Radio Group
+- Switch
+- Progress
+- Separator
+- Table
+- Calendar
+- Command
+- Toast / Sonner
+- Alert
+- Skeleton
+- Form
+- Label
+- Breadcrumb
+- Pagination
+- Avatar
+
+Jangan membuat setiap component memiliki warna sendiri.
+
+Gunakan token:
+
+background
+foreground
+primary
+primary-foreground
+secondary
+secondary-foreground
+muted
+muted-foreground
+accent
+accent-foreground
+destructive
+destructive-foreground
+border
+input
+ring
+
+Jika codebase menggunakan token tambahan:
+pertahankan dan mapping ke palette baru.
+
+==================================================
+SIDEBAR
+==================================================
+
+JANGAN mengubah ukuran/layout sidebar.
+
+Hanya ubah warna.
+
+LIGHT MODE:
+
+Sidebar:
+#FFFFFF / surface
+
+Text:
+#0F172A
+
+Muted navigation:
+#64748B
+
+Active navigation:
+very light indigo background
+
+Active text/icon:
+#4F46E5
+
+Hover:
+very light indigo/slate
+
+Border:
+#E2E8F0
+
+DARK MODE:
+
+Sidebar:
+deep navy / dark surface
+
+Text:
+#F8FAFC
+
+Muted navigation:
+#94A3B8
+
+Active navigation:
+gunakan green accent seperti reference jika memang sudah terlihat pada reference.
+
+Active icon/text:
+green
+
+Hover:
+dark slate
+
+Border:
+#334155
 
 PENTING:
+Active sidebar green pada dark mode adalah ACCENT, bukan mengganti primary brand menjadi green.
 
-Jangan mengarang aturan TikTok.
+==================================================
+BUTTON
+==================================================
 
-Bedakan:
+Primary Button:
 
-A. field yang memang harus dipatuhi oleh request
-B. field yang hanya informative
-C. field yang tidak boleh dipaksa menjadi restriction tanpa dasar dokumentasi
+LIGHT:
+background #4F46E5
+foreground white
 
-Untuk:
+hover:
+#4338CA
 
-max_video_post_duration_sec
+DARK:
+background #6366F1
+foreground white
 
-Jika creator memberikan:
+hover:
+lighter/brighter indigo
 
-max_video_post_duration_sec = N
+Secondary:
+neutral/slate surface.
 
-dan video duration > N,
+Outline:
+transparent/background surface
+border slate.
 
-jangan lanjut ke Video Init.
+Ghost:
+transparent
+hover slate/indigo subtle.
 
-Return validation error yang jelas.
+Success:
+green.
 
-Jangan menggunakan static limit saja.
+Warning:
+amber.
 
-Static application limit tetap boleh dipertahankan sebagai first-level validation.
+Danger:
+red.
 
-Flow:
+Jangan membuat semua button green.
 
-static validation
-    ↓
-Creator Info
-    ↓
-dynamic creator validation
-    ↓
-Video Init
+==================================================
+CARD
+==================================================
 
-Untuk:
+Card harus tetap clean dan subtle.
 
-comment_disabled
-duet_disabled
-stitch_disabled
+LIGHT:
 
-Pastikan request tidak meminta capability yang creator nyatakan disabled.
+background:
+#FFFFFF
 
-Jangan mengubah UX besar.
+border:
+#E2E8F0
 
-Jika current AutoPost belum memiliki pilihan explicit untuk disable_*,
-gunakan behavior yang paling konservatif dan konsisten dengan current provider
-contract tanpa membuat fitur UI baru.
+text:
+#0F172A
 
-============================================================
-P0-5 — PILIH FILE_UPLOAD UNTUK MEDIA SERVER-SIDE
-============================================================
+muted:
+#64748B
 
-Ini sangat penting.
+DARK:
 
-Saat media AutoPost sudah memiliki:
+background:
+#111827
 
-storageKey
+border:
+#334155
 
-dan file dapat dibaca server-side:
+text:
+#F8FAFC
 
-JANGAN mencoba PULL_FROM_URL terlebih dahulu.
+muted:
+#94A3B8
+
+Jangan menggunakan gradient pada card.
+
+Jangan menambahkan glow.
+
+Jangan menambahkan shadow berlebihan.
+
+==================================================
+INPUT / TEXTAREA / SELECT
+==================================================
+
+LIGHT:
+
+background #FFFFFF
+border #E2E8F0
+text #0F172A
+placeholder #64748B
+
+focus:
+indigo border/ring
+
+DARK:
+
+background #111827
+border #334155
+text #F8FAFC
+placeholder #94A3B8
+
+focus:
+indigo ring/border
+
+Pastikan disabled state tetap jelas.
+
+==================================================
+BADGE
+==================================================
+
+Badge harus menggunakan semantic colors.
+
+Contoh:
+
+Aktif:
+green subtle background + green text
+
+Terjadwal:
+indigo/blue subtle background + indigo/blue text
+
+Draft:
+slate subtle
+
+Berhasil:
+green
+
+Gagal:
+red
+
+Menunggu:
+amber
+
+Jangan menggunakan saturated full-background badge kecuali existing component memang membutuhkan contrast tersebut.
+
+==================================================
+STATUS
+==================================================
+
+Mapping:
+
+published / success
+→ green
+
+scheduled
+→ indigo / blue
+
+processing
+→ indigo / blue
+
+pending
+→ slate / blue
+
+failed
+→ red
+
+partial_failure
+→ amber/orange
+
+cancelled
+→ slate
+
+Jangan mengubah status logic.
+Hanya visual mapping.
+
+==================================================
+TOAST / NOTIFICATION
+==================================================
+
+Audit Toast/Sonner.
+
+SUCCESS:
+green accent
+
+ERROR:
+red accent
+
+WARNING:
+amber
+
+INFO:
+blue/indigo
+
+Default toast:
+surface + border + readable foreground.
+
+Pastikan contrast tetap baik di light dan dark.
+
+==================================================
+MODAL / DIALOG / SHEET
+==================================================
+
+Jangan mengubah ukuran atau layout.
+
+LIGHT:
+
+surface #FFFFFF
+border #E2E8F0
+text #0F172A
+
+DARK:
+
+surface #111827
+border #334155
+text #F8FAFC
+
+Overlay:
+gunakan neutral black dengan opacity yang sesuai.
+
+Jangan menggunakan indigo overlay.
+
+==================================================
+TABLE
+==================================================
+
+LIGHT:
+
+header:
+#F8FAFC / #F1F5F9
+
+body:
+#FFFFFF
+
+border:
+#E2E8F0
+
+hover:
+very light slate/indigo
+
+DARK:
+
+header:
+#1E293B
+
+body:
+#111827
+
+border:
+#334155
+
+hover:
+dark slate / subtle indigo
+
+Pastikan status badges tetap semantic.
+
+==================================================
+ACCOUNT SELECTOR
+==================================================
+
+Ini sangat penting karena AutoPost sekarang mendukung MULTI-ACCOUNT SELECTION.
+
+Jangan mengubah behavior.
+
+Jangan mengubah selection state.
+
+Jangan mengubah account query.
+
+Jangan mengubah target logic.
+
+HANYA warna.
+
+LIGHT:
+
+Platform group:
+neutral surface
+
+Selected account:
+subtle indigo background/border
+
+Checkbox checked:
+indigo
+
+Account text:
+#0F172A
+
+Account secondary text:
+#64748B
+
+DARK:
+
+Platform group:
+dark slate
+
+Selected account:
+subtle indigo background
+
+Checkbox checked:
+indigo
+
+Account text:
+#F8FAFC
+
+Secondary:
+#94A3B8
+
+Jangan menggunakan green sebagai selected account color.
+
+Green hanya untuk semantic positive state / dark analytics / accent yang memang ditunjukkan reference.
+
+==================================================
+MEDIA LIBRARY
+==================================================
+
+Jangan mengubah:
+
+- grid
+- image size
+- pagination
+- selection logic
+- lazy loading
+- media fetching
+
+Hanya warna:
+
+selected media:
+indigo border/ring
+
+hover:
+subtle indigo
+
+filter active:
+indigo
+
+metadata:
+slate/muted
+
+Dark mode:
+dark slate surfaces + indigo selection.
+
+==================================================
+DASHBOARD METRICS
+==================================================
+
+Metric cards jangan diberi background warna kuat.
 
 Gunakan:
 
-FILE_UPLOAD
+neutral card
++
+small semantic/icon accent.
 
-secara langsung.
+Contoh:
 
-Flow:
+Total Post:
+indigo
 
-storageKey
-   ↓
-download/read media bytes
-   ↓
-FILE_UPLOAD init
-   ↓
-PUT upload_url
-   ↓
-status fetch
+Terjadwal:
+blue/indigo
 
-Jangan:
+Berhasil:
+green
 
-storageKey
-   ↓
-signed URL
-   ↓
-PULL_FROM_URL
-   ↓
-403
-   ↓
-fallback FILE_UPLOAD
+Gagal:
+red
 
-untuk kasus media server-side yang memang tersedia.
+Jangan membuat seluruh card menjadi warna status.
 
-Alasan:
+==================================================
+CHARTS
+==================================================
 
-- menghindari domain ownership requirement
-- menghindari url_ownership_unverified
-- lebih sesuai untuk file yang sudah dimiliki AutoPost
-- mengurangi satu network dependency
-- menghilangkan unnecessary PULL attempt
+LIGHT MODE:
 
-============================================================
-P0-6 — PULL_FROM_URL HANYA UNTUK URL YANG MEMANG MEMERLUKANNYA
-============================================================
+Primary performance chart:
+Indigo #4F46E5
 
-Tetap pertahankan dukungan PULL_FROM_URL jika provider contract
-memang membutuhkan URL-based media.
+Area fill:
+translucent indigo
 
-Tetapi jangan gunakan PULL_FROM_URL untuk storageKey internal
-yang dapat di-upload langsung.
+Grid:
+very subtle slate
 
-Jika PULL_FROM_URL digunakan:
+Axis:
+muted slate
 
-pastikan URL:
+DARK MODE:
 
-- HTTPS
-- dapat diakses TikTok
-- tidak membutuhkan browser cookie
-- tidak membutuhkan user authentication
-- tidak bergantung pada localhost
-- tidak menggunakan URL yang hanya dapat diakses internal network
+Primary performance chart:
+GREEN #22C55E
 
-JANGAN mengklaim domain ownership verified jika tidak dapat dibuktikan.
+Area fill:
+translucent green
 
-JANGAN melakukan automatic fallback yang menyembunyikan root cause.
+Grid:
+subtle dark slate
 
-Jika URL tidak memenuhi requirement:
+Axis:
+#94A3B8
 
-return error yang jelas sebelum request TikTok bila validasi lokal memang
-dapat membuktikannya.
+Tooltip:
+dark surface / light text
 
-============================================================
-P0-7 — FILE_UPLOAD INIT
-============================================================
+Jangan memakai green pada light-mode chart jika reference masih menunjukkan indigo.
 
-Untuk:
+==================================================
+CONNECTED ACCOUNTS
+==================================================
 
-POST
+Jangan mengubah account data atau behavior.
 
-/v2/post/publish/video/init/
+Warna:
 
-dengan:
+Platform icon:
+tetap menggunakan brand icon masing-masing.
 
-source = FILE_UPLOAD
+JANGAN recolor logo platform.
 
-pastikan:
+TikTok:
+tetap TikTok branding.
 
-video_size
-chunk_size
-total_chunk_count
+Instagram:
+tetap Instagram branding.
 
-benar-benar merepresentasikan upload aktual.
+Facebook:
+tetap Facebook branding.
 
-Formula:
+Threads:
+tetap Threads branding.
 
-video_size = actual byte size
+Container, border, selected state, status badge:
+gunakan AutoPost design tokens.
 
-Jika single chunk:
-
-chunk_size = video_size
-
-total_chunk_count = 1
-
-Jika multiple chunks:
-
-chunk_size <= 64 MB
-
-total_chunk_count =
-ceil(video_size / chunk_size)
+==================================================
+PLATFORM ICONS
+==================================================
 
 PENTING:
 
-Jangan membuat:
+Jangan memaksa semua platform icon menggunakan warna AutoPost.
+
+Brand platform icon harus tetap recognizable.
+
+Yang diubah hanya:
+
+- surrounding background
+- border
+- selection state
+- hover
+- text
+- badge
+
+==================================================
+LOGO AUTPOST
+==================================================
+
+Jangan mengganti bentuk/logo.
+
+Jika logo memiliki color treatment:
+gunakan warna yang konsisten dengan primary Indigo.
+
+Light:
+Indigo.
 
-total_chunk_count = 2
+Dark:
+Indigo/light-indigo.
 
-tetapi kemudian mengirim seluruh file sebagai satu PUT.
+Jangan membuat logo hijau hanya karena chart dark mode hijau.
 
-Metadata init harus konsisten dengan actual upload.
+==================================================
+ACCESSIBILITY
+==================================================
 
-============================================================
-P0-8 — IMPLEMENT CHUNK UPLOAD >64 MB
-============================================================
+Setelah color system selesai:
 
-Current audit menemukan bahwa file >64 MB belum benar-benar
-di-upload secara chunked.
+Audit contrast untuk:
 
-Perbaiki.
+- body text
+- muted text
+- button text
+- input text
+- placeholder
+- badge
+- status
+- navigation
+- sidebar
+- dark mode
+- focus ring
 
-Jika:
+Jangan menggunakan warna yang terlihat bagus tetapi gagal readability.
 
-video_size <= 64 MB
+Prioritaskan WCAG contrast yang reasonable untuk UI production.
 
-boleh satu PUT.
+==================================================
+IMPLEMENTATION STRATEGY
+==================================================
 
-Jika:
+SEBELUM EDIT:
 
-video_size > 64 MB
+1. Audit existing theme architecture.
+2. Cari:
+   - globals.css
+   - tailwind config jika ada
+   - shadcn tokens
+   - CSS variables
+   - theme provider
+   - dark mode implementation
+3. Cari hardcoded colors:
+   - bg-*
+   - text-*
+   - border-*
+   - ring-*
+   - hex
+   - rgb
+   - hsl
+4. Identifikasi mana yang merupakan:
+   - design token
+   - semantic status color
+   - platform brand color
+   - visualization color
 
-harus upload sequential chunks sesuai requirement TikTok.
+JANGAN mengganti semuanya secara blind.
 
-Jangan upload semua bytes sekaligus.
+==================================================
+HARD CODE COLOR AUDIT
+==================================================
 
-Untuk setiap chunk:
+Cari seluruh repository untuk:
 
-PUT upload_url
+#hex
+rgb()
+rgba()
+hsl()
+bg-
+text-
+border-
+ring-
+fill-
+stroke-
 
-dengan Content-Range:
+Kelompokkan hasil:
 
-bytes START-END/TOTAL
+A. Brand/UI colors
+B. Semantic status colors
+C. Platform brand colors
+D. Chart colors
+E. Decorative colors
 
-Contoh konsep:
+Kemudian hanya ubah A dan D sesuai target.
 
-chunk 1:
-bytes 0-(chunkSize-1)/total
+B harus tetap semantic.
 
-chunk 2:
-bytes chunkSize-(2*chunkSize-1)/total
+C harus tetap platform branding.
 
-dst.
+==================================================
+JANGAN MERUSAK DARK MODE
+==================================================
 
-Pastikan:
+Dark mode harus benar-benar berbeda dari sekadar:
 
-START
-END
-TOTAL
+light color → dark background.
 
-selalu benar.
+Gunakan:
 
-END inclusive.
+Background:
+#0F172A
 
-Jangan off-by-one.
+Surface:
+#111827
 
-Jangan mengubah upload_url.
+Surface Alt:
+#1E293B
 
-Semua chunk menggunakan upload_url dari init response.
+Border:
+#334155
 
-============================================================
-P0-9 — CONTENT-LENGTH
-============================================================
+Text:
+#F8FAFC
 
-Tambahkan:
+Muted:
+#94A3B8
 
-Content-Length
+Primary:
+#6366F1
 
-pada PUT upload.
+Analytics:
+#22C55E
 
-Nilai harus:
+Pastikan hierarchy:
 
-ukuran bytes chunk yang sedang dikirim.
+background
+<
+surface
+<
+surface-alt
 
-Untuk single upload:
+terlihat jelas tetapi tetap subtle.
 
-Content-Length = total file size
+==================================================
+JANGAN UBAH LAYOUT
+==================================================
 
-Untuk chunk:
+Jika menemukan masalah layout saat implementasi:
 
-Content-Length = current chunk byte length
+JANGAN memperbaikinya.
 
-Jangan menggunakan total file size untuk setiap chunk.
+Laporkan sebagai:
 
-============================================================
-P0-10 — CONTENT-RANGE
-============================================================
+"Existing layout issue — out of scope."
 
-Pastikan:
+Scope hanya color system.
 
-Content-Range:
+Jangan mengubah:
 
-bytes START-END/TOTAL
+padding
+margin
+gap
+width
+height
+font-size
+line-height
+border-radius
+grid
+flex
+position
+responsive breakpoint
 
-dan:
+kecuali perubahan tersebut secara otomatis diperlukan oleh existing theme mechanism, dan bukan redesign.
 
-END = START + chunkLength - 1
+==================================================
+JANGAN UBAH TYPOGRAPHY
+==================================================
 
-TOTAL = total file size
+Pertahankan:
 
-Pastikan request terakhir tidak melewati TOTAL.
+font family
+font weight
+font size
+line height
+letter spacing
 
-============================================================
-P0-11 — CONTENT-TYPE
-============================================================
+persis seperti existing implementation.
 
-Current implementation selalu:
+==================================================
+JANGAN UBAH ICON
+==================================================
 
-video/mp4
+Jangan mengganti icon.
 
-Audit media MIME aktual.
+Jangan mengganti icon library.
 
-Jika media memang:
+Jangan mengubah ukuran icon.
 
-video/mp4
+Hanya warna icon jika memang berasal dari theme token.
 
-gunakan:
+Platform logo tetap menggunakan warna brand masing-masing.
 
-video/mp4
+==================================================
+VALIDATION
+==================================================
 
-Jika current provider contract mendukung tipe video lain,
-jangan memaksa semuanya menjadi video/mp4.
-
-Jangan melakukan broad MIME expansion tanpa evidence.
-
-Jika TikTok Direct Post video endpoint memang membutuhkan
-video/mp4 untuk current supported flow, pertahankan restriction
-dan fail validation secara jelas untuk unsupported MIME.
-
-Yang penting:
-
-request Content-Type harus konsisten dengan bytes yang dikirim.
-
-============================================================
-P0-12 — PUBLISH_ID
-============================================================
-
-Pastikan:
-
-Video Init response:
-
-data.publish_id
-
-digunakan sebagai identifier untuk:
-
-/v2/post/publish/status/fetch/
-
-Jangan menggunakan:
-
-postPlatformId
-
-sebagai TikTok publish_id.
-
-Jangan membuat publish_id sendiri.
-
-============================================================
-P0-13 — STATUS POLLING
-============================================================
-
-Pertahankan existing status polling architecture.
-
-Jangan redesign.
-
-Pastikan:
-
-init
-↓
-upload jika diperlukan
-↓
-publish_id
-↓
-status fetch
-
-Polling existing behavior tetap dipertahankan jika sudah bekerja.
-
-Jangan mengubah retry architecture kecuali diperlukan langsung
-oleh perubahan P0.
-
-============================================================
-P0-14 — ERROR HANDLING
-============================================================
-
-Walaupun detailed error observability adalah P1,
-implementasi P0 tidak boleh merusak existing error handling.
-
-Pastikan jika Creator Info gagal:
-
-JANGAN lanjut ke Video Init.
-
-Jika privacy validation gagal:
-
-JANGAN lanjut ke Video Init.
-
-Jika capability validation gagal:
-
-JANGAN lanjut ke Video Init.
-
-Jika FILE_UPLOAD init gagal:
-
-JANGAN pura-pura upload sukses.
-
-Jika PUT chunk gagal:
-
-JANGAN lanjut seolah upload selesai.
-
-Jika status fetch gagal:
-
-gunakan existing execution failure architecture.
-
-Jangan mengubah generic user-facing message menjadi raw TikTok response.
-
-============================================================
-P0-15 — REMOVE UNNECESSARY PULL FALLBACK
-============================================================
-
-Current behavior:
-
-PULL_FROM_URL
-↓
-fallback FILE_UPLOAD
-
-untuk media internal.
-
-Ubah menjadi:
-
-media memiliki storageKey
-↓
-FILE_UPLOAD
-
-PULL_FROM_URL hanya ketika source memang URL-based.
-
-Jangan menghapus PULL_FROM_URL support.
-
-Jangan menghapus existing method jika masih digunakan oleh legitimate flow.
-
-============================================================
-P0-16 — TESTS
-============================================================
-
-Tambahkan regression tests yang benar-benar membuktikan flow.
-
-Minimal:
-
-TEST 1
-Creator Info dipanggil sebelum Video Init.
-
-Expected sequence:
-
-creator_info/query
-→ video/init
-
-TEST 2
-Creator Info gagal.
-
-Expected:
-
-video/init NOT called.
-
-TEST 3
-SELF_ONLY tersedia.
-
-Creator Info:
-
-privacy_level_options = ["SELF_ONLY"]
-
-Expected:
-
-video/init privacy_level = SELF_ONLY
-
-TEST 4
-SELF_ONLY tidak tersedia.
-
-Creator Info:
-
-privacy_level_options = ["PUBLIC_TO_EVERYONE"]
-
-Expected:
-
-Video Init NOT called.
-
-TEST 5
-Creator duration limit.
-
-Creator:
-
-max_video_post_duration_sec = 30
-
-Video duration = 40
-
-Expected:
-
-Video Init NOT called.
-
-TEST 6
-Server-side storageKey.
-
-Expected:
-
-FILE_UPLOAD
-
-Expected:
-
-PULL_FROM_URL NOT called.
-
-TEST 7
-FILE_UPLOAD <=64MB.
-
-Expected:
-
-correct video_size
-correct chunk_size
-total_chunk_count = 1
-Content-Length correct
-Content-Range correct
-
-TEST 8
-FILE_UPLOAD >64MB.
-
-Expected:
-
-multiple chunks.
-
-Verify:
-
-- total_chunk_count
-- Content-Length each chunk
-- Content-Range each chunk
-- sequential order
-- complete byte coverage
-- no overlapping ranges
-- no missing ranges
-
-TEST 9
-Last chunk.
-
-Verify:
-
-END = TOTAL - 1
-
-TEST 10
-MIME.
-
-Verify Content-Type is consistent with actual supported media MIME.
-
-TEST 11
-publish_id.
-
-Verify status fetch uses publish_id returned by TikTok init.
-
-TEST 12
-PULL_FROM_URL legitimate URL flow.
-
-Expected:
-
-PULL_FROM_URL
-
-NOT FILE_UPLOAD.
-
-============================================================
-P0-17 — TEST REAL HTTP BODY SAFELY
-============================================================
-
-Gunakan mock HTTP infrastructure existing.
-
-Jangan melakukan real TikTok request dalam automated tests.
-
-Capture sanitized request:
-
-{
-  "post_info": {
-    "privacy_level": "...",
-    "disable_duet": "...",
-    "disable_comment": "...",
-    "disable_stitch": "..."
-  },
-  "source_info": {
-    "source": "...",
-    "video_size": "...",
-    "chunk_size": "...",
-    "total_chunk_count": "..."
-  }
-}
-
-JANGAN capture:
-
-Authorization
-token
-upload_url
-signed URL
-
-============================================================
-P0-18 — PRESERVE CURRENT ARCHITECTURE
-============================================================
-
-Jangan membuat:
-
-TikTokDirectPostService2
-TikTokProviderV2
-NewTikTokClient
-NewPublishWorker
-
-jika tidak benar-benar diperlukan.
-
-Gunakan provider:
-
-src/providers/social/tiktok/index.ts
-
-dan existing HTTP abstraction.
-
-Jika helper baru benar-benar diperlukan:
-
-- letakkan dekat provider
-- buat namanya jelas
-- gunakan existing types
-- jangan membuat abstraction global tanpa kebutuhan
-
-============================================================
-P0-19 — DO NOT CHANGE OTHER PROVIDERS
-============================================================
-
-Setelah implementasi:
-
-pastikan diff tidak menyentuh behavior:
-
-Facebook
-Instagram
-Threads
-
-Jika file shared berubah:
-
-jelaskan mengapa.
-
-Shared HTTP helper boleh berubah hanya jika:
-
-- perubahan memang diperlukan untuk TikTok upload
-- tidak mengubah behavior provider lain
-- test provider lain tetap pass
-
-============================================================
-P0-20 — DATABASE
-============================================================
-
-Jangan menambahkan migration.
-
-Jangan mengubah schema.
-
-Creator Info tidak perlu disimpan ke database untuk task ini
-kecuali existing architecture benar-benar membutuhkan.
-
-Prefer:
-
-Query Creator Info
-→ validate
-→ publish
-
-dalam satu publish execution.
-
-============================================================
-P0-21 — LOGGING SECURITY
-============================================================
-
-Logging harus tetap aman.
-
-Boleh log:
-
-provider=tiktok
-stage=creator_info
-privacy_level=<value>
-source=FILE_UPLOAD
-video_size=<number>
-chunk_count=<number>
-status=<value>
-
-JANGAN log:
-
-Bearer token
-client secret
-upload_url
-signed media URL
-
-============================================================
-P0-22 — RUN VALIDATION
-============================================================
-
-Setelah implementasi:
+Setelah implementasi jalankan:
 
 npm run lint
 
@@ -1047,126 +1072,190 @@ npm run build
 
 git diff --check
 
-Jika migration tidak berubah:
+Semua harus PASS.
 
-JANGAN menjalankan migration hanya untuk formalitas.
+Jika ada failure:
+JANGAN menonaktifkan test.
 
-Jika db generate tidak relevan:
+Perbaiki hanya jika failure disebabkan oleh perubahan color system.
 
-jangan menjalankan hanya untuk membuat file baru.
+==================================================
+VISUAL AUDIT
+==================================================
 
-============================================================
-P0-23 — INSPECT DIFF
-============================================================
+Setelah code selesai, lakukan audit visual terhadap:
 
-Setelah semua test:
+1. /login
+2. /dashboard
+3. /create-post
+4. /scheduled
+5. /history
+6. history detail
+7. /media-library
+8. /connected-accounts
+9. /settings
+10. review/approval
+11. modal/dialog
+12. toast
+13. account selector
+14. dark mode
 
-git status
+Pastikan semua menggunakan color tokens yang sama.
 
-git diff --stat
+==================================================
+LIGHT MODE ACCEPTANCE CRITERIA
+==================================================
 
-git diff -- src/providers/social/tiktok/
-git diff -- src/providers/social/http.ts
-git diff -- src/lib/publishing/
-git diff -- src/workers/
+Light mode harus terlihat seperti reference:
+
+- background putih/very light slate
+- card putih
+- border sangat subtle
+- primary indigo
+- sidebar putih
+- active navigation indigo
+- CTA indigo
+- text dark navy
+- muted text slate
+- status semantic
+- chart indigo
+- platform logo tetap original
+
+Tidak boleh terasa:
+- neon
+- terlalu colorful
+- gradient-heavy
+- gaming UI
+- glassmorphism
+- excessive shadow
+
+==================================================
+DARK MODE ACCEPTANCE CRITERIA
+==================================================
+
+Dark mode harus terlihat seperti reference:
+
+- deep navy background
+- dark slate cards
+- subtle borders
+- indigo primary
+- green analytics chart
+- green positive accent
+- semantic status colors
+- white/light text
+- muted slate text
+
+Tidak boleh:
+- full green theme
+- full purple theme
+- pure black background
+- excessive glow
+- neon UI
+
+==================================================
+FINAL REPORT
+==================================================
+
+Setelah selesai, berikan:
+
+# COLOR SYSTEM IMPLEMENTATION REPORT
+
+## 1. Files Changed
+
+Daftar semua file.
+
+## 2. Files Not Changed
 
 Pastikan:
 
-- tidak ada Master Plan berubah
-- tidak ada unrelated changes
-- tidak ada secret
-- tidak ada credential
-- tidak ada generated junk
-- tidak ada debug code
-- tidak ada console.log yang membocorkan data sensitif
+- database
+- migration
+- provider
+- worker
+- queue
+- API
+- server actions
+- business logic
 
-============================================================
-P0-24 — MANUAL TEST PLAN
-============================================================
+tidak berubah.
 
-Setelah automated tests PASS, buat manual test plan.
+## 3. Color Tokens
 
-Test minimal:
+Tampilkan final token:
 
-A. TikTok connected account
-B. Upload video
-C. Publish now
-D. FILE_UPLOAD
-E. Creator Info
-F. privacy validation
-G. status polling
-H. published
+LIGHT:
 
-Untuk current TikTok unaudited client:
+primary
+background
+surface
+surfaceAlt
+foreground
+muted
+border
+success
+warning
+danger
+info
 
-gunakan privacy level yang memang tersedia dari Creator Info.
+DARK:
 
-Jangan mengasumsikan PUBLIC_TO_EVERYONE tersedia.
+primary
+background
+surface
+surfaceAlt
+foreground
+muted
+border
+success
+warning
+danger
+info
+chart
 
-============================================================
-HASIL AKHIR WAJIB
-============================================================
+## 4. Components Updated
 
-Setelah implementasi, berikan report:
+Checklist:
 
-# TIKTOK P0 IMPLEMENTATION REPORT
+- [ ] Sidebar
+- [ ] Header
+- [ ] Buttons
+- [ ] Cards
+- [ ] Inputs
+- [ ] Select
+- [ ] Checkbox
+- [ ] Switch
+- [ ] Badge
+- [ ] Status
+- [ ] Toast
+- [ ] Modal
+- [ ] Dialog
+- [ ] Sheet
+- [ ] Table
+- [ ] Tabs
+- [ ] Media Library
+- [ ] Account Selector
+- [ ] Connected Accounts
+- [ ] Dashboard
+- [ ] Charts
+- [ ] Review
+- [ ] Settings
+- [ ] All shadcn components used
 
-## 1. Implementation Summary
+## 5. Hardcoded Color Audit
 
-Apa yang berubah.
+Laporkan apakah masih ada hardcoded UI colors.
 
-## 2. Creator Info
+Pisahkan:
 
-- endpoint
-- kapan dipanggil
-- data yang digunakan
+- allowed
+- semantic
+- platform brand
+- chart
+- accidental/out-of-system
 
-## 3. Privacy
+## 6. Validation
 
-- default current behavior
-- validation terhadap privacy_level_options
-
-## 4. Capability Validation
-
-- comment
-- duet
-- stitch
-- duration
-
-## 5. Transfer Strategy
-
-Jelaskan:
-
-storageKey
-→ FILE_UPLOAD
-
-dan kapan:
-
-PULL_FROM_URL
-
-digunakan.
-
-## 6. FILE_UPLOAD
-
-Jelaskan:
-
-- video_size
-- chunk_size
-- total_chunk_count
-- Content-Length
-- Content-Range
-- Content-Type
-- chunking >64 MB
-
-## 7. Status Polling
-
-Pastikan publish_id digunakan.
-
-## 8. Tests
-
-Jumlah test sebelum/sesudah.
-
-Tampilkan command dan hasil:
+Laporkan:
 
 lint
 typecheck
@@ -1174,109 +1263,73 @@ unit
 integration
 test:all
 build
-diff check
+diff-check
 
-## 9. Files Changed
+## 7. Business Logic Safety
 
-Daftar file yang benar-benar berubah.
+Konfirmasi:
 
-## 10. Other Providers
+"No business logic was changed."
 
-Konfirmasi Facebook/Instagram/Threads tidak diubah
-atau jelaskan jika shared file berubah.
+## 8. Layout Safety
 
-## 11. Master Plan
+Konfirmasi:
 
-WAJIB:
+"No layout/spacing/typography redesign was performed."
 
-Master Plan changed: NO
+## 9. Migration
 
-## 12. Database
+Konfirmasi:
 
-Migration/schema changed: NO
+"No database migration was created."
 
-## 13. Git
+## 10. Git
 
-Commit: NO
-Push: NO
+Konfirmasi:
 
-============================================================
-KONDISI GAGAL
-============================================================
+"No commit or push was performed."
 
-Jika ada test gagal:
+==================================================
+FINAL ABSOLUTE RULE
+==================================================
 
-JANGAN memalsukan PASS.
+Ini bukan redesign UI.
 
-Jelaskan:
+Ini adalah:
 
-- command
-- test gagal
-- error
-- root cause
-- apakah berkaitan dengan perubahan ini
+COLOR SYSTEM REWORK.
 
-Jika ada requirement TikTok yang tidak dapat diimplementasikan
-secara aman karena informasi di repository tidak cukup:
+Reference image adalah visual source of truth.
 
-STOP pada bagian tersebut.
+Light:
+Indigo + Slate + White.
 
-Jangan mengarang.
+Dark:
+Navy + Slate + Indigo.
 
-Laporkan:
+Dark chart:
+GREEN.
 
-UNKNOWN / BLOCKED
+Semantic:
+Green / Amber / Red / Blue.
 
-dan jelaskan evidence yang dibutuhkan.
+Platform logos:
+tetap brand colors.
 
-============================================================
-FINAL ACCEPTANCE CRITERIA
-============================================================
+Semua komponen harus menggunakan centralized design tokens.
 
-Implementasi dianggap selesai hanya jika:
+Jangan mengubah business logic.
 
-[ ] Creator Info dipanggil sebelum Video Init
-[ ] privacy_level_options digunakan
-[ ] SELF_ONLY tidak lagi diterima secara blindly/hardcoded tanpa validation
-[ ] creator capability divalidasi
-[ ] max_video_post_duration_sec digunakan untuk dynamic duration validation
-[ ] server-side media menggunakan FILE_UPLOAD
-[ ] PULL_FROM_URL tidak lagi menjadi default untuk storageKey
-[ ] FILE_UPLOAD metadata konsisten dengan upload aktual
-[ ] file <=64MB dapat upload dengan benar
-[ ] file >64MB benar-benar chunked
-[ ] Content-Length dikirim
-[ ] Content-Range benar
-[ ] Content-Type konsisten
-[ ] publish_id digunakan untuk status polling
-[ ] existing retry/execution architecture tetap bekerja
-[ ] Facebook tidak rusak
-[ ] Instagram tidak rusak
-[ ] Threads tidak rusak
-[ ] Master Plan tidak berubah
-[ ] database schema tidak berubah
-[ ] secrets tidak masuk log
-[ ] lint PASS
-[ ] typecheck PASS
-[ ] unit tests PASS
-[ ] integration tests PASS
-[ ] test:all PASS
-[ ] build PASS
-[ ] git diff --check PASS
-[ ] tidak ada commit
-[ ] tidak ada push
+Jangan mengubah layout.
 
-JANGAN berhenti hanya karena unit test PASS.
+Jangan mengubah typography.
 
-Periksa juga hasil git diff dan pastikan implementasi benar-benar
-mengikuti flow:
+Jangan mengubah architecture.
 
-Creator Info
-→ validation
-→ Video Init
-→ FILE_UPLOAD/PULL_FROM_URL
-→ upload
-→ publish_id
-→ status fetch
+Jangan mengubah behavior.
 
-Ini adalah acceptance criterion utama.
+Jangan commit.
+
+Jangan push.
+
+Jangan ubah Master Plan.

@@ -56,7 +56,7 @@ function CalendarPostItem({
   cancelling: boolean;
 }) {
   return (
-    <div className="space-y-2 rounded-md border border-primary/20 bg-background/70 p-2 shadow-[0_0_12px_hsl(var(--neon-purple)/0.08)]">
+    <div className="space-y-2 rounded-md border border-border bg-background p-2">
       <div className="flex items-start justify-between gap-1">
         <Link
           href={`/history?post=${post.id}`}

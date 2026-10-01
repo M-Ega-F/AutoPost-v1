@@ -22,7 +22,7 @@ export function PageHeader({
         <div className="flex items-center gap-2">
           <span
             aria-hidden="true"
-            className="size-2 rounded-full bg-neon-cyan shadow-[0_0_12px_hsl(var(--neon-cyan)/0.85)]"
+            className="size-2 rounded-full bg-primary"
           />
           <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
         </div>

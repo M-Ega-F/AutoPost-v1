@@ -26,7 +26,7 @@ export function DashboardQuickActions() {
                 href={action.href}
                 className={`group rounded-lg border p-4 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
                   action.primary ?? false
-                    ? "border-primary/50 bg-primary/10 shadow-[0_0_20px_hsl(var(--primary)/0.16)] hover:-translate-y-0.5 hover:border-primary"
+                    ? "border-primary/50 bg-primary/10 hover:-translate-y-0.5 hover:border-primary"
                     : "border-border/70 bg-background/40 hover:-translate-y-0.5 hover:border-primary/50 hover:bg-accent/60"
                 }`}
               >

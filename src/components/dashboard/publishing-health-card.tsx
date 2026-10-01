@@ -80,7 +80,7 @@ export function PublishingHealthCard({ initialSnapshot }: { initialSnapshot: Rel
         <div className="flex items-start justify-between gap-4">
           <div>
             <CardTitle id="publishing-health-title" className="flex items-center gap-2 text-base">
-              <Activity className="size-4 text-neon-cyan" aria-hidden="true" />
+              <Activity className="size-4 text-info" aria-hidden="true" />
               Publishing health
             </CardTitle>
             <CardDescription className="mt-1">Live activity from your publishing service.</CardDescription>

@@ -28,11 +28,13 @@ export default async function DashboardPage() {
     cookies(),
     getActiveWorkspaceForUser(userId),
   ]);
-  const reliability = await getReliabilitySnapshot(activeWorkspace.workspace.id);
-  const settings = await getSettingsForUser(
-    userId,
-    normalizeTimeZone(cookieStore.get(TIMEZONE_COOKIE)?.value),
-  );
+  const [reliability, settings] = await Promise.all([
+    getReliabilitySnapshot(activeWorkspace.workspace.id),
+    getSettingsForUser(
+      userId,
+      normalizeTimeZone(cookieStore.get(TIMEZONE_COOKIE)?.value),
+    ),
+  ]);
 
   // Only rows that are really in flight poll (Design 6.2): a scheduled post
   // waiting for its time has nothing to refresh.
@@ -59,7 +61,7 @@ export default async function DashboardPage() {
 
       <DashboardPolling enabled={isPublishing}>
         <div className="space-y-6">
-        <section aria-labelledby="dashboard-welcome-title" className="rounded-xl border border-primary/25 bg-gradient-to-br from-primary/10 via-card/70 to-neon-cyan/5 p-5 shadow-[0_0_30px_hsl(var(--primary)/0.10)] md:p-6">
+        <section aria-labelledby="dashboard-welcome-title" className="rounded-xl border border-border bg-card p-5 md:p-6">
           <p className="text-sm font-medium text-primary">Good morning 👋</p>
           <h2 id="dashboard-welcome-title" className="mt-1 text-xl font-semibold tracking-tight">
             Keep your publishing flow moving.

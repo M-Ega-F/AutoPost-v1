@@ -12,13 +12,13 @@ export function SiteHeader({
   createPostHref: string;
 }) {
   return (
-    <header className="sticky top-0 z-30 border-b border-primary/30 bg-background/75 shadow-[0_8px_28px_hsl(var(--neon-purple)/0.10)] backdrop-blur-xl">
+    <header className="sticky top-0 z-30 border-b border-border bg-background">
       <div className="mx-auto flex h-14 w-full max-w-5xl items-center justify-between gap-2 px-4 md:px-6 lg:px-8">
         <Link
           href="/"
           className="flex items-center gap-2 rounded-md text-sm font-semibold tracking-tight focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
         >
-          <span className="grid size-8 place-items-center rounded-md bg-primary text-primary-foreground shadow-[0_0_18px_hsl(var(--primary)/0.55)]">
+          <span className="grid size-8 place-items-center rounded-md bg-primary text-primary-foreground">
             <Sparkles className="size-4" aria-hidden="true" />
           </span>
           AutoPost

@@ -4,13 +4,13 @@
 /* eslint-disable @next/next/no-img-element */
 
 import { Copy } from "lucide-react";
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { toast } from "sonner";
 
 import { PostStatusRegion } from "@/components/posts/post-status-region";
 import { RetryButton } from "@/components/posts/retry-button";
 import { ReuseActions } from "@/components/posts/reuse-actions";
-import { ReviewPanel } from "@/components/posts/review/review-panel";
 import { PlatformStatusBadge } from "@/components/shared/status-badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -27,6 +27,17 @@ import { humanErrorMessage } from "@/lib/errors";
 import { PLATFORM_META, type Platform } from "@/lib/status";
 import { formatDateTime } from "@/lib/time";
 import { cn } from "@/lib/utils";
+
+const ReviewPanel = dynamic(
+  () => import("@/components/posts/review/review-panel").then((module) => module.ReviewPanel),
+  {
+    loading: () => (
+      <div className="rounded-lg border border-border p-4 text-sm text-muted-foreground" role="status">
+        Loading approval status…
+      </div>
+    ),
+  },
+);
 
 const FOCUS_RING =
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background";

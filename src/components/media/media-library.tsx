@@ -26,7 +26,7 @@ function preview(asset: MediaAssetSummary) {
   // A signed preview URL is already the secure media boundary; optimization
   // would require configuring every possible storage origin.
   // eslint-disable-next-line @next/next/no-img-element
-  return <img src={asset.previewUrl} alt={asset.fileName} className="size-full object-cover" />;
+  return <img src={asset.previewUrl} alt={asset.fileName} loading="lazy" decoding="async" fetchPriority="low" className="size-full object-cover" />;
 }
 
 export function MediaLibrary({ initial }: { initial: PaginatedMediaAssets }) {

@@ -23,7 +23,7 @@ function thumbnail(asset: Asset) {
   // A signed preview URL is already the secure media boundary; optimization
   // would require configuring every possible storage origin.
   // eslint-disable-next-line @next/next/no-img-element
-  return <img src={asset.previewUrl} alt="" className="size-full object-cover transition group-hover:scale-105" />;
+  return <img src={asset.previewUrl} alt="" loading="lazy" decoding="async" fetchPriority="low" className="size-full object-cover transition group-hover:scale-105" />;
 }
 
 export function MediaLibraryPicker({
