@@ -62,6 +62,11 @@ export const platformSchema = z.custom<Platform>(
   { message: "Unsupported platform." },
 );
 
+const postTargetSchema = z.object({
+  platform: platformSchema,
+  socialAccountId: z.string().uuid(),
+});
+
 const acceptedMimeSchema = z.string().refine(
   (value) => (ACCEPTED_UPLOAD_MIME_TYPES as readonly string[]).includes(value),
   { message: MIME_MESSAGE },
@@ -372,32 +377,32 @@ export const createPostSchema = z
       .min(1, { message: CAPTION_REQUIRED })
       .max(MAX_CAPTION_LENGTH, { message: "This caption is too long." }),
     media: postMediaSchema,
-    platforms: z
-      .array(platformSchema)
-      .min(1, { message: "Select at least one platform." })
-      .max(PLATFORMS.length, { message: "Select at least one platform." }),
+    targets: z
+      .array(postTargetSchema)
+      .min(1, { message: "Select at least one account." }),
     schedule: scheduleSchema.nullable(),
     campaignId: z.string().uuid().nullable().optional(),
   })
   .superRefine((value, ctx) => {
-    const unique = new Set(value.platforms);
-    if (unique.size !== value.platforms.length) {
+    const uniqueAccounts = new Set(value.targets.map((target) => target.socialAccountId));
+    if (uniqueAccounts.size !== value.targets.length) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        path: ["platforms"],
-        message: "Choose one account per platform.",
+        path: ["targets"],
+        message: "Choose each account only once.",
       });
       return;
     }
 
     // The effective limit is the minimum across the selected platforms.
-    const limit = captionLimitFor(value.platforms);
+    const selectedPlatforms = [...new Set(value.targets.map((target) => target.platform))];
+    const limit = captionLimitFor(selectedPlatforms);
     if (value.caption.length > limit) {
-      const [first] = captionLimitConstrainers(value.platforms, limit);
+      const [first] = captionLimitConstrainers(selectedPlatforms, limit);
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["caption"],
-        message: humanErrorMessage(first ?? value.platforms[0], "caption_too_long"),
+        message: humanErrorMessage(first ?? selectedPlatforms[0], "caption_too_long"),
       });
     }
   });
@@ -409,31 +414,30 @@ export const saveDraftSchema = z
       .trim()
       .max(MAX_CAPTION_LENGTH, { message: "This caption is too long." }),
     media: postMediaSchema.nullable(),
-    platforms: z
-      .array(platformSchema)
-      .max(PLATFORMS.length, { message: "Too many platforms selected." }),
+    targets: z.array(postTargetSchema),
     timezone: z.string().trim().min(1, { message: "Choose a timezone." }),
     campaignId: z.string().uuid().nullable().optional(),
   })
   .superRefine((value, ctx) => {
-    const unique = new Set(value.platforms);
-    if (unique.size !== value.platforms.length) {
+    const uniqueAccounts = new Set(value.targets.map((target) => target.socialAccountId));
+    if (uniqueAccounts.size !== value.targets.length) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        path: ["platforms"],
-        message: "Choose one account per platform.",
+        path: ["targets"],
+        message: "Choose each account only once.",
       });
       return;
     }
 
-    if (value.platforms.length === 0) return;
-    const limit = captionLimitFor(value.platforms);
+    if (value.targets.length === 0) return;
+    const selectedPlatforms = [...new Set(value.targets.map((target) => target.platform))];
+    const limit = captionLimitFor(selectedPlatforms);
     if (value.caption.length > limit) {
-      const [first] = captionLimitConstrainers(value.platforms, limit);
+      const [first] = captionLimitConstrainers(selectedPlatforms, limit);
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["caption"],
-        message: humanErrorMessage(first ?? value.platforms[0], "caption_too_long"),
+        message: humanErrorMessage(first ?? selectedPlatforms[0], "caption_too_long"),
       });
     }
   });

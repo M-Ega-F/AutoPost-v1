@@ -2,7 +2,7 @@ import { cookies } from "next/headers";
 
 import { PageHeader } from "@/components/shared/page-header";
 import { CreatePostForm } from "@/components/posts/composer/create-post-form";
-import { listAccountSummaries } from "@/lib/domain/accounts";
+import { listAccountSelectionSummaries } from "@/lib/domain/accounts";
 import { requireUser } from "@/lib/auth/server";
 import { getSettingsForUser } from "@/lib/services/settings";
 import { getMediaAssetForUser } from "@/lib/domain/media";
@@ -22,7 +22,7 @@ export default async function CreatePostPage({
   }
   const params = await searchParams;
   const [accounts, cookieStore] = await Promise.all([
-    listAccountSummaries(user.id),
+    listAccountSelectionSummaries(user.id),
     cookies(),
   ]);
 

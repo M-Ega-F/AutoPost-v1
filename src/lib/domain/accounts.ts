@@ -128,6 +128,47 @@ export async function listAccountSummaries(
   });
 }
 
+/** All non-disconnected accounts available for explicit post targeting. */
+export async function listAccountSelectionSummaries(
+  userId: string,
+): Promise<AccountSummary[]> {
+  const workspaceId = await getActiveWorkspaceId(userId);
+  const rows = await measurePerf(
+    "[PERF][db]",
+    "accounts.selectionSummaries",
+    () => db
+      .select({
+        id: socialAccounts.id,
+        platform: socialAccounts.platform,
+        platformAccountId: socialAccounts.platformAccountId,
+        username: socialAccounts.username,
+        displayName: socialAccounts.displayName,
+        avatarUrl: socialAccounts.avatarUrl,
+        status: socialAccounts.status,
+      })
+      .from(socialAccounts)
+      .where(
+        and(
+          eq(socialAccounts.userId, userId),
+          eq(socialAccounts.workspaceId, workspaceId),
+          ne(socialAccounts.status, "disconnected"),
+        ),
+      ),
+    { queryCount: 1 },
+  );
+
+  return rows.map((row) => ({
+    id: row.id,
+    platform: row.platform,
+    status: row.status,
+    username: row.username,
+    displayName: row.displayName,
+    avatarUrl: row.avatarUrl,
+    accountLabel: accountLabelFor(row),
+    configured: getProvider(row.platform).isConfigured(),
+  }));
+}
+
 export async function listActiveAccounts(userId: string) {
   const workspaceId = await getActiveWorkspaceId(userId);
   return listActiveAccountsForWorkspace(userId, workspaceId);

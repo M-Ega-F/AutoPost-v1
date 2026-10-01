@@ -174,9 +174,9 @@ export async function createPost(
     );
   }
 
-  const uniquePlatforms = new Set(input.targets.map((t) => t.platform));
-  if (uniquePlatforms.size !== input.targets.length) {
-    throw new AppError("validation_failed", "Choose one account per platform.");
+  const uniqueAccounts = new Set(input.targets.map((target) => target.socialAccountId));
+  if (uniqueAccounts.size !== input.targets.length) {
+    throw new AppError("validation_failed", "Choose each account only once.");
   }
 
   const mediaAsset = toMediaAsset(input.media);
@@ -434,9 +434,9 @@ export async function saveDraft(
   await requireWorkspacePermission(input.userId, input.postId ? "drafts:update" : "drafts:create");
   const workspaceId = await getActiveWorkspaceId(input.userId);
   assertMediaOwnership(input.userId, input.media);
-  const uniquePlatforms = new Set(input.targets.map((target) => target.platform));
-  if (uniquePlatforms.size !== input.targets.length) {
-    throw new AppError("validation_failed", "Choose one account per platform.");
+  const uniqueAccounts = new Set(input.targets.map((target) => target.socialAccountId));
+  if (uniqueAccounts.size !== input.targets.length) {
+    throw new AppError("validation_failed", "Choose each account only once.");
   }
 
   const result = await db.transaction(async (tx) => {
@@ -538,9 +538,9 @@ export async function publishDraft(
     throw new AppError("validation_failed", "Select at least one platform.");
   }
 
-  const uniquePlatforms = new Set(input.targets.map((target) => target.platform));
-  if (uniquePlatforms.size !== input.targets.length) {
-    throw new AppError("validation_failed", "Choose one account per platform.");
+  const uniqueAccounts = new Set(input.targets.map((target) => target.socialAccountId));
+  if (uniqueAccounts.size !== input.targets.length) {
+    throw new AppError("validation_failed", "Choose each account only once.");
   }
 
   const mediaAsset = toMediaAsset(input.media);
@@ -816,6 +816,7 @@ function toPlatformTarget(row: {
       row.accountTokenExpiresAt.getTime() <= Date.now());
   return {
     id: row.id,
+    socialAccountId: row.accountId,
     platform: row.platform,
     status: row.status,
     attemptCount: row.attemptCount,

@@ -5,6 +5,7 @@ import { eq } from "drizzle-orm";
 
 import {
   disconnectAccount,
+  listAccountSelectionSummaries,
   getAccountManagementSummary,
   listAccountManagementSummaries,
   saveConnectedAccounts,
@@ -71,6 +72,18 @@ test("lists multiple accounts with aggregated usage and no credential fields", a
   assert.equal("encryptedAccessToken" in first, false);
   assert.equal("encryptedRefreshToken" in first, false);
   assert.equal(instagram.find((account) => account.id === instagramTwo)?.pendingTargetCount, 0);
+});
+
+test("lists every non-disconnected account for explicit post selection", async () => {
+  const first = await createAccount("tiktok", { platformAccountId: "tt-1", username: "first" });
+  const second = await createAccount("tiktok", { platformAccountId: "tt-2", username: "second" });
+  await createAccount("tiktok", { platformAccountId: "tt-gone", status: "disconnected" });
+
+  const accounts = await listAccountSelectionSummaries(USER_ID);
+  const tiktok = accounts.filter((account) => account.platform === "tiktok");
+
+  assert.deepEqual(new Set(tiktok.map((account) => account.id)), new Set([first, second]));
+  assert.equal(tiktok.every((account) => account.id !== null), true);
 });
 
 test("account detail enforces ownership", async () => {

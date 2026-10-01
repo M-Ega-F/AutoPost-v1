@@ -57,11 +57,6 @@ import { createLibraryMedia, type ComposerMedia } from "../media/media-selection
 import type { MediaAssetSummary } from "@/lib/domain/types";
 import { useWorkspacePermission } from "@/components/auth/workspace-permissions";
 
-const platformValueSchema = z.custom<Platform>(
-  (value) => typeof value === "string" && PLATFORMS.includes(value as Platform),
-  { message: "Unsupported platform." },
-);
-
 const mediaValueSchema = z.object({
   kind: z.enum(["upload", "url", "library"]),
   storageKey: z.string().nullable(),
@@ -80,7 +75,7 @@ const mediaValueSchema = z.object({
 const composerSchema = z
   .object({
     caption: z.string(),
-    platforms: z.array(platformValueSchema),
+    selectedAccountIds: z.array(z.string().uuid()),
     media: mediaValueSchema.nullable(),
   })
   .superRefine((values, ctx) => {
@@ -100,50 +95,24 @@ const composerSchema = z
       });
     }
 
-    if (values.platforms.length === 0) {
+    if (values.selectedAccountIds.length === 0) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        path: ["platforms"],
-        message: "Select at least one platform.",
+        path: ["selectedAccountIds"],
+        message: "Select at least one account.",
       });
-    }
-
-    const limit = captionLimitFor(values.platforms);
-    if (values.caption.length > limit) {
-      const [first] = captionLimitConstrainers(values.platforms, limit);
-      if (first) {
-        const over = values.caption.length - limit;
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ["caption"],
-          message: `Caption is too long for ${PLATFORM_LABELS[first]}. Remove ${over.toLocaleString()} ${over === 1 ? "character" : "characters"}.`,
-        });
-      }
     }
   });
 
 const draftComposerSchema = z
   .object({
     caption: z.string(),
-    platforms: z.array(platformValueSchema),
+    selectedAccountIds: z.array(z.string().uuid()),
     media: mediaValueSchema.nullable(),
-  })
-  .superRefine((values, ctx) => {
-    if (values.platforms.length === 0) return;
-    const limit = captionLimitFor(values.platforms);
-    if (values.caption.length > limit) {
-      const [first] = captionLimitConstrainers(values.platforms, limit);
-      if (first) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ["caption"],
-          message: `Caption is too long for ${PLATFORM_LABELS[first]}.`,
-        });
-      }
-    }
   });
 
 type ComposerValues = z.infer<typeof composerSchema>;
+type AccountOption = AccountSummary & { id: string };
 
 const COMPATIBILITY_DEBOUNCE_MS = 400;
 
@@ -178,6 +147,18 @@ function toMediaPayload(
   return media.kind === "url"
     ? { kind: "url", sourceUrl: media.sourceUrl ?? "", ...base }
     : { kind: "upload", ...base };
+}
+
+function captionValidationMessage(
+  caption: string,
+  platforms: readonly Platform[],
+): string | null {
+  const limit = captionLimitFor(platforms);
+  if (caption.length <= limit) return null;
+  const [first] = captionLimitConstrainers(platforms, limit);
+  if (!first) return "Caption is too long.";
+  const over = caption.length - limit;
+  return `Caption is too long for ${PLATFORM_LABELS[first]}. Remove ${over.toLocaleString()} ${over === 1 ? "character" : "characters"}.`;
 }
 
 export function CreatePostForm({
@@ -228,11 +209,27 @@ export function CreatePostForm({
     reset: resetUploader,
   } = useMediaUpload();
 
+  const selectableAccounts = useMemo(
+    () => accounts.filter((account): account is AccountOption => account.id !== null),
+    [accounts],
+  );
+
+  const accountById = useMemo(
+    () => new Map(selectableAccounts.map((account) => [account.id, account] as const)),
+    [selectableAccounts],
+  );
+
+  const activeAccountIds = useMemo(
+    () => selectableAccounts
+      .filter((account) => account.status === "active")
+      .map((account) => account.id),
+    [selectableAccounts],
+  );
+
   const connectedPlatforms = useMemo(
-    () =>
-      accounts
-        .filter((account) => account.status === "active")
-        .map((account) => account.platform),
+    () => PLATFORMS.filter((platform) =>
+      accounts.some((account) => account.status === "active" && account.platform === platform),
+    ),
     [accounts],
   );
 
@@ -259,13 +256,13 @@ export function CreatePostForm({
     [initialMedia],
   );
 
-  const initialPlatforms = useMemo(
+  const initialSelectedAccountIds = useMemo(
     () => (draft
       ? draft.platforms
-          .map((target) => target.platform)
-          .filter((platform) => connectedPlatforms.includes(platform))
-      : connectedPlatforms),
-    [connectedPlatforms, draft],
+          .map((target) => target.socialAccountId)
+          .filter((accountId): accountId is string => accountId !== null && accountById.has(accountId))
+      : activeAccountIds),
+    [accountById, activeAccountIds, draft],
   );
 
   const form = useForm<ComposerValues>({
@@ -274,7 +271,7 @@ export function CreatePostForm({
     reValidateMode: "onChange",
     defaultValues: {
       caption: draft?.contentText ?? "",
-      platforms: initialPlatforms,
+      selectedAccountIds: initialSelectedAccountIds,
       media: draftMedia ?? initialLibraryMedia,
     },
   });
@@ -290,11 +287,26 @@ export function CreatePostForm({
   } = form;
 
   const watchedCaption = useWatch({ control, name: "caption" });
-  const watchedPlatforms = useWatch({ control, name: "platforms" });
+  const watchedAccountIds = useWatch({ control, name: "selectedAccountIds" });
   const media = useWatch({ control, name: "media" }) ?? null;
 
   const caption = watchedCaption ?? "";
-  const selectedPlatforms = useMemo(() => watchedPlatforms ?? [], [watchedPlatforms]);
+  const selectedAccountIds = useMemo(
+    () => watchedAccountIds ?? [],
+    [watchedAccountIds],
+  );
+  const selectedAccounts = useMemo(
+    () => selectedAccountIds
+      .map((accountId) => accountById.get(accountId))
+      .filter((account): account is AccountOption => account !== undefined),
+    [accountById, selectedAccountIds],
+  );
+  const selectedPlatforms = useMemo(
+    () => PLATFORMS.filter((platform) =>
+      selectedAccounts.some((account) => account.platform === platform),
+    ),
+    [selectedAccounts],
+  );
 
   const [debouncedCaption, setDebouncedCaption] = useState(caption);
   useEffect(() => {
@@ -380,37 +392,38 @@ export function CreatePostForm({
     [compatibility],
   );
 
-  // A platform that turned out to be incompatible cannot stay selected.
+  // An account whose platform turned out to be incompatible cannot stay selected.
   useEffect(() => {
     if (!media) return;
-    const remaining = selectedPlatforms.filter(
-      (platform) => !isBlocked(platform),
+    const remaining = selectedAccountIds.filter(
+      (accountId) => {
+        const account = accountById.get(accountId);
+        return account !== undefined && !isBlocked(account.platform);
+      },
     );
-    if (remaining.length === selectedPlatforms.length) return;
-    setValue("platforms", remaining, {
-      shouldValidate: submitAttempted || errors.platforms !== undefined,
+    if (remaining.length === selectedAccountIds.length) return;
+    setValue("selectedAccountIds", remaining, {
+      shouldValidate: submitAttempted || errors.selectedAccountIds !== undefined,
       shouldDirty: true,
     });
   }, [
+    accountById,
     media,
-    selectedPlatforms,
+    selectedAccountIds,
     isBlocked,
     setValue,
     submitAttempted,
-    errors.platforms,
+    errors.selectedAccountIds,
   ]);
 
-  // Dropping the media restores the fastest path: every connected platform.
+  // Dropping the media restores the fastest path: every active account.
   useEffect(() => {
     if (media) return;
-    const same =
-      selectedPlatforms.length === connectedPlatforms.length &&
-      connectedPlatforms.every((platform) =>
-        selectedPlatforms.includes(platform),
-      );
+    const same = selectedAccountIds.length === activeAccountIds.length &&
+      activeAccountIds.every((accountId) => selectedAccountIds.includes(accountId));
     if (same) return;
-    setValue("platforms", connectedPlatforms, { shouldValidate: false });
-  }, [media, selectedPlatforms, connectedPlatforms, setValue]);
+    setValue("selectedAccountIds", activeAccountIds, { shouldValidate: false });
+  }, [media, selectedAccountIds, activeAccountIds, setValue]);
 
   const selectablePlatforms = connectedPlatforms.filter(
     (platform) => !isBlocked(platform),
@@ -421,9 +434,10 @@ export function CreatePostForm({
 
   const limit = captionLimitFor(effectivePlatforms);
   const captionOverflow = caption.length - limit;
+  const captionLimitError = captionValidationMessage(caption, effectivePlatforms);
   const hasMedia = media !== null;
 
-  const noAccounts = connectedPlatforms.length === 0;
+  const noAccounts = activeAccountIds.length === 0;
   const mediaUnsupported =
     hasMedia &&
     !checking &&
@@ -440,8 +454,8 @@ export function CreatePostForm({
           ? "Checking media…"
           : captionOverflow > 0
             ? "Caption is too long."
-            : effectivePlatforms.length === 0
-              ? "Select at least one platform."
+              : effectivePlatforms.length === 0
+              ? "Select at least one account."
               : caption.trim().length === 0
                 ? "Write a caption to continue."
                 : null;
@@ -473,10 +487,13 @@ export function CreatePostForm({
           return;
         }
         setValue("media", postMedia, { shouldValidate: false });
-        const payload = {
+        const payload: CreatePostPayload = {
           contentText: values.caption,
           media: toMediaPayload(postMedia, postMedia.storageKey),
-          platforms: values.platforms,
+          targets: selectedAccounts.map((account) => ({
+            platform: account.platform,
+            socialAccountId: account.id,
+          })),
           schedule,
           campaignId,
         };
@@ -534,7 +551,7 @@ export function CreatePostForm({
           if (mode === "draft") {
             router.push("/drafts");
           } else {
-            resetForm({ caption: "", platforms: connectedPlatforms, media: null });
+            resetForm({ caption: "", selectedAccountIds: activeAccountIds, media: null });
           }
           setCompatibility({});
           setSubmitAttempted(false);
@@ -551,7 +568,7 @@ export function CreatePostForm({
         if (mode === "draft") {
           router.push("/drafts");
         } else {
-          resetForm({ caption: "", platforms: connectedPlatforms, media: null });
+          resetForm({ caption: "", selectedAccountIds: activeAccountIds, media: null });
         }
         setCompatibility({});
         setSubmitAttempted(false);
@@ -561,7 +578,6 @@ export function CreatePostForm({
       });
     },
     [
-      connectedPlatforms,
       draft,
       mode,
       persistPendingMedia,
@@ -570,6 +586,8 @@ export function CreatePostForm({
       router,
       setValue,
       campaignId,
+      activeAccountIds,
+      selectedAccounts,
     ],
   );
 
@@ -578,6 +596,12 @@ export function CreatePostForm({
     if (!parsed.success) {
       setSubmitAttempted(true);
       setServerError(parsed.error.issues[0]?.message ?? "Complete the draft fields.");
+      return;
+    }
+    const captionErrorMessage = captionValidationMessage(parsed.data.caption, selectedPlatforms);
+    if (captionErrorMessage) {
+      setSubmitAttempted(true);
+      setServerError(captionErrorMessage);
       return;
     }
 
@@ -603,7 +627,10 @@ export function CreatePostForm({
         postId: draft?.id,
         caption: parsed.data.caption,
         media: media ? toMediaPayload(media, media.storageKey) : null,
-        platforms: parsed.data.platforms,
+        targets: parsed.data.selectedAccountIds
+          .map((accountId) => accountById.get(accountId))
+          .filter((account): account is AccountOption => account !== undefined)
+          .map((account) => ({ platform: account.platform, socialAccountId: account.id })),
         timezone: draft?.timezone ?? defaultTimezone,
         campaignId,
       });
@@ -620,7 +647,7 @@ export function CreatePostForm({
       setPendingAction(null);
       router.push(`/drafts/${result.postId}`);
     });
-  }, [campaignId, defaultTimezone, draft, getValues, persistPendingMedia, router, setValue]);
+  }, [accountById, campaignId, defaultTimezone, draft, getValues, persistPendingMedia, router, selectedPlatforms, setValue]);
 
   const cancelSubmit = useCallback(() => {
     if (!isPending && pendingAction === null) return;
@@ -637,6 +664,12 @@ export function CreatePostForm({
         setSubmitAttempted(true);
         return;
       }
+      const captionErrorMessage = captionValidationMessage(valid.data.caption, selectedPlatforms);
+      if (captionErrorMessage) {
+        setServerError(captionErrorMessage);
+        setSubmitAttempted(true);
+        return;
+      }
       setPendingAction("publish");
       submit(valid.data, null);
     },
@@ -648,6 +681,12 @@ export function CreatePostForm({
       const valid = composerSchema.safeParse(values);
       if (!valid.success) {
         setServerError(valid.error.issues[0]?.message ?? "Complete the post before scheduling.");
+        setSubmitAttempted(true);
+        return;
+      }
+      const captionErrorMessage = captionValidationMessage(valid.data.caption, selectedPlatforms);
+      if (captionErrorMessage) {
+        setServerError(captionErrorMessage);
         setSubmitAttempted(true);
         return;
       }
@@ -667,6 +706,12 @@ export function CreatePostForm({
             setSubmitAttempted(true);
             return;
           }
+          const captionErrorMessage = captionValidationMessage(valid.data.caption, selectedPlatforms);
+          if (captionErrorMessage) {
+            setServerError(captionErrorMessage);
+            setSubmitAttempted(true);
+            return;
+          }
           setScheduleOpen(false);
           setPendingAction("schedule");
           submit(valid.data, schedule);
@@ -677,7 +722,7 @@ export function CreatePostForm({
         },
       )();
     },
-    [handleSubmit, submit],
+    [handleSubmit, selectedPlatforms, submit],
   );
 
   const handleFile = useCallback(
@@ -727,25 +772,27 @@ export function CreatePostForm({
     setValue("media", null, { shouldValidate: submitAttempted });
   }, [resetUploader, setValue, submitAttempted]);
 
-  const togglePlatform = useCallback(
-    (platform: Platform, checked: boolean) => {
+  const toggleAccount = useCallback(
+    (accountId: string, checked: boolean) => {
       const next = checked
-        ? [...selectedPlatforms, platform]
-        : selectedPlatforms.filter((value) => value !== platform);
+        ? [...selectedAccountIds, accountId]
+        : selectedAccountIds.filter((value) => value !== accountId);
 
       setValue(
-        "platforms",
-        PLATFORMS.filter((candidate) => next.includes(candidate)),
+        "selectedAccountIds",
+        selectableAccounts
+          .map((account) => account.id)
+          .filter((id) => next.includes(id)),
         {
-          shouldValidate: submitAttempted || errors.platforms !== undefined,
+          shouldValidate: submitAttempted || errors.selectedAccountIds !== undefined,
           shouldDirty: true,
         },
       );
     },
-    [errors.platforms, selectedPlatforms, setValue, submitAttempted],
+    [errors.selectedAccountIds, selectableAccounts, selectedAccountIds, setValue, submitAttempted],
   );
 
-  const captionError = errors.caption?.message;
+  const captionError = errors.caption?.message ?? captionLimitError ?? undefined;
   const mediaFieldError = errors.media?.message;
   const submitting = isPending || pendingAction !== null;
 
@@ -847,8 +894,8 @@ export function CreatePostForm({
           ) : (
             <PlatformPicker
               accounts={accounts}
-              selected={selectedPlatforms}
-              onToggle={togglePlatform}
+              selectedAccountIds={selectedAccountIds}
+              onToggleAccount={toggleAccount}
               compatibility={compatibility}
               checking={checking}
               hasMedia={hasMedia}
@@ -857,9 +904,9 @@ export function CreatePostForm({
             />
           )}
 
-          {errors.platforms ? (
+          {errors.selectedAccountIds ? (
             <p className="text-xs text-destructive">
-              {errors.platforms.message}
+              {errors.selectedAccountIds.message}
             </p>
           ) : null}
         </div>

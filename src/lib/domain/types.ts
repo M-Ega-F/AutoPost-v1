@@ -149,6 +149,7 @@ export type AccountManagementSummary = {
 
 export type PlatformTarget = {
   id: string;
+  socialAccountId: string | null;
   platform: Platform;
   status: PostPlatformStatus;
   attemptCount: number;

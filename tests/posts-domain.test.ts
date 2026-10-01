@@ -425,31 +425,74 @@ describe("createPost — server-side validation", () => {
     assert.equal(await postCount(), 0);
   });
 
-  test("rejects two targets for the same platform", async () => {
-    const first = await createAccount("instagram", { platformAccountId: "ig-1" });
-    const second = await createAccount("instagram", { platformAccountId: "ig-2" });
+  test("creates two targets and jobs for the same platform", async () => {
+    const first = await createAccount("tiktok", { platformAccountId: "tt-1" });
+    const second = await createAccount("tiktok", { platformAccountId: "tt-2" });
+
+    const result = await createPost({
+      userId: USER_ID,
+      contentText: "Two TikTok accounts",
+      timezone: "UTC",
+      scheduledAt: null,
+      media: TEST_MEDIA,
+      targets: [
+        { platform: "tiktok", socialAccountId: first },
+        { platform: "tiktok", socialAccountId: second },
+      ],
+    });
+
+    const rows = await targetRowsFor(result.postId);
+    assert.equal(rows.length, 2);
+    assert.deepEqual(new Set(rows.map((row) => row.socialAccountId)), new Set([first, second]));
+    assert.equal(enqueued.length, 2);
+  });
+
+  test("rejects the same account twice", async () => {
+    const account = await createAccount("tiktok");
 
     await assert.rejects(
       () =>
         createPost({
           userId: USER_ID,
-          contentText: "Twice the same platform",
+          contentText: "Duplicate account",
           timezone: "UTC",
           scheduledAt: null,
           media: TEST_MEDIA,
           targets: [
-            { platform: "instagram", socialAccountId: first },
-            { platform: "instagram", socialAccountId: second },
+            { platform: "tiktok", socialAccountId: account },
+            { platform: "tiktok", socialAccountId: account },
           ],
         }),
       (error: unknown) =>
         error instanceof AppError &&
         error.code === "validation_failed" &&
-        error.message === "Choose one account per platform.",
+        error.message === "Choose each account only once.",
     );
 
     assert.equal(await postCount(), 0);
     assert.equal(enqueued.length, 0);
+  });
+
+  test("creates mixed-platform targets without deduplicating by platform", async () => {
+    const first = await createAccount("tiktok", { platformAccountId: "tt-1" });
+    const second = await createAccount("tiktok", { platformAccountId: "tt-2" });
+    const instagram = await createAccount("instagram", { platformAccountId: "ig-1" });
+
+    const result = await createPost({
+      userId: USER_ID,
+      contentText: "Mixed account targets",
+      timezone: "UTC",
+      scheduledAt: null,
+      media: TEST_MEDIA,
+      targets: [
+        { platform: "tiktok", socialAccountId: first },
+        { platform: "tiktok", socialAccountId: second },
+        { platform: "instagram", socialAccountId: instagram },
+      ],
+    });
+
+    assert.equal((await targetRowsFor(result.postId)).length, 3);
+    assert.equal(enqueued.length, 3);
   });
 
   test("rejects an account that belongs to another user", async () => {

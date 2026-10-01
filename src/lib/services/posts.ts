@@ -1,6 +1,6 @@
 import "server-only";
 
-import { AppError, PLATFORM_LABELS } from "@/lib/errors";
+import { AppError } from "@/lib/errors";
 import {
   cancelScheduledPost,
   createPost,
@@ -49,19 +49,19 @@ import type {
 export type PostListScope = "history" | "scheduled" | "all";
 
 function resolveTargets(
-  platforms: readonly Platform[],
+  targets: readonly { platform: Platform; socialAccountId: string }[],
   accounts: Awaited<ReturnType<typeof listActiveAccounts>>,
 ): Array<{ platform: Platform; socialAccountId: string }> {
-  const byPlatform = new Map(accounts.map((account) => [account.platform, account]));
-  return platforms.map((platform) => {
-    const account = byPlatform.get(platform);
-    if (!account) {
+  const byId = new Map(accounts.map((account) => [account.id, account]));
+  return targets.map((target) => {
+    const account = byId.get(target.socialAccountId);
+    if (!account || account.platform !== target.platform) {
       throw new AppError(
         "forbidden",
-        `Your ${PLATFORM_LABELS[platform] ?? "platform"} account is no longer connected.`,
+        "We couldn't find that account. Reconnect it and try again.",
       );
     }
-    return { platform, socialAccountId: account.id };
+    return { platform: target.platform, socialAccountId: account.id };
   });
 }
 
@@ -98,7 +98,7 @@ export async function createPostForUser(
 ): Promise<{ postId: string; status: PostStatus }> {
   const workspace = await getActiveWorkspaceForUser(userId);
   const accounts = await listActiveAccountsForWorkspace(userId, workspace.workspace.id);
-  const targets = resolveTargets(input.platforms, accounts);
+  const targets = resolveTargets(input.targets, accounts);
 
   let scheduledAt: Date | null = null;
   if (input.schedule) {
@@ -133,7 +133,7 @@ export type DraftPayload = {
   postId?: string;
   caption: string;
   media: PostMediaInput | null;
-  platforms: Platform[];
+  targets: Array<{ platform: Platform; socialAccountId: string }>;
   timezone: string;
 };
 
@@ -148,7 +148,7 @@ export async function saveDraftForUser(
     contentText: input.caption,
     timezone: input.timezone,
     media: input.media ? await toDomainMedia(userId, input.media) : null,
-    targets: resolveTargets(input.platforms, accounts),
+    targets: resolveTargets(input.targets, accounts),
     campaignId: input.campaignId,
   });
 }
@@ -183,7 +183,7 @@ export async function publishDraftForUser(
     timezone: input.schedule?.timezone ?? "UTC",
     scheduledAt,
     media: await toDomainMedia(userId, input.media),
-    targets: resolveTargets(input.platforms, accounts),
+    targets: resolveTargets(input.targets, accounts),
     publishTraceId,
   });
 }

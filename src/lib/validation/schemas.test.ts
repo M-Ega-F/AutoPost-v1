@@ -261,10 +261,15 @@ describe("postMediaSchema", () => {
 });
 
 describe("createPostSchema", () => {
+  const accountA = "11111111-1111-1111-1111-111111111111";
+  const accountB = "22222222-2222-2222-2222-222222222222";
   const valid = {
     caption: "Hello world",
     media: VALID_MEDIA,
-    platforms: ["instagram", "facebook"],
+    targets: [
+      { platform: "instagram", socialAccountId: accountA },
+      { platform: "facebook", socialAccountId: accountB },
+    ],
     schedule: null,
   };
 
@@ -287,27 +292,44 @@ describe("createPostSchema", () => {
     assert.deepEqual(issuePaths(result), ["caption"]);
   });
 
-  test("rejects an empty platform list", () => {
-    const result = createPostSchema.safeParse({ ...valid, platforms: [] });
+  test("rejects an empty target list", () => {
+    const result = createPostSchema.safeParse({ ...valid, targets: [] });
     assert.equal(result.success, false);
-    assert.deepEqual(issuePaths(result), ["platforms"]);
-    assert.ok(issueMessages(result).includes("Select at least one platform."));
+    assert.deepEqual(issuePaths(result), ["targets"]);
+    assert.ok(issueMessages(result).includes("Select at least one account."));
   });
 
   test("rejects an unknown platform", () => {
-    const result = createPostSchema.safeParse({ ...valid, platforms: ["mastodon"] });
+    const result = createPostSchema.safeParse({
+      ...valid,
+      targets: [{ platform: "mastodon", socialAccountId: accountA }],
+    });
     assert.equal(result.success, false);
     assert.ok(issueMessages(result).includes("Unsupported platform."));
   });
 
-  test("rejects the same platform twice", () => {
+  test("accepts two accounts on the same platform", () => {
     const result = createPostSchema.safeParse({
       ...valid,
-      platforms: ["instagram", "instagram"],
+      targets: [
+        { platform: "tiktok", socialAccountId: accountA },
+        { platform: "tiktok", socialAccountId: accountB },
+      ],
+    });
+    assert.equal(result.success, true);
+  });
+
+  test("rejects the same account twice", () => {
+    const result = createPostSchema.safeParse({
+      ...valid,
+      targets: [
+        { platform: "tiktok", socialAccountId: accountA },
+        { platform: "tiktok", socialAccountId: accountA },
+      ],
     });
     assert.equal(result.success, false);
-    assert.deepEqual(issuePaths(result), ["platforms"]);
-    assert.ok(issueMessages(result).includes("Choose one account per platform."));
+    assert.deepEqual(issuePaths(result), ["targets"]);
+    assert.ok(issueMessages(result).includes("Choose each account only once."));
   });
 
   test("rejects a caption over the strictest selected platform's limit", () => {
@@ -320,7 +342,7 @@ describe("createPostSchema", () => {
   test("names Facebook when Facebook is the constraining platform", () => {
     const result = createPostSchema.safeParse({
       ...valid,
-      platforms: ["facebook"],
+      targets: [{ platform: "facebook", socialAccountId: accountA }],
       caption: "a".repeat(63_207),
     });
     assert.equal(result.success, false);
@@ -330,7 +352,7 @@ describe("createPostSchema", () => {
   test("a caption over Instagram's limit passes when only Facebook is selected", () => {
     const result = createPostSchema.safeParse({
       ...valid,
-      platforms: ["facebook"],
+      targets: [{ platform: "facebook", socialAccountId: accountA }],
       caption: "a".repeat(5_000),
     });
     assert.equal(result.success, true);
@@ -415,11 +437,11 @@ describe("campaign planning schemas", () => {
 });
 
 describe("saveDraftSchema", () => {
-  test("accepts an empty draft without media or platforms", () => {
+  test("accepts an empty draft without media or targets", () => {
     const result = saveDraftSchema.safeParse({
       caption: "",
       media: null,
-      platforms: [],
+      targets: [],
       timezone: "UTC",
     });
     assert.equal(result.success, true);
@@ -429,21 +451,24 @@ describe("saveDraftSchema", () => {
     const result = saveDraftSchema.safeParse({
       caption: "Work in progress",
       media: VALID_MEDIA,
-      platforms: ["instagram"],
+      targets: [{ platform: "instagram", socialAccountId: "11111111-1111-1111-1111-111111111111" }],
       timezone: "Asia/Jakarta",
     });
     assert.equal(result.success, true);
   });
 
-  test("rejects duplicate draft platforms", () => {
+  test("rejects duplicate draft accounts", () => {
     const result = saveDraftSchema.safeParse({
       caption: "Work in progress",
       media: null,
-      platforms: ["instagram", "instagram"],
+      targets: [
+        { platform: "instagram", socialAccountId: "11111111-1111-1111-1111-111111111111" },
+        { platform: "instagram", socialAccountId: "11111111-1111-1111-1111-111111111111" },
+      ],
       timezone: "UTC",
     });
     assert.equal(result.success, false);
-    assert.ok(issueMessages(result).includes("Choose one account per platform."));
+    assert.ok(issueMessages(result).includes("Choose each account only once."));
   });
 });
 

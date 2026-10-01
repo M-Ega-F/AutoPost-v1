@@ -58,8 +58,7 @@ export type CreatePostMediaPayload =
 export type CreatePostPayload = {
   contentText: string;
   media: CreatePostMediaPayload;
-  /** Platform names only — the server resolves the connected account itself. */
-  platforms: Platform[];
+  targets: Array<{ platform: Platform; socialAccountId: string }>;
   schedule: { date: string; time: string; timezone: string } | null;
   campaignId?: string | null;
 };
@@ -68,7 +67,7 @@ export type DraftPayload = {
   postId?: string;
   caption: string;
   media: CreatePostMediaPayload | null;
-  platforms: Platform[];
+  targets: Array<{ platform: Platform; socialAccountId: string }>;
   timezone: string;
   campaignId?: string | null;
 };
@@ -145,7 +144,7 @@ async function createPostActionInternal(
     const parsed = createPostSchema.safeParse({
       caption: payload?.contentText,
       media: normalizeMedia(payload?.media),
-      platforms: payload?.platforms,
+      targets: payload?.targets,
       schedule: payload?.schedule,
       campaignId: payload?.campaignId,
     });
@@ -163,7 +162,7 @@ async function createPostActionInternal(
     if (perfLoggingEnabled()) {
       logger.info("[PERF][createPostAction]", {
         durationMs: Date.now() - perfStartedAt,
-        targetCount: parsed.data.platforms.length,
+        targetCount: parsed.data.targets.length,
         status: result.status,
       });
     }
@@ -192,7 +191,7 @@ export async function saveDraftAction(
       postId: payload?.postId,
       caption: payload?.caption,
       media: normalizeMedia(payload?.media),
-      platforms: payload?.platforms,
+      targets: payload?.targets,
       timezone: payload?.timezone,
       campaignId: payload?.campaignId,
     });
@@ -218,7 +217,7 @@ export async function publishDraftAction(
 ): Promise<PostActionResult> {
   logger.info("[PUBLISH-ENTRY]", {
     postId,
-    platforms: Array.isArray(payload?.platforms) ? payload.platforms : [],
+    targetCount: Array.isArray(payload?.targets) ? payload.targets.length : 0,
     timestamp: new Date().toISOString(),
   });
   const publishTraceId = createPublishTraceId();
@@ -243,7 +242,7 @@ export async function publishDraftAction(
     const parsed = createPostSchema.safeParse({
       caption: payload?.contentText,
       media: normalizeMedia(payload?.media),
-      platforms: payload?.platforms,
+      targets: payload?.targets,
       schedule: payload?.schedule,
       campaignId: payload?.campaignId,
     });
