@@ -1,1383 +1,1282 @@
-Anda bekerja di repository:
+Anda bertindak sebagai Senior Backend Engineer yang bertanggung jawab memperbaiki
+implementasi TikTok Content Posting API pada repository AutoPost-v1.
+
+============================================================
+TUJUAN
+============================================================
+
+Implementasikan seluruh corrective action P0 yang sudah terbukti dari
+TIKTOK CONTENT POSTING API COMPLIANCE AUDIT.
+
+Tujuan akhirnya:
+
+AutoPost harus mengikuti flow Direct Post TikTok secara benar:
+
+    Query Creator Info
+            ↓
+    Validate creator capabilities
+            ↓
+    Validate privacy_level
+            ↓
+    Video Init
+            ↓
+    pilih transfer method
+       ↙             ↘
+FILE_UPLOAD      PULL_FROM_URL
+     ↓                 ↓
+PUT upload          TikTok pull
+     ↘               ↙
+          publish_id
+              ↓
+       Get Post Status
+              ↓
+      published / failed
+
+Implementasi harus tetap mempertahankan arsitektur AutoPost yang sekarang.
+
+JANGAN melakukan redesign besar.
+
+============================================================
+SOURCE OF TRUTH
+============================================================
+
+Repository:
 
 C:\Users\aldis\Documents\Codex\AutoPost-v1
 
-==================================================
-TUJUAN
-==================================================
+Master Plan:
 
-Saya ingin menambahkan Public API v1 ke AutoPost.
+C:\Users\aldis\Documents\Codex\AutoPost-v1\.agents\plans\Master Plan.md
 
-Tujuan:
+Master Plan adalah source of truth.
 
-1. Audit seluruh API yang sekarang ada.
-2. Bedakan API internal aplikasi dengan API yang layak menjadi Public API.
-3. Desain sistem API Key yang aman.
-4. Implementasikan Public API v1 dengan perubahan seminimal mungkin.
-5. Public API harus menggunakan domain/service/business logic existing.
-6. Jangan membuat publishing pipeline baru.
-7. Jangan mengganggu frontend yang sudah berjalan.
-8. Jangan mengganggu BullMQ/Redis/worker.
-9. Jangan mengganggu Facebook OAuth.
-10. Jangan mengganggu Instagram Standalone OAuth.
-11. Jangan mengganggu TikTok/Threads.
-12. Jangan mengubah Master Plan.
-13. Jangan commit atau push.
+WAJIB:
 
-==================================================
-NON-NEGOTIABLE RULES
-==================================================
+- JANGAN mengubah Master Plan.
+- JANGAN overwrite Master Plan.
+- JANGAN mengedit isi Master Plan.
+- Jangan membuat plan baru yang menggantikan Master Plan.
 
-1. MASTER PLAN ADALAH SOURCE OF TRUTH
+Audit yang menjadi dasar implementasi adalah hasil:
 
-File:
+TIKTOK CONTENT POSTING API COMPLIANCE AUDIT
 
-    .agents/plans/Master Plan.md
+Temuan utama:
 
-WAJIB dibaca untuk memahami architecture.
+1. creator_info/query belum dipanggil.
+2. privacy_level hardcoded SELF_ONLY.
+3. creator capability belum divalidasi.
+4. max_video_post_duration_sec belum digunakan.
+5. semua media mencoba PULL_FROM_URL terlebih dahulu.
+6. FILE_UPLOAD belum benar untuk file >64 MB.
+7. Content-Length belum dikirim.
+8. MIME upload selalu video/mp4.
+9. PULL_FROM_URL belum divalidasi requirement-nya.
 
-JANGAN EDIT FILE TERSEBUT.
+Implementasi kali ini HANYA fokus pada P0 tersebut.
 
-Tidak boleh:
-- overwrite
-- rewrite
-- append
-- format ulang
-- mengubah isi Master Plan
-
-2. MINIMAL CHANGE
-
-Jangan melakukan refactor besar.
-
-Pertahankan:
-- existing domain layer
-- existing service layer
-- existing repository/data access
-- existing auth
-- existing publishing flow
-- existing provider architecture
-- existing queue
-- existing worker
-- existing frontend API behavior
-
-Public API harus menjadi adapter/layer baru di atas business logic existing jika memungkinkan.
-
-3. NO DUPLICATE BUSINESS LOGIC
-
-Jangan membuat:
-
-    Public API → duplicate create post logic
-
-Jika existing flow sudah:
-
-    API/UI
-      ↓
-    Action/Service
-      ↓
-    Domain
-      ↓
-    Queue
-
-maka Public API harus memanfaatkan service/domain existing.
-
-4. JANGAN UBAH FACEBOOK / INSTAGRAM
-
-Facebook OAuth yang sudah berhasil harus tetap bekerja.
-
-Instagram Standalone OAuth yang baru selesai juga harus tetap bekerja.
-
-Jangan mengubah:
-- Facebook OAuth
-- Instagram OAuth
-- Instagram Login
-- token exchange
-- connected account behavior
-- publishing provider behavior
-
-kecuali audit membuktikan dependency langsung dengan Public API.
-
-5. JANGAN UBAH WORKER
-
-Jangan mengubah:
-- BullMQ queue architecture
-- worker command
-- worker concurrency
-- job payload contract
-- provider execution architecture
-
-Public API hanya membuat/menjadwalkan resource dan menggunakan queue existing.
-
-6. NO COMMIT / PUSH
-
-Jangan menjalankan:
-
-    git commit
-    git push
-    git reset --hard
-    git clean -fd
-
-Saya akan commit/push sendiri.
-
-==================================================
-PHASE 0 — REPOSITORY AUDIT
-==================================================
-
-Sebelum coding, audit repository secara menyeluruh.
-
-WAJIB baca:
-
-    .agents/plans/Master Plan.md
-
-Kemudian audit:
-
-    src/app/api
-    src/lib/actions
-    src/lib/domain
-    src/lib/services
-    src/lib/auth
-    src/lib/queue
-    src/workers
-    src/providers
-    database/schema/migrations
-    middleware/proxy
-    validation
-    rate limiting
-
-Cari semua route API.
-
-Keyword:
-
-    /api/
-    route.ts
-    NextRequest
-    NextResponse
-    cookies
-    Authorization
-    Bearer
-    session
-    API key
-    rate limit
-    idempotency
-
-==================================================
-PHASE 1 — INVENTORY SELURUH API
-==================================================
-
-Buat inventory semua endpoint existing.
-
-Untuk setiap endpoint dokumentasikan:
-
-    METHOD
-    PATH
-    AUTH METHOD
-    USER/WORKSPACE REQUIREMENT
-    PERMISSION
-    PURPOSE
-    INPUT
-    OUTPUT
-    SIDE EFFECT
-    DOMAIN/SERVICE USED
-    SENSITIVE DATA
-    PUBLIC API CANDIDATE
-    REASON
-
-Contoh:
-
-    POST /api/...
-    Auth: session
-    Permission: ...
-    Purpose: ...
-    Side effect: ...
-    Public candidate: YES/NO
-
-Jangan menganggap semua `/api/*` sebagai public API.
-
-==================================================
-PHASE 2 — CLASSIFICATION
-==================================================
-
-Kelompokkan existing API menjadi:
-
-A. INTERNAL APP API
-
-Contoh:
-
-    frontend → API → session/cookie
-
-B. ADMIN API
-
-Contoh:
-
-    admin → API → elevated permission
-
-C. OAUTH/CALLBACK API
-
-Contoh:
-
-    Meta/Instagram/TikTok OAuth callback
-
-D. WEBHOOK API
-
-Jika ada.
-
-E. PUBLIC-CAPABLE API
-
-Endpoint yang secara konsep aman untuk diekspos melalui Public API.
-
-F. NEVER PUBLIC
-
-Endpoint yang tidak boleh diekspos sebagai Public API.
-
-Contoh NEVER PUBLIC:
-
-    token import
-    OAuth callback
-    secret/config endpoints
-    admin-only endpoints
-    internal health/debug endpoints
-    internal queue endpoints
-    credential endpoints
-
-==================================================
-PHASE 3 — AUDIT EXISTING AUTHORIZATION
-==================================================
-
-Audit bagaimana aplikasi sekarang menentukan:
-
-    user
-    workspace
-    account ownership
-    permissions
-    roles
-    admin/owner
-    session
-
-Cari reusable function/service.
-
-Jangan membuat authorization system kedua jika existing authorization
-sudah bisa digunakan.
-
-Public API harus dapat memetakan:
-
-    API Key
-       ↓
-    API Key owner
-       ↓
-    workspace
-       ↓
-    permissions
-
-Pastikan tidak terjadi:
-
-    API Key User A
-       ↓
-    Workspace User B
-
-==================================================
-PHASE 4 — API KEY SYSTEM DESIGN
-==================================================
-
-Desain sistem API Key.
-
-Target konsep:
-
-    User/Workspace
-          ↓
-       API Key
-          ↓
-    hash stored in DB
-          ↓
-    request authentication
-          ↓
-    workspace/user context
-          ↓
-    permission check
-          ↓
-    Public API
-
-Raw API key:
-
-    JANGAN disimpan plaintext di database.
-
-Gunakan:
-
-    cryptographically secure random key
-    one-way hash for storage
-
-API key harus memiliki identifier/prefix yang aman untuk lookup.
-
-Contoh konsep:
-
-    ap_live_xxxxxxxxxxxxxxxxx
-
-Tetapi jangan hardcode format jika repository memiliki convention lain.
-
-==================================================
-API KEY DATA MODEL
-==================================================
-
-Audit database terlebih dahulu.
-
-Cari apakah sudah ada tabel:
-
-    api_keys
-    access_tokens
-    personal_access_tokens
-    developer_keys
-    integrations
-
-Jika sudah ada yang cocok:
-
-    gunakan kembali jika aman.
-
-Jangan membuat duplicate system.
-
-Jika belum ada, desain tabel minimal.
-
-Konsep field:
-
-    id
-    workspace_id / owner_id
-    name
-    key_prefix
-    key_hash
-    permissions/scopes
-    created_at
-    last_used_at
-    revoked_at
-    expires_at (jika architecture membutuhkan)
-    metadata jika benar-benar diperlukan
-
-Jangan menyimpan raw key.
-
-Jika permission disimpan sebagai JSON/array, ikuti convention database
-existing.
-
-==================================================
-API KEY LIFECYCLE
-==================================================
-
-Minimal lifecycle:
-
-    create
-    authenticate
-    use
-    revoke
-
-Optional:
-
-    rotate
-    expiration
-
-API key creation:
-
-    User creates key
-       ↓
-    generate random secret
-       ↓
-    hash
-       ↓
-    store hash
-       ↓
-    show raw key ONCE
-
-Setelah itu raw key tidak bisa diambil kembali.
-
-Jika user kehilangan key:
-
-    revoke old key
-    create new key
-
-Jangan menyediakan endpoint:
-
-    GET /api-keys/:id/reveal
-
-==================================================
-API KEY PERMISSIONS
-==================================================
-
-Jangan langsung membuat permission terlalu kompleks.
-
-Audit existing permission system.
-
-Jika existing system punya permission seperti:
-
-    accounts:manage
-    posts:read
-    posts:write
-
-reuse.
-
-Jika tidak ada Public API permission yang sesuai, desain minimal.
-
-Minimal target:
-
-    posts:read
-    posts:write
-
-Jika diperlukan:
-
-    accounts:read
-    scheduled:read
-    scheduled:write
-    analytics:read
-
-Jangan memberikan:
-
-    admin:*
-    OAuth management
-    credential access
-
-kepada Public API key.
-
-API key harus mengikuti principle of least privilege.
-
-==================================================
-API KEY AUTHENTICATION
-==================================================
-
-Public API menggunakan:
-
-    Authorization: Bearer <API_KEY>
-
-Contoh:
-
-    Authorization: Bearer ap_live_xxxxxxxxx
-
-Jangan menerima API key melalui:
-
-    query parameter
-    URL
-    cookie
-
-kecuali ada alasan architecture yang sangat kuat.
-
-API key jangan pernah muncul di logs.
-
-Jangan log:
-
-    Authorization header
-    raw API key
-    full request headers
-
-Safe log:
-
-    key id
-    key prefix
-    workspace id jika aman
-    route
-    method
-    status
-    duration
-    request id
-
-==================================================
-API VERSIONING
-==================================================
-
-Public API harus memiliki namespace:
-
-    /api/v1/...
-
-Jangan mengubah endpoint internal existing menjadi:
-
-    /api/v1/...
-
-secara langsung jika itu berpotensi merusak frontend.
-
-Buat route Public API baru.
-
-Target:
-
-    /api/v1/posts
-    /api/v1/posts/:id
-    /api/v1/accounts
-
-Jika repository memiliki naming convention berbeda,
-ikuti convention existing selama tetap versioned.
-
-==================================================
-PHASE 5 — PUBLIC API MVP DESIGN
-==================================================
-
-Jangan expose semua functionality sekaligus.
-
-Mulai dari API minimal yang benar-benar berguna.
-
-Target MVP:
-
-    GET  /api/v1/posts
-    GET  /api/v1/posts/:id
-
-    POST /api/v1/posts
-
-    POST /api/v1/posts/:id/publish
-    POST /api/v1/posts/:id/cancel
-
-    GET /api/v1/accounts
-
-Jika scheduling existing architecture mudah dipakai tanpa perubahan besar:
-
-    POST /api/v1/posts
-    dengan scheduledAt
-
-Tidak perlu membuat endpoint scheduling terpisah jika tidak diperlukan.
-
-==================================================
-POST CREATE API
-==================================================
-
-Audit existing Create Post flow terlebih dahulu.
-
-Cari:
-
-    createPostAction
-    createPost
-    createDraft
-    publishDraft
-    scheduling logic
-    media upload logic
-
-Public API jangan duplicate logic.
-
-Target konsep:
-
-    Public API
-       ↓
-    existing service/domain
-       ↓
-    post
-       ↓
-    post_platforms
-       ↓
-    queue
-       ↓
-    worker
-
-Jika existing Create Post flow membutuhkan browser-specific
-media upload/session behavior, jangan memaksakan API untuk memakai
-browser implementation.
-
-Desain API media upload secara terpisah jika memang diperlukan.
-
-==================================================
-MEDIA API
-==================================================
-
-Audit bagaimana media sekarang di-upload.
-
-Cari:
-
-    Supabase Storage
-    signed URL
-    upload route
-    media asset
-    pending media
-    MIME validation
-    size validation
-
-Jangan membuat API:
-
-    POST /api/v1/posts
-
-yang menerima file besar secara tidak efisien jika architecture existing
-menggunakan Storage.
-
-Jika diperlukan, Public API MVP dapat:
-
-    1. Create media/upload session
-    2. Upload to storage
-    3. Create post referencing media
-
-Tetapi jangan implementasikan kompleksitas tersebut jika existing
-architecture sudah menyediakan mekanisme reusable.
-
-Audit dahulu.
-
-==================================================
-IDEMPOTENCY
-==================================================
-
-Untuk mutating Public API, implementasikan idempotency jika existing
-architecture sudah memiliki infrastructure.
-
-Minimal:
-
-    POST /api/v1/posts
-    POST /api/v1/posts/:id/publish
-
-dapat menerima:
-
-    Idempotency-Key: <unique-key>
-
-Jangan membuat duplicate post/publish akibat retry dari client.
-
-Audit existing idempotency implementation terlebih dahulu.
-
-Jika sudah ada:
-
-    reuse.
-
-Jika belum:
-
-    implementasi minimal yang aman.
-
-Jangan menyimpan entire response indefinitely.
-
-Tetapkan TTL yang reasonable sesuai existing Redis architecture.
-
-==================================================
-RATE LIMITING
-==================================================
-
-Audit existing rate limiter.
-
-Gunakan infrastructure existing jika tersedia.
-
-Public API rate limit harus dipisahkan dari browser/session traffic.
-
-Concept:
-
-    API key
-       ↓
-    rate limit
-
-bukan hanya IP.
-
-Tetap pertimbangkan IP sebagai abuse signal jika architecture
-existing mendukung.
-
-Jangan membuat rate limit yang terlalu agresif sampai mengganggu
-normal API usage.
-
-Jika belum ada documented default, gunakan conservative MVP limit
-dan dokumentasikan.
-
-Jangan mengklaim angka tersebut sebagai final product policy jika belum
-ditetapkan.
-
-==================================================
-ERROR CONTRACT
-==================================================
-
-Public API harus memiliki error response konsisten.
-
-Target konsep:
-
-    {
-      "error": {
-        "code": "..."
-        "message": "..."
-      }
-    }
-
-HTTP status harus konsisten.
-
-Contoh:
-
-    401
-    invalid/missing API key
-
-    403
-    valid key tetapi permission tidak cukup
-
-    404
-    resource tidak ditemukan / tidak boleh diakses
-
-    409
-    idempotency/conflict
-
-    422
-    validation error
-
-    429
-    rate limit
-
-    500
-    unexpected internal error
-
-Jangan expose stack trace.
-
-Jangan expose database error mentah.
-
-Jangan expose provider credential.
-
-==================================================
-RESOURCE OWNERSHIP
-==================================================
-
-Public API key hanya boleh mengakses resource milik workspace/account
-yang terkait dengan key.
-
-Contoh:
-
-    API Key Workspace A
-          ↓
-    GET /api/v1/posts/post-owned-by-B
-
-harus ditolak atau diperlakukan sebagai not found sesuai security policy.
-
-Jangan sampai API key dapat enumerate resource workspace lain.
-
-Audit semua query.
-
-Pastikan filtering workspace/owner dilakukan di database/domain layer,
-bukan hanya UI.
-
-==================================================
-PUBLISH API
-==================================================
-
-Public API publish harus menggunakan publish flow existing.
+============================================================
+ATURAN BESAR
+============================================================
 
 JANGAN:
 
-    Public API
-       ↓
-    direct Meta API
+- mengubah Facebook provider
+- mengubah Instagram provider
+- mengubah Threads provider
+- mengubah OAuth provider lain
+- mengubah queue architecture
+- mengganti BullMQ
+- mengganti Redis
+- mengganti Supabase
+- mengubah database schema kecuali benar-benar terbukti mutlak diperlukan
+- membuat migration jika tidak diperlukan
+- memindahkan worker architecture
+- membuat provider architecture baru
+- membuat abstraction baru yang tidak diperlukan
+- mengubah public API
+- mengubah authentication
+- mengubah authorization
+- mengubah UI besar
+- mengubah Create Post flow secara besar
+- menghapus /api/media/upload
+- mengubah direct media upload architecture yang sudah ada
+- mengubah Master Plan
 
 JANGAN:
 
-    Public API
-       ↓
-    direct Instagram API
+- commit
+- push
+- force push
+- reset git
+- checkout branch lain
+- menghapus perubahan user
+- menggunakan git clean
+- menggunakan git restore terhadap perubahan yang bukan milik task ini
 
-JANGAN:
+JANGAN log:
 
-    Public API
-       ↓
-    direct Facebook API
+- access token
+- refresh token
+- client secret
+- Authorization header
+- signed media URL
+- TikTok upload_url
+- cookies
+- session token
+- Supabase service role key
+
+============================================================
+PRINSIP IMPLEMENTASI
+============================================================
+
+1. Evidence first.
+
+Sebelum mengubah kode:
+
+- baca implementasi TikTok saat ini
+- pahami provider contract
+- pahami executePublishJob
+- pahami media/storage flow
+- pahami existing error mapping
+- pahami existing tests
+
+2. Reuse existing architecture.
+
+Jangan membuat TikTok publishing system baru.
+
+Perbaiki provider yang sudah ada.
+
+3. Minimal change.
+
+Jika satu fungsi dapat diperbaiki tanpa refactor besar,
+lakukan perubahan lokal.
+
+4. Backward compatibility.
+
+Pastikan perubahan tidak merusak:
+
+- existing TikTok OAuth
+- existing connected accounts
+- existing publish queue
+- retry
+- execution state
+- history
+- Facebook
+- Instagram
+- Threads
+
+============================================================
+PHASE 0 — PRE-IMPLEMENTATION AUDIT
+============================================================
+
+Sebelum coding, inspect minimal:
+
+src/providers/social/tiktok/index.ts
+
+src/providers/social/tiktok/index.test.ts
+
+src/providers/social/http.ts
+
+src/providers/social/types.ts
+
+src/lib/publishing/execute.ts
+
+src/lib/domain/executions.ts
+
+src/lib/storage/index.ts
+
+src/lib/validation/limits.ts
+
+src/workers/publish-worker.ts
+
+src/lib/queue/publish.ts
+
+Cari semua:
+
+- TikTok API endpoint
+- publishVideo()
+- initVideoPost()
+- uploadBytes()
+- getPublishStatus()
+- validateContent()
+- privacy_level
+- SELF_ONLY
+- PUBLIC_TO_EVERYONE
+- MUTUAL_FOLLOW_FRIENDS
+- PULL_FROM_URL
+- FILE_UPLOAD
+- video_size
+- chunk_size
+- total_chunk_count
+- Content-Range
+- Content-Type
+- Content-Length
+- createSignedMediaUrl()
+- error mapping
+
+Setelah memahami kode, baru implementasikan.
+
+============================================================
+P0-1 — IMPLEMENT QUERY CREATOR INFO
+============================================================
+
+Tambahkan penggunaan endpoint resmi:
+
+POST
+
+https://open.tiktokapis.com/v2/post/publish/creator_info/query/
+
+Header:
+
+Authorization: Bearer <token>
+
+Content-Type: application/json; charset=UTF-8
+
+Gunakan existing HTTP abstraction.
+
+JANGAN membuat HTTP client kedua.
+
+JANGAN bypass existing requestJson()/HTTP helper jika existing abstraction
+memang sesuai.
+
+Response yang harus dapat diparsing:
+
+data:
+- creator_avatar_url
+- creator_username
+- creator_nickname
+- privacy_level_options
+- comment_disabled
+- duet_disabled
+- stitch_disabled
+- max_video_post_duration_sec
+
+error:
+- code
+- message
+- log_id
+
+Buat internal typed representation yang sesuai dengan architecture
+yang sudah ada.
+
+Jangan menyimpan access token ke result.
+
+============================================================
+P0-2 — CREATOR INFO HARUS TERJADI SEBELUM VIDEO INIT
+============================================================
+
+Flow video Direct Post harus menjadi:
+
+publishVideo()
+    ↓
+Query Creator Info
+    ↓
+Validate creator information
+    ↓
+Build post_info
+    ↓
+Video Init
+
+Creator Info TIDAK boleh dipanggil setelah video/init.
+
+Jangan:
+
+Video Init
+↓
+Creator Info
 
 Harus:
 
-    Public API
-       ↓
-    existing domain/service
-       ↓
-    post platform
-       ↓
-    BullMQ
-       ↓
-    publish worker
-       ↓
-    provider
-       ↓
-    social platform
+Creator Info
+↓
+Video Init
 
-Dengan demikian:
+============================================================
+P0-3 — VALIDASI PRIVACY LEVEL
+============================================================
 
-    frontend
-    public API
+Saat ini provider menggunakan:
 
-menggunakan publishing engine yang sama.
+SELF_ONLY
 
-==================================================
-SOCIAL ACCOUNT API
-==================================================
+hardcoded.
 
-Jika expose:
+Jangan sekadar mengganti hardcode dengan value lain.
 
-    GET /api/v1/accounts
+Gunakan:
 
-response hanya boleh berisi data aman.
+creator_info.privacy_level_options
 
-Contoh:
+sebagai sumber validasi.
 
-    id
-    platform
-    username
-    displayName
-    status
-    connectedAt
+Aturan:
 
-Jangan pernah mengembalikan:
+privacy level yang akan digunakan harus ada di:
 
-    access token
-    refresh token
-    encrypted token
-    client secret
-    OAuth state
-    provider credential
+creator_info.privacy_level_options
 
-Jangan expose credential metadata yang dapat membantu mengambil secret.
+Jika tidak tersedia:
 
-==================================================
-OAUTH BOUNDARY
-==================================================
+- jangan melakukan Video Init
+- return provider error yang jelas
+- jangan fallback diam-diam ke PUBLIC_TO_EVERYONE
+- jangan fallback diam-diam ke SELF_ONLY
+- jangan membuat request TikTok yang pasti invalid
 
-Public API TIDAK boleh menjadi cara untuk:
+PENTING:
 
-    retrieve OAuth token
-    retrieve Facebook token
-    retrieve Instagram token
-    retrieve TikTok token
-    retrieve Threads token
+Untuk MVP saat ini, jika UI/domain AutoPost belum memiliki user-selectable
+TikTok privacy setting, pertahankan default existing:
 
-Public API hanya dapat menggunakan connected account yang sudah dimiliki
-workspace.
+SELF_ONLY
 
-OAuth tetap menggunakan flow existing:
+TETAPI:
 
-    Facebook OAuth
-    Instagram Standalone OAuth
-    TikTok OAuth
-    Threads OAuth
+SELF_ONLY harus divalidasi terhadap:
 
-Jangan menyatukan OAuth dengan API key.
+privacy_level_options
 
-==================================================
-ADMIN API / MANUAL IMPORT
-==================================================
+Jadi:
 
-Audit endpoint sementara:
+existing default:
+SELF_ONLY
 
-    /api/admin/instagram/import-token
++
 
-Endpoint tersebut BUKAN Public API.
+creator_info.privacy_level_options.includes("SELF_ONLY")
 
-Jangan expose melalui:
+baru:
 
-    /api/v1
+Video Init
 
-Jika importer sudah tidak dibutuhkan lagi dan standalone Instagram OAuth
-sudah terbukti bekerja, rekomendasikan penghapusannya.
+Jangan memperkenalkan UI privacy selector baru dalam task ini.
 
-Jangan menghapusnya secara otomatis jika masih dibutuhkan untuk migrasi
-tanpa terlebih dahulu memastikan dependency.
+============================================================
+P0-4 — VALIDASI CREATOR CAPABILITY
+============================================================
 
-==================================================
-API KEY MANAGEMENT UI/API
-==================================================
+Gunakan hasil Creator Info untuk memvalidasi capability yang relevan.
 
-Audit existing Settings page.
+Minimal audit dan implementasikan validation untuk:
 
-Jika sesuai architecture, tambahkan:
+comment_disabled
+duet_disabled
+stitch_disabled
+max_video_post_duration_sec
 
-    Settings
-      ↓
-    API Keys
+PENTING:
 
-Minimal UI:
+Jangan mengarang aturan TikTok.
 
-    API Keys
-      - Name
-      - Created
-      - Last used
-      - Status
-      - Revoke
+Bedakan:
 
-Create:
-
-    Create API Key
-      ↓
-    Name
-      ↓
-    Permissions
-      ↓
-    Generate
-      ↓
-    Show secret ONCE
-
-Jangan tampilkan secret lagi setelah modal/page ditutup.
-
-Jika menambahkan UI membutuhkan perubahan besar, implementasikan backend
-API key infrastructure dahulu dan dokumentasikan UI sebagai follow-up.
-
-Jangan melakukan redesign Settings.
-
-==================================================
-API KEY MANAGEMENT ENDPOINTS
-==================================================
-
-Jika existing architecture cocok, gunakan internal authenticated routes
-untuk management key.
-
-Contoh:
-
-    POST   /api/api-keys
-    GET    /api/api-keys
-    DELETE /api/api-keys/:id
-
-PERHATIAN:
-
-Endpoint management ini adalah INTERNAL APP API.
-
-Jangan menggunakan Public API key untuk membuat/revoke API key.
-
-User harus authenticated melalui normal application auth.
-
-==================================================
-DATABASE MIGRATION
-==================================================
-
-Jika perlu tabel baru:
-
-    buat migration kecil dan additive.
-
-Jangan destructive migration.
-
-Jangan mengubah existing social account schema jika tidak diperlukan.
-
-Jangan mengubah:
-
-    post_platforms
-    social_accounts
-
-hanya untuk menambahkan API key.
-
-Jika workspace model existing lebih tepat daripada user_id,
-gunakan workspace ownership sesuai architecture.
-
-==================================================
-SECURITY AUDIT
-==================================================
-
-Sebelum selesai, audit:
-
-1. API key entropy.
-2. Hashing.
-3. Timing-safe comparison jika diperlukan.
-4. Authorization.
-5. Workspace isolation.
-6. Permission/scopes.
-7. Rate limit.
-8. Idempotency.
-9. Replay behavior.
-10. Revocation.
-11. Expiration jika digunakan.
-12. Logging.
-13. Error messages.
-14. Input validation.
-15. SSRF risk jika API menerima URL.
-16. File upload abuse.
-17. Resource enumeration.
-18. Mass assignment.
-19. SQL injection protection.
-20. Secret leakage.
-
-Jika Public API menerima external URLs:
-
-    jangan fetch arbitrary URLs
-
-tanpa SSRF protection.
-
-Jika tidak diperlukan untuk MVP:
-
-    jangan implementasikan URL fetching.
-
-==================================================
-DOCUMENTATION
-==================================================
-
-Buat/update dokumentasi Public API.
-
-Misalnya:
-
-    docs/API-PUBLIC.md
-
-Jika repository memiliki dokumentasi API existing,
-gunakan file tersebut daripada membuat duplicate.
-
-Dokumentasi minimal:
-
-    Authentication
-    API keys
-    Permissions
-    Base URL
-    Versioning
-    Endpoints
-    Request examples
-    Response examples
-    Errors
-    Rate limits
-    Idempotency
-    Resource ownership
-    Pagination
-    Security
-
-Contoh request:
-
-    curl \
-      -H "Authorization: Bearer ap_live_xxx" \
-      https://example.com/api/v1/posts
-
-Jangan menggunakan secret nyata.
-
-==================================================
-PAGINATION
-==================================================
-
-Audit existing list endpoints.
+A. field yang memang harus dipatuhi oleh request
+B. field yang hanya informative
+C. field yang tidak boleh dipaksa menjadi restriction tanpa dasar dokumentasi
 
 Untuk:
 
-    GET /api/v1/posts
+max_video_post_duration_sec
 
-gunakan pagination yang konsisten.
+Jika creator memberikan:
 
-Jika existing app sudah menggunakan:
+max_video_post_duration_sec = N
 
-    cursor
-    limit
-    offset
+dan video duration > N,
 
-reuse jika cocok.
+jangan lanjut ke Video Init.
 
-Jangan membuat pagination system baru tanpa alasan.
+Return validation error yang jelas.
 
-Tetapkan maximum page size.
+Jangan menggunakan static limit saja.
 
-Jangan memungkinkan:
+Static application limit tetap boleh dipertahankan sebagai first-level validation.
 
-    ?limit=999999999
+Flow:
 
-==================================================
-FILTERING / SORTING
-==================================================
+static validation
+    ↓
+Creator Info
+    ↓
+dynamic creator validation
+    ↓
+Video Init
 
-Public API list posts minimal boleh memiliki filter yang memang didukung
-existing domain/query layer.
+Untuk:
 
-Contoh jika mudah:
+comment_disabled
+duet_disabled
+stitch_disabled
 
-    status
-    platform
-    date range
+Pastikan request tidak meminta capability yang creator nyatakan disabled.
 
-Jangan menambahkan query language kompleks.
+Jangan mengubah UX besar.
 
-==================================================
-OBSERVABILITY
-==================================================
+Jika current AutoPost belum memiliki pilihan explicit untuk disable_*,
+gunakan behavior yang paling konservatif dan konsisten dengan current provider
+contract tanpa membuat fitur UI baru.
 
-Public API harus punya request/correlation ID jika existing system
-sudah memilikinya.
+============================================================
+P0-5 — PILIH FILE_UPLOAD UNTUK MEDIA SERVER-SIDE
+============================================================
 
-Safe log:
+Ini sangat penting.
 
-    requestId
-    API key id
-    route
-    method
-    status
-    duration
-    workspace id jika policy memperbolehkan
+Saat media AutoPost sudah memiliki:
 
-Jangan log:
+storageKey
 
-    Authorization
-    raw API key
-    social token
-    OAuth code
-    client secret
+dan file dapat dibaca server-side:
 
-==================================================
-PHASE 6 — IMPLEMENTATION PLAN
-==================================================
+JANGAN mencoba PULL_FROM_URL terlebih dahulu.
 
-Sebelum coding, tampilkan:
+Gunakan:
 
-## Current API Architecture
+FILE_UPLOAD
 
-## API Inventory
+secara langsung.
 
-## Internal vs Public Classification
+Flow:
 
-## Existing Auth Architecture
+storageKey
+   ↓
+download/read media bytes
+   ↓
+FILE_UPLOAD init
+   ↓
+PUT upload_url
+   ↓
+status fetch
 
-## Existing Permission Architecture
+Jangan:
 
-## Existing Rate Limit Architecture
+storageKey
+   ↓
+signed URL
+   ↓
+PULL_FROM_URL
+   ↓
+403
+   ↓
+fallback FILE_UPLOAD
 
-## Existing Idempotency Architecture
+untuk kasus media server-side yang memang tersedia.
 
-## Existing Database Structure
+Alasan:
 
-## Proposed API Key Architecture
+- menghindari domain ownership requirement
+- menghindari url_ownership_unverified
+- lebih sesuai untuk file yang sudah dimiliki AutoPost
+- mengurangi satu network dependency
+- menghilangkan unnecessary PULL attempt
 
-## Proposed Public API v1
+============================================================
+P0-6 — PULL_FROM_URL HANYA UNTUK URL YANG MEMANG MEMERLUKANNYA
+============================================================
 
-## Files To Modify
+Tetap pertahankan dukungan PULL_FROM_URL jika provider contract
+memang membutuhkan URL-based media.
 
-## Files To Create
+Tetapi jangan gunakan PULL_FROM_URL untuk storageKey internal
+yang dapat di-upload langsung.
 
-## Files That Must NOT Be Modified
+Jika PULL_FROM_URL digunakan:
 
-## Database Migration Required?
+pastikan URL:
 
-## Risks
+- HTTPS
+- dapat diakses TikTok
+- tidak membutuhkan browser cookie
+- tidak membutuhkan user authentication
+- tidak bergantung pada localhost
+- tidak menggunakan URL yang hanya dapat diakses internal network
 
-## Backward Compatibility
+JANGAN mengklaim domain ownership verified jika tidak dapat dibuktikan.
 
-Kemudian implementasikan.
+JANGAN melakukan automatic fallback yang menyembunyikan root cause.
 
-Jangan berhenti setelah audit jika tidak ada blocker.
-
-==================================================
-PHASE 7 — TESTING
-==================================================
+Jika URL tidak memenuhi requirement:
 
-Tambahkan tests untuk API key:
+return error yang jelas sebelum request TikTok bila validasi lokal memang
+dapat membuktikannya.
 
-1. Create API key.
-2. Raw key hanya muncul saat creation.
-3. Raw key tidak tersimpan plaintext.
-4. Correct key authenticates.
-5. Wrong key rejected.
-6. Revoked key rejected.
-7. Expired key rejected jika expiration digunakan.
-8. Permission denied.
-9. Workspace isolation.
-10. last_used_at behavior.
-11. API key tidak muncul di logs.
+============================================================
+P0-7 — FILE_UPLOAD INIT
+============================================================
 
-Public API:
+Untuk:
 
-12. GET posts.
-13. GET post detail.
-14. POST create post.
-15. Publish.
-16. Cancel.
-17. Accounts.
-18. Validation errors.
-19. Unauthorized.
-20. Forbidden.
-21. Not found.
-22. Rate limit.
-23. Idempotency.
-24. Duplicate request behavior.
-25. Pagination.
+POST
 
-Regression:
+/v2/post/publish/video/init/
 
-26. Existing frontend API tests.
-27. Existing Facebook tests.
-28. Existing Instagram tests.
-29. Existing OAuth tests.
-30. Existing worker tests.
-31. Existing publishing tests.
+dengan:
 
-==================================================
-VALIDATION
-==================================================
+source = FILE_UPLOAD
 
-Jalankan:
+pastikan:
 
-    npm run lint
-    npm run typecheck
-    npm test
-    npm run test:integration
-    npm run test:all
-    npm run build
-    git diff --check
+video_size
+chunk_size
+total_chunk_count
 
-Jika migration dibuat:
+benar-benar merepresentasikan upload aktual.
 
-    npm run db:generate
-    npm run db:migrate
+Formula:
 
-Jangan gunakan:
+video_size = actual byte size
 
-    drizzle push
+Jika single chunk:
 
-untuk production.
+chunk_size = video_size
 
-Jangan mengklaim test berhasil jika command belum benar-benar dijalankan.
+total_chunk_count = 1
 
-==================================================
-MANUAL TEST
-==================================================
+Jika multiple chunks:
 
-Setelah automated tests:
+chunk_size <= 64 MB
 
-1. Login ke AutoPost.
-2. Buka Settings.
-3. Create API Key.
-4. Copy secret.
-5. Panggil:
+total_chunk_count =
+ceil(video_size / chunk_size)
 
-    GET /api/v1/accounts
+PENTING:
 
-6. Panggil:
+Jangan membuat:
 
-    GET /api/v1/posts
+total_chunk_count = 2
 
-7. Create post melalui Public API.
-8. Pastikan post masuk database.
-9. Jika publish dipanggil, pastikan masuk BullMQ.
-10. Pastikan worker memproses job.
-11. Pastikan provider tetap bekerja.
+tetapi kemudian mengirim seluruh file sebagai satu PUT.
 
-Kemudian:
+Metadata init harus konsisten dengan actual upload.
 
-12. Revoke API key.
-13. Panggil API lagi.
-14. Pastikan 401.
+============================================================
+P0-8 — IMPLEMENT CHUNK UPLOAD >64 MB
+============================================================
 
-Test workspace isolation jika tersedia.
+Current audit menemukan bahwa file >64 MB belum benar-benar
+di-upload secara chunked.
 
-==================================================
-COMPATIBILITY TEST
-==================================================
+Perbaiki.
 
-Pastikan setelah implementasi:
+Jika:
 
-    Frontend
-       ↓
-    Existing API
+video_size <= 64 MB
 
-tetap berjalan.
+boleh satu PUT.
 
-Dan:
+Jika:
 
-    Public API
-       ↓
-    New /api/v1
-       ↓
-    Existing domain/service
-       ↓
-    Existing queue/worker/provider
+video_size > 64 MB
 
-Tidak ada duplicate publishing engine.
+harus upload sequential chunks sesuai requirement TikTok.
 
-==================================================
-FINAL REPORT
-==================================================
+Jangan upload semua bytes sekaligus.
 
-Berikan:
+Untuk setiap chunk:
 
-# Public API v1 Implementation Report
+PUT upload_url
 
-## Status
+dengan Content-Range:
 
-    DONE / BLOCKED
+bytes START-END/TOTAL
 
-## Current API Audit
+Contoh konsep:
 
-Jumlah endpoint dan kategorinya.
+chunk 1:
+bytes 0-(chunkSize-1)/total
 
-## API Key Architecture
+chunk 2:
+bytes chunkSize-(2*chunkSize-1)/total
 
-Jelaskan:
-
-    generation
-    storage
-    hashing
-    authentication
-    permissions
-    revocation
-
-## Public API v1
-
-Daftar endpoint final.
-
-## Authentication
-
-Cara API key digunakan.
-
-## Permissions
-
-Daftar permission final.
-
-## Rate Limit
-
-Implementasi aktual.
-
-## Idempotency
-
-Implementasi aktual.
-
-## Database
-
-Migration yang dibuat atau:
-
-    NO DATABASE CHANGE
-
-## Files Changed
-
-Daftar file aktual.
-
-## Files Created
-
-Daftar file aktual.
-
-## Files Not Modified
+dst.
 
 Pastikan:
 
-    Master Plan
-    Facebook OAuth
-    Instagram OAuth
-    worker
-    provider publishing
+START
+END
+TOTAL
 
-tidak berubah kecuali ada dependency yang dijelaskan.
+selalu benar.
 
-## Tests
+END inclusive.
 
-Tampilkan hasil aktual:
+Jangan off-by-one.
 
-    npm run lint
-    npm run typecheck
-    npm test
-    npm run test:integration
-    npm run test:all
-    npm run build
-    git diff --check
+Jangan mengubah upload_url.
 
-## Manual Test
+Semua chunk menggunakan upload_url dari init response.
 
-Langkah yang harus dilakukan.
+============================================================
+P0-9 — CONTENT-LENGTH
+============================================================
 
-## Environment Variables
+Tambahkan:
 
-Tambahkan hanya yang diperlukan.
+Content-Length
 
-Update `.env.example` tanpa secret.
+pada PUT upload.
 
-## Security Notes
+Nilai harus:
 
-Ringkas hasil security audit.
+ukuran bytes chunk yang sedang dikirim.
 
-## Follow-up
+Untuk single upload:
 
-Pisahkan:
+Content-Length = total file size
 
-    REQUIRED BEFORE PRODUCTION
+Untuk chunk:
+
+Content-Length = current chunk byte length
+
+Jangan menggunakan total file size untuk setiap chunk.
+
+============================================================
+P0-10 — CONTENT-RANGE
+============================================================
+
+Pastikan:
+
+Content-Range:
+
+bytes START-END/TOTAL
 
 dan:
 
-    OPTIONAL FUTURE IMPROVEMENTS
+END = START + chunkLength - 1
 
-Jangan mengerjakan future improvements jika tidak diperlukan untuk MVP.
+TOTAL = total file size
 
-## Git
+Pastikan request terakhir tidak melewati TOTAL.
+
+============================================================
+P0-11 — CONTENT-TYPE
+============================================================
+
+Current implementation selalu:
+
+video/mp4
+
+Audit media MIME aktual.
+
+Jika media memang:
+
+video/mp4
+
+gunakan:
+
+video/mp4
+
+Jika current provider contract mendukung tipe video lain,
+jangan memaksa semuanya menjadi video/mp4.
+
+Jangan melakukan broad MIME expansion tanpa evidence.
+
+Jika TikTok Direct Post video endpoint memang membutuhkan
+video/mp4 untuk current supported flow, pertahankan restriction
+dan fail validation secara jelas untuk unsupported MIME.
+
+Yang penting:
+
+request Content-Type harus konsisten dengan bytes yang dikirim.
+
+============================================================
+P0-12 — PUBLISH_ID
+============================================================
 
 Pastikan:
 
-    NO COMMIT
-    NO PUSH
+Video Init response:
 
-==================================================
-PRINSIP AKHIR
-==================================================
+data.publish_id
 
-Prioritas:
+digunakan sebagai identifier untuk:
 
-1. Jangan rusak existing system.
-2. Public API harus versioned.
-3. API key harus aman.
-4. API key harus workspace-scoped.
-5. Permission harus least privilege.
-6. Tidak ada raw secret di database.
-7. Tidak ada secret di logs.
-8. Tidak ada duplicate business logic.
-9. Tidak ada duplicate publishing engine.
-10. Public API menggunakan domain/service existing.
-11. BullMQ dan worker tetap menjadi execution engine.
-12. Facebook OAuth tetap bekerja.
-13. Instagram Standalone OAuth tetap bekerja.
-14. Frontend existing tetap bekerja.
-15. Master Plan tidak disentuh.
-16. Perubahan seminimal mungkin.
-17. Jangan commit/push.
+/v2/post/publish/status/fetch/
+
+Jangan menggunakan:
+
+postPlatformId
+
+sebagai TikTok publish_id.
+
+Jangan membuat publish_id sendiri.
+
+============================================================
+P0-13 — STATUS POLLING
+============================================================
+
+Pertahankan existing status polling architecture.
+
+Jangan redesign.
+
+Pastikan:
+
+init
+↓
+upload jika diperlukan
+↓
+publish_id
+↓
+status fetch
+
+Polling existing behavior tetap dipertahankan jika sudah bekerja.
+
+Jangan mengubah retry architecture kecuali diperlukan langsung
+oleh perubahan P0.
+
+============================================================
+P0-14 — ERROR HANDLING
+============================================================
+
+Walaupun detailed error observability adalah P1,
+implementasi P0 tidak boleh merusak existing error handling.
+
+Pastikan jika Creator Info gagal:
+
+JANGAN lanjut ke Video Init.
+
+Jika privacy validation gagal:
+
+JANGAN lanjut ke Video Init.
+
+Jika capability validation gagal:
+
+JANGAN lanjut ke Video Init.
+
+Jika FILE_UPLOAD init gagal:
+
+JANGAN pura-pura upload sukses.
+
+Jika PUT chunk gagal:
+
+JANGAN lanjut seolah upload selesai.
+
+Jika status fetch gagal:
+
+gunakan existing execution failure architecture.
+
+Jangan mengubah generic user-facing message menjadi raw TikTok response.
+
+============================================================
+P0-15 — REMOVE UNNECESSARY PULL FALLBACK
+============================================================
+
+Current behavior:
+
+PULL_FROM_URL
+↓
+fallback FILE_UPLOAD
+
+untuk media internal.
+
+Ubah menjadi:
+
+media memiliki storageKey
+↓
+FILE_UPLOAD
+
+PULL_FROM_URL hanya ketika source memang URL-based.
+
+Jangan menghapus PULL_FROM_URL support.
+
+Jangan menghapus existing method jika masih digunakan oleh legitimate flow.
+
+============================================================
+P0-16 — TESTS
+============================================================
+
+Tambahkan regression tests yang benar-benar membuktikan flow.
+
+Minimal:
+
+TEST 1
+Creator Info dipanggil sebelum Video Init.
+
+Expected sequence:
+
+creator_info/query
+→ video/init
+
+TEST 2
+Creator Info gagal.
+
+Expected:
+
+video/init NOT called.
+
+TEST 3
+SELF_ONLY tersedia.
+
+Creator Info:
+
+privacy_level_options = ["SELF_ONLY"]
+
+Expected:
+
+video/init privacy_level = SELF_ONLY
+
+TEST 4
+SELF_ONLY tidak tersedia.
+
+Creator Info:
+
+privacy_level_options = ["PUBLIC_TO_EVERYONE"]
+
+Expected:
+
+Video Init NOT called.
+
+TEST 5
+Creator duration limit.
+
+Creator:
+
+max_video_post_duration_sec = 30
+
+Video duration = 40
+
+Expected:
+
+Video Init NOT called.
+
+TEST 6
+Server-side storageKey.
+
+Expected:
+
+FILE_UPLOAD
+
+Expected:
+
+PULL_FROM_URL NOT called.
+
+TEST 7
+FILE_UPLOAD <=64MB.
+
+Expected:
+
+correct video_size
+correct chunk_size
+total_chunk_count = 1
+Content-Length correct
+Content-Range correct
+
+TEST 8
+FILE_UPLOAD >64MB.
+
+Expected:
+
+multiple chunks.
+
+Verify:
+
+- total_chunk_count
+- Content-Length each chunk
+- Content-Range each chunk
+- sequential order
+- complete byte coverage
+- no overlapping ranges
+- no missing ranges
+
+TEST 9
+Last chunk.
+
+Verify:
+
+END = TOTAL - 1
+
+TEST 10
+MIME.
+
+Verify Content-Type is consistent with actual supported media MIME.
+
+TEST 11
+publish_id.
+
+Verify status fetch uses publish_id returned by TikTok init.
+
+TEST 12
+PULL_FROM_URL legitimate URL flow.
+
+Expected:
+
+PULL_FROM_URL
+
+NOT FILE_UPLOAD.
+
+============================================================
+P0-17 — TEST REAL HTTP BODY SAFELY
+============================================================
+
+Gunakan mock HTTP infrastructure existing.
+
+Jangan melakukan real TikTok request dalam automated tests.
+
+Capture sanitized request:
+
+{
+  "post_info": {
+    "privacy_level": "...",
+    "disable_duet": "...",
+    "disable_comment": "...",
+    "disable_stitch": "..."
+  },
+  "source_info": {
+    "source": "...",
+    "video_size": "...",
+    "chunk_size": "...",
+    "total_chunk_count": "..."
+  }
+}
+
+JANGAN capture:
+
+Authorization
+token
+upload_url
+signed URL
+
+============================================================
+P0-18 — PRESERVE CURRENT ARCHITECTURE
+============================================================
+
+Jangan membuat:
+
+TikTokDirectPostService2
+TikTokProviderV2
+NewTikTokClient
+NewPublishWorker
+
+jika tidak benar-benar diperlukan.
+
+Gunakan provider:
+
+src/providers/social/tiktok/index.ts
+
+dan existing HTTP abstraction.
+
+Jika helper baru benar-benar diperlukan:
+
+- letakkan dekat provider
+- buat namanya jelas
+- gunakan existing types
+- jangan membuat abstraction global tanpa kebutuhan
+
+============================================================
+P0-19 — DO NOT CHANGE OTHER PROVIDERS
+============================================================
+
+Setelah implementasi:
+
+pastikan diff tidak menyentuh behavior:
+
+Facebook
+Instagram
+Threads
+
+Jika file shared berubah:
+
+jelaskan mengapa.
+
+Shared HTTP helper boleh berubah hanya jika:
+
+- perubahan memang diperlukan untuk TikTok upload
+- tidak mengubah behavior provider lain
+- test provider lain tetap pass
+
+============================================================
+P0-20 — DATABASE
+============================================================
+
+Jangan menambahkan migration.
+
+Jangan mengubah schema.
+
+Creator Info tidak perlu disimpan ke database untuk task ini
+kecuali existing architecture benar-benar membutuhkan.
+
+Prefer:
+
+Query Creator Info
+→ validate
+→ publish
+
+dalam satu publish execution.
+
+============================================================
+P0-21 — LOGGING SECURITY
+============================================================
+
+Logging harus tetap aman.
+
+Boleh log:
+
+provider=tiktok
+stage=creator_info
+privacy_level=<value>
+source=FILE_UPLOAD
+video_size=<number>
+chunk_count=<number>
+status=<value>
+
+JANGAN log:
+
+Bearer token
+client secret
+upload_url
+signed media URL
+
+============================================================
+P0-22 — RUN VALIDATION
+============================================================
+
+Setelah implementasi:
+
+npm run lint
+
+npm run typecheck
+
+npm test
+
+npm run test:integration
+
+npm run test:all
+
+npm run build
+
+git diff --check
+
+Jika migration tidak berubah:
+
+JANGAN menjalankan migration hanya untuk formalitas.
+
+Jika db generate tidak relevan:
+
+jangan menjalankan hanya untuk membuat file baru.
+
+============================================================
+P0-23 — INSPECT DIFF
+============================================================
+
+Setelah semua test:
+
+git status
+
+git diff --stat
+
+git diff -- src/providers/social/tiktok/
+git diff -- src/providers/social/http.ts
+git diff -- src/lib/publishing/
+git diff -- src/workers/
+
+Pastikan:
+
+- tidak ada Master Plan berubah
+- tidak ada unrelated changes
+- tidak ada secret
+- tidak ada credential
+- tidak ada generated junk
+- tidak ada debug code
+- tidak ada console.log yang membocorkan data sensitif
+
+============================================================
+P0-24 — MANUAL TEST PLAN
+============================================================
+
+Setelah automated tests PASS, buat manual test plan.
+
+Test minimal:
+
+A. TikTok connected account
+B. Upload video
+C. Publish now
+D. FILE_UPLOAD
+E. Creator Info
+F. privacy validation
+G. status polling
+H. published
+
+Untuk current TikTok unaudited client:
+
+gunakan privacy level yang memang tersedia dari Creator Info.
+
+Jangan mengasumsikan PUBLIC_TO_EVERYONE tersedia.
+
+============================================================
+HASIL AKHIR WAJIB
+============================================================
+
+Setelah implementasi, berikan report:
+
+# TIKTOK P0 IMPLEMENTATION REPORT
+
+## 1. Implementation Summary
+
+Apa yang berubah.
+
+## 2. Creator Info
+
+- endpoint
+- kapan dipanggil
+- data yang digunakan
+
+## 3. Privacy
+
+- default current behavior
+- validation terhadap privacy_level_options
+
+## 4. Capability Validation
+
+- comment
+- duet
+- stitch
+- duration
+
+## 5. Transfer Strategy
+
+Jelaskan:
+
+storageKey
+→ FILE_UPLOAD
+
+dan kapan:
+
+PULL_FROM_URL
+
+digunakan.
+
+## 6. FILE_UPLOAD
+
+Jelaskan:
+
+- video_size
+- chunk_size
+- total_chunk_count
+- Content-Length
+- Content-Range
+- Content-Type
+- chunking >64 MB
+
+## 7. Status Polling
+
+Pastikan publish_id digunakan.
+
+## 8. Tests
+
+Jumlah test sebelum/sesudah.
+
+Tampilkan command dan hasil:
+
+lint
+typecheck
+unit
+integration
+test:all
+build
+diff check
+
+## 9. Files Changed
+
+Daftar file yang benar-benar berubah.
+
+## 10. Other Providers
+
+Konfirmasi Facebook/Instagram/Threads tidak diubah
+atau jelaskan jika shared file berubah.
+
+## 11. Master Plan
+
+WAJIB:
+
+Master Plan changed: NO
+
+## 12. Database
+
+Migration/schema changed: NO
+
+## 13. Git
+
+Commit: NO
+Push: NO
+
+============================================================
+KONDISI GAGAL
+============================================================
+
+Jika ada test gagal:
+
+JANGAN memalsukan PASS.
+
+Jelaskan:
+
+- command
+- test gagal
+- error
+- root cause
+- apakah berkaitan dengan perubahan ini
+
+Jika ada requirement TikTok yang tidak dapat diimplementasikan
+secara aman karena informasi di repository tidak cukup:
+
+STOP pada bagian tersebut.
+
+Jangan mengarang.
+
+Laporkan:
+
+UNKNOWN / BLOCKED
+
+dan jelaskan evidence yang dibutuhkan.
+
+============================================================
+FINAL ACCEPTANCE CRITERIA
+============================================================
+
+Implementasi dianggap selesai hanya jika:
+
+[ ] Creator Info dipanggil sebelum Video Init
+[ ] privacy_level_options digunakan
+[ ] SELF_ONLY tidak lagi diterima secara blindly/hardcoded tanpa validation
+[ ] creator capability divalidasi
+[ ] max_video_post_duration_sec digunakan untuk dynamic duration validation
+[ ] server-side media menggunakan FILE_UPLOAD
+[ ] PULL_FROM_URL tidak lagi menjadi default untuk storageKey
+[ ] FILE_UPLOAD metadata konsisten dengan upload aktual
+[ ] file <=64MB dapat upload dengan benar
+[ ] file >64MB benar-benar chunked
+[ ] Content-Length dikirim
+[ ] Content-Range benar
+[ ] Content-Type konsisten
+[ ] publish_id digunakan untuk status polling
+[ ] existing retry/execution architecture tetap bekerja
+[ ] Facebook tidak rusak
+[ ] Instagram tidak rusak
+[ ] Threads tidak rusak
+[ ] Master Plan tidak berubah
+[ ] database schema tidak berubah
+[ ] secrets tidak masuk log
+[ ] lint PASS
+[ ] typecheck PASS
+[ ] unit tests PASS
+[ ] integration tests PASS
+[ ] test:all PASS
+[ ] build PASS
+[ ] git diff --check PASS
+[ ] tidak ada commit
+[ ] tidak ada push
+
+JANGAN berhenti hanya karena unit test PASS.
+
+Periksa juga hasil git diff dan pastikan implementasi benar-benar
+mengikuti flow:
+
+Creator Info
+→ validation
+→ Video Init
+→ FILE_UPLOAD/PULL_FROM_URL
+→ upload
+→ publish_id
+→ status fetch
+
+Ini adalah acceptance criterion utama.

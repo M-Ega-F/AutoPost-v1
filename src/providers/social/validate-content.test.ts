@@ -166,6 +166,10 @@ describe("the provider registry", () => {
 describe("provider.validateContent", () => {
   for (const { name, platform, provider, captionLimit, maxDurationSec, minDurationSec } of PROVIDERS) {
     describe(name, () => {
+      const imageSizeLimit = platform === "tiktok"
+        ? 20 * 1024 * 1024
+        : 100 * 1024 * 1024;
+
       test("an acceptable JPEG image passes", async () => {
         expectOk(await validate(provider, platform, media()));
       });
@@ -199,7 +203,7 @@ describe("provider.validateContent", () => {
 
       test("a file at exactly the size limit passes", async () => {
         expectOk(
-          await validate(provider, platform, media({ fileSize: 100 * 1024 * 1024 })),
+          await validate(provider, platform, media({ fileSize: imageSizeLimit })),
         );
       });
 
@@ -306,7 +310,7 @@ describe("per-platform validation is genuinely per-platform", () => {
     expectOk(await validate(metaFacebookProvider, "facebook", media(), caption));
   });
 
-  test("a 10,000 pixel wide image: only Instagram's upper bound rejects it", async () => {
+  test("a 10,000 pixel wide image: Instagram and TikTok Photo reject it", async () => {
     const huge = media({ width: 10_000, height: 10_000 });
 
     expectFailure(
@@ -315,7 +319,11 @@ describe("per-platform validation is genuinely per-platform", () => {
       "instagram",
     );
     expectOk(await validate(metaFacebookProvider, "facebook", huge));
-    expectOk(await validate(tiktokProvider, "tiktok", huge));
+    expectFailure(
+      await validate(tiktokProvider, "tiktok", huge),
+      "unsupported_media",
+      "tiktok",
+    );
   });
 
   test("a 200 pixel image is too small for Instagram but fine for the others", async () => {

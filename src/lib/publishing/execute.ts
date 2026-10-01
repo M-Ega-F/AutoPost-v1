@@ -34,6 +34,7 @@ import {
   createSignedMediaUrl,
   downloadMediaObject,
 } from "@/lib/storage";
+import { createTikTokPhotoDeliveryUrl } from "@/lib/media/tiktok-photo-delivery";
 import { getProvider } from "@/providers/social";
 import { logPublishTrace } from "@/lib/publishing/trace";
 import type {
@@ -760,6 +761,28 @@ function buildPublishInput(
         retryable: false,
       });
     },
+    resolveTikTokPhotoMediaUrl:
+      platform === "tiktok"
+        ? async (asset: MediaAsset) => {
+            if (!asset.storageKey || !asset.postMediaId) {
+              throw new ProviderError({
+                code: "invalid_media_url",
+                message: humanErrorMessage(platform, "invalid_media_url"),
+                retryable: false,
+              });
+            }
+
+            try {
+              return createTikTokPhotoDeliveryUrl(asset.postMediaId);
+            } catch {
+              throw new ProviderError({
+                code: "invalid_media_url",
+                message: humanErrorMessage(platform, "invalid_media_url"),
+                retryable: false,
+              });
+            }
+          }
+        : undefined,
     readMedia: async (asset: MediaAsset) => {
       if (asset.storageKey) {
         const stored = await downloadMediaObject(asset.storageKey);

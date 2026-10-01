@@ -166,6 +166,7 @@ export async function claimPlatformForPublish(
 
 export function toMediaAsset(row: PostMedia): MediaAsset {
   return {
+    postMediaId: row.id,
     mediaType: row.mediaType,
     mimeType: row.mimeType,
     storageKey: row.storageKey,

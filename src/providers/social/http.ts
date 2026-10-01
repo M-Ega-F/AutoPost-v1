@@ -571,6 +571,7 @@ export async function uploadBytes(
       method: "PUT",
       headers: {
         "Content-Type": options.contentType,
+        "Content-Length": String(bytes.byteLength),
         "Content-Range": options.contentRange,
       },
       body: payload,

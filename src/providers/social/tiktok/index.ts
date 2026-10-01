@@ -1,14 +1,16 @@
 import "server-only";
 
+import { isIP } from "node:net";
+
 import { decryptSecret } from "@/lib/crypto/tokens";
 import { serverConfig } from "@/lib/env";
+import { isBlockedAddress, isBlockedHostname } from "@/lib/media/fetch-url";
 import {
   humanErrorMessage,
   isAuthFailure,
   ProviderError,
   type ErrorCode,
 } from "@/lib/errors";
-import { logger } from "@/lib/logger";
 import type { SocialAccountStatus } from "@/lib/status";
 import { PLATFORM_LIMITS } from "@/lib/validation/limits";
 import {
@@ -32,6 +34,7 @@ import type {
   SocialProvider,
   ValidationResult,
 } from "../types";
+import { validationError } from "../types";
 
 const PLATFORM = "tiktok" as const;
 
@@ -42,6 +45,10 @@ const TIKTOK_SCOPES = "user.info.basic,video.upload,video.publish";
 
 /** TikTok wants chunks between 5 MB and 64 MB; a small clip fits in one. */
 const MAX_CHUNK_BYTES = 64 * 1024 * 1024;
+const TIKTOK_PHOTO_MAX_BYTES = 20 * 1024 * 1024;
+const TIKTOK_PHOTO_MAX_DIMENSION = 1080;
+const TIKTOK_PHOTO_TITLE_MAX_LENGTH = 90;
+const TIKTOK_PHOTO_MIME_TYPES = ["image/jpeg", "image/webp"] as const;
 
 function requireCredentials(): { clientKey: string; clientSecret: string } {
   const { clientKey, clientSecret } = serverConfig.tiktok;
@@ -73,6 +80,18 @@ type TikTokEnvelope<T> = T & {
     log_id?: string;
   };
 };
+
+type TikTokCreatorInfo = {
+  privacy_level_options?: string[];
+  comment_disabled?: boolean;
+  duet_disabled?: boolean;
+  stitch_disabled?: boolean;
+  max_video_post_duration_sec?: number;
+};
+
+function hasTikTokError(error: TikTokEnvelope<unknown>["error"]): boolean {
+  return Boolean(error?.code && error.code.toLowerCase() !== "ok");
+}
 
 function mapTikTokErrorCode(code: string, message: string): ErrorCode {
   const haystack = `${code} ${message}`.toLowerCase();
@@ -172,12 +191,13 @@ async function requestTikTokToken(
     { platform: PLATFORM, endpoint },
   );
 
-  if (data.error?.code) {
+  const error = data.error;
+  if (hasTikTokError(error)) {
     throw new ProviderError({
-      code: mapTikTokErrorCode(data.error.code, data.error.message ?? ""),
+      code: mapTikTokErrorCode(error?.code ?? "", error?.message ?? ""),
       message: humanErrorMessage(
         PLATFORM,
-        mapTikTokErrorCode(data.error.code, data.error.message ?? ""),
+        mapTikTokErrorCode(error?.code ?? "", error?.message ?? ""),
       ),
       retryable: false,
       responseLog,
@@ -210,19 +230,77 @@ function titleFor(caption: string): string {
   return caption.slice(0, PLATFORM_LIMITS.tiktok.captionLength);
 }
 
-/**
- * Only worth retrying as a file upload: TikTok can refuse a URL pull for
- * reasons that say nothing about the account or the content.
- */
-function shouldFallbackToFileUpload(error: unknown): boolean {
-  if (!(error instanceof ProviderError)) return false;
-  return (
-    error.code !== "token_expired" &&
-    error.code !== "permission_denied" &&
-    error.code !== "rate_limited" &&
-    error.code !== "caption_too_long" &&
-    error.code !== "unsupported_media"
-  );
+function photoTitleFor(caption: string): string {
+  return caption.slice(0, TIKTOK_PHOTO_TITLE_MAX_LENGTH);
+}
+
+function validateTikTokPhotoMedia(input: {
+  media: PublishInput["media"];
+  caption: string;
+}): ValidationResult {
+  const generic = validateMediaLimits(PLATFORM, input.media, input.caption);
+  if (!generic.ok) return generic;
+  if (input.media.mediaType !== "image") return { ok: true };
+
+  if (!(TIKTOK_PHOTO_MIME_TYPES as readonly string[]).includes(input.media.mimeType)) {
+    return validationError(
+      "unsupported_media",
+      humanErrorMessage(PLATFORM, "unsupported_media"),
+    );
+  }
+
+  if (
+    input.media.fileSize !== null &&
+    input.media.fileSize > TIKTOK_PHOTO_MAX_BYTES
+  ) {
+    return validationError(
+      "media_too_large",
+      humanErrorMessage(PLATFORM, "media_too_large"),
+    );
+  }
+
+  if (
+    (input.media.width !== null && input.media.width > TIKTOK_PHOTO_MAX_DIMENSION) ||
+    (input.media.height !== null && input.media.height > TIKTOK_PHOTO_MAX_DIMENSION)
+  ) {
+    return validationError(
+      "unsupported_media",
+      humanErrorMessage(PLATFORM, "unsupported_media"),
+    );
+  }
+
+  return { ok: true };
+}
+
+function assertValidTikTokPhotoMedia(input: PublishInput): void {
+  const validation = validateTikTokPhotoMedia(input);
+  if (!validation.ok) {
+    throw new ProviderError({
+      code: validation.code,
+      message: validation.message,
+      retryable: false,
+    });
+  }
+}
+
+function buildPhotoPostInfo(
+  input: PublishInput,
+  creatorInfo: TikTokCreatorInfo,
+): Record<string, unknown> {
+  const privacyLevel = "SELF_ONLY";
+  if (!creatorInfo.privacy_level_options?.includes(privacyLevel)) {
+    throw new ProviderError({
+      code: "provider_error",
+      message: "TikTok does not allow the default privacy setting for this account.",
+      retryable: false,
+    });
+  }
+
+  return {
+    title: photoTitleFor(input.caption),
+    privacy_level: privacyLevel,
+    disable_comment: creatorInfo.comment_disabled === true,
+  };
 }
 
 async function initVideoPost(
@@ -241,12 +319,13 @@ async function initVideoPost(
     { platform: PLATFORM, endpoint },
   );
 
-  if (result.data.error?.code) {
+  const error = result.data.error;
+  if (hasTikTokError(error)) {
     throw new ProviderError({
-      code: mapTikTokErrorCode(result.data.error.code, result.data.error.message ?? ""),
+      code: mapTikTokErrorCode(error?.code ?? "", error?.message ?? ""),
       message: humanErrorMessage(
         PLATFORM,
-        mapTikTokErrorCode(result.data.error.code, result.data.error.message ?? ""),
+        mapTikTokErrorCode(error?.code ?? "", error?.message ?? ""),
       ),
       retryable: false,
       status: result.responseLog.status,
@@ -260,28 +339,165 @@ async function initVideoPost(
   };
 }
 
+async function queryCreatorInfo(
+  token: string,
+): Promise<TikTokCreatorInfo> {
+  const result = await requestJson<TikTokEnvelope<{ data?: TikTokCreatorInfo }>>(
+    `${API_BASE}/post/publish/creator_info/query/`,
+    {
+      method: "POST",
+      headers: bearer(token),
+    },
+    { platform: PLATFORM, endpoint: "POST /post/publish/creator_info/query" },
+  );
+
+  if (hasTikTokError(result.data.error)) {
+    const code = mapTikTokErrorCode(
+      result.data.error?.code ?? "",
+      result.data.error?.message ?? "",
+    );
+    throw new ProviderError({
+      code,
+      message: humanErrorMessage(PLATFORM, code),
+      retryable: false,
+      status: result.responseLog.status,
+      responseLog: result.responseLog,
+    });
+  }
+
+  return result.data.data ?? {};
+}
+
+function buildVideoPostInfo(
+  input: PublishInput,
+  creatorInfo: TikTokCreatorInfo,
+): Record<string, unknown> {
+  const privacyLevel = "SELF_ONLY";
+  if (!creatorInfo.privacy_level_options?.includes(privacyLevel)) {
+    throw new ProviderError({
+      code: "provider_error",
+      message: "TikTok does not allow the default privacy setting for this account.",
+      retryable: false,
+    });
+  }
+
+  const maxDuration = creatorInfo.max_video_post_duration_sec;
+  if (
+    typeof maxDuration === "number" &&
+    input.media.duration !== null &&
+    input.media.duration !== undefined &&
+    input.media.duration > maxDuration
+  ) {
+    throw new ProviderError({
+      code: "video_too_long",
+      message: humanErrorMessage(PLATFORM, "video_too_long"),
+      retryable: false,
+    });
+  }
+
+  return {
+    title: titleFor(input.caption),
+    privacy_level: privacyLevel,
+    disable_comment: creatorInfo.comment_disabled === true,
+    disable_duet: creatorInfo.duet_disabled === true,
+    disable_stitch: creatorInfo.stitch_disabled === true,
+  };
+}
+
+function validatePullUrl(url: string): void {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new ProviderError({
+      code: "invalid_media_url",
+      message: humanErrorMessage(PLATFORM, "invalid_media_url"),
+      retryable: false,
+    });
+  }
+
+  if (
+    parsed.protocol !== "https:" ||
+    parsed.username ||
+    parsed.password ||
+    isBlockedHostname(parsed.hostname) ||
+    (isIP(parsed.hostname) !== 0 && isBlockedAddress(parsed.hostname))
+  ) {
+    throw new ProviderError({
+      code: parsed.protocol === "https:" ? "url_blocked" : "invalid_media_url",
+      message: humanErrorMessage(PLATFORM, "invalid_media_url"),
+      retryable: false,
+    });
+  }
+}
+
+function uploadContentType(mimeType: string): string {
+  const normalized = mimeType.split(";", 1)[0]?.trim().toLowerCase();
+  if (
+    normalized === "video/mp4" ||
+    normalized === "video/quicktime"
+  ) {
+    return normalized;
+  }
+
+  throw new ProviderError({
+    code: "unsupported_media",
+    message: humanErrorMessage(PLATFORM, "unsupported_media"),
+    retryable: false,
+  });
+}
+
+async function uploadFile(
+  uploadUrl: string,
+  bytes: Uint8Array,
+  size: number,
+  mimeType: string,
+): Promise<void> {
+  if (size <= 0 || bytes.byteLength !== size) {
+    throw new ProviderError({
+      code: "unsupported_media",
+      message: humanErrorMessage(PLATFORM, "unsupported_media"),
+      retryable: false,
+    });
+  }
+
+  const chunkSize = Math.min(size, MAX_CHUNK_BYTES);
+  for (let start = 0; start < size; start += chunkSize) {
+    const endExclusive = Math.min(size, start + chunkSize);
+    const chunk = bytes.subarray(start, endExclusive);
+    await uploadBytes(uploadUrl, chunk, {
+      platform: PLATFORM,
+      endpoint: "PUT {upload_url}",
+      contentType: mimeType,
+      contentRange: `bytes ${start}-${endExclusive - 1}/${size}`,
+    });
+  }
+}
+
 async function publishVideo(
   input: PublishInput,
 ): Promise<PublishResult> {
-  const postInfo = {
-    title: titleFor(input.caption),
-    privacy_level: "SELF_ONLY",
-    disable_comment: false,
-    disable_duet: false,
-    disable_stitch: false,
-  };
+  const creatorInfo = await queryCreatorInfo(input.accessToken);
+  const postInfo = buildVideoPostInfo(input, creatorInfo);
 
-  const mediaUrl = await input.resolveMediaUrl(input.media);
-
-  try {
+  if (input.media.storageKey) {
+    const media = await input.readMedia(input.media);
     const { data, responseLog } = await initVideoPost(
       input.accessToken,
       postInfo,
-      { source: "PULL_FROM_URL", video_url: mediaUrl },
-      "POST /post/publish/video/init (PULL_FROM_URL)",
+      {
+        source: "FILE_UPLOAD",
+        video_size: media.size,
+        chunk_size: Math.min(media.size, MAX_CHUNK_BYTES),
+        total_chunk_count: Math.max(
+          1,
+          Math.ceil(media.size / Math.min(media.size, MAX_CHUNK_BYTES)),
+        ),
+      },
+      "POST /post/publish/video/init (FILE_UPLOAD)",
     );
 
-    if (!data.publish_id) {
+    if (!data.publish_id || !data.upload_url) {
       throw new ProviderError({
         code: "publish_failed",
         message: humanErrorMessage(PLATFORM, "publish_failed"),
@@ -290,40 +506,36 @@ async function publishVideo(
       });
     }
 
+    await uploadFile(
+      data.upload_url,
+      media.bytes,
+      media.size,
+      uploadContentType(media.mimeType),
+    );
+
     return {
       status: "accepted",
       externalPostId: data.publish_id,
       statusToken: data.publish_id,
       responseLog: buildResponseLog(PLATFORM, "tiktok-video-init", 200, {
         publishId: data.publish_id,
-        source: "PULL_FROM_URL",
+        source: "FILE_UPLOAD",
+        bytes: media.size,
       }),
     };
-  } catch (error) {
-    if (!shouldFallbackToFileUpload(error)) throw error;
-
-    logger.warn("tiktok url pull rejected, falling back to file upload", {
-      platform: PLATFORM,
-      errorCode: error instanceof ProviderError ? error.code : "unknown",
-    });
   }
 
-  const { bytes, size } = await input.readMedia(input.media);
-  const chunkSize = Math.max(1, Math.min(size, MAX_CHUNK_BYTES));
+  const mediaUrl = await input.resolveMediaUrl(input.media);
+  validatePullUrl(mediaUrl);
 
   const { data, responseLog } = await initVideoPost(
     input.accessToken,
     postInfo,
-    {
-      source: "FILE_UPLOAD",
-      video_size: size,
-      chunk_size: chunkSize,
-      total_chunk_count: Math.max(1, Math.ceil(size / chunkSize)),
-    },
-    "POST /post/publish/video/init (FILE_UPLOAD)",
+    { source: "PULL_FROM_URL", video_url: mediaUrl },
+    "POST /post/publish/video/init (PULL_FROM_URL)",
   );
 
-  if (!data.publish_id || !data.upload_url) {
+  if (!data.publish_id) {
     throw new ProviderError({
       code: "publish_failed",
       message: humanErrorMessage(PLATFORM, "publish_failed"),
@@ -332,21 +544,13 @@ async function publishVideo(
     });
   }
 
-  await uploadBytes(data.upload_url, bytes, {
-    platform: PLATFORM,
-    endpoint: "PUT {upload_url}",
-    contentType: "video/mp4",
-    contentRange: `bytes 0-${Math.max(0, size - 1)}/${size}`,
-  });
-
   return {
     status: "accepted",
     externalPostId: data.publish_id,
     statusToken: data.publish_id,
     responseLog: buildResponseLog(PLATFORM, "tiktok-video-init", 200, {
       publishId: data.publish_id,
-      source: "FILE_UPLOAD",
-      bytes: size,
+      source: "PULL_FROM_URL",
     }),
   };
 }
@@ -354,7 +558,22 @@ async function publishVideo(
 async function publishPhoto(
   input: PublishInput,
 ): Promise<PublishResult> {
-  const mediaUrl = await input.resolveMediaUrl(input.media);
+  assertValidTikTokPhotoMedia(input);
+  const creatorInfo = await queryCreatorInfo(input.accessToken);
+  const postInfo = buildPhotoPostInfo(input, creatorInfo);
+
+  const mediaUrl = input.media.storageKey
+    ? await input.resolveTikTokPhotoMediaUrl?.(input.media)
+    : await input.resolveMediaUrl(input.media);
+
+  if (!mediaUrl) {
+    throw new ProviderError({
+      code: "invalid_media_url",
+      message: humanErrorMessage(PLATFORM, "invalid_media_url"),
+      retryable: false,
+    });
+  }
+  validatePullUrl(mediaUrl);
 
   const result = await requestJson<
     TikTokEnvelope<{ data?: { publish_id?: string } }>
@@ -364,11 +583,8 @@ async function publishPhoto(
       method: "POST",
       headers: bearer(input.accessToken),
       body: jsonBody({
-        post_info: {
-          title: titleFor(input.caption),
-          privacy_level: "SELF_ONLY",
-          disable_comment: false,
-        },
+        post_mode: "DIRECT_POST",
+        post_info: postInfo,
         source_info: {
           source: "PULL_FROM_URL",
           photo_cover_index: 0,
@@ -382,21 +598,16 @@ async function publishPhoto(
 
   const publishId = result.data.data?.publish_id;
 
-  if (result.data.error?.code || !publishId) {
+  const hasError = hasTikTokError(result.data.error);
+  if (hasError || !publishId) {
     throw new ProviderError({
-      code: result.data.error?.code
-        ? mapTikTokErrorCode(
-            result.data.error.code,
-            result.data.error.message ?? "",
-          )
+      code: hasError
+        ? mapTikTokErrorCode(result.data.error?.code ?? "", result.data.error?.message ?? "")
         : "publish_failed",
       message: humanErrorMessage(
         PLATFORM,
-        result.data.error?.code
-          ? mapTikTokErrorCode(
-              result.data.error.code,
-              result.data.error.message ?? "",
-            )
+        hasError
+          ? mapTikTokErrorCode(result.data.error?.code ?? "", result.data.error?.message ?? "")
           : "publish_failed",
       ),
       retryable: false,
@@ -562,7 +773,7 @@ export const tiktokProvider: SocialProvider = {
   },
 
   async validateContent(input): Promise<ValidationResult> {
-    return validateMediaLimits(PLATFORM, input.media, input.caption);
+    return validateTikTokPhotoMedia(input);
   },
 
   async publish(input): Promise<PublishResult> {
@@ -594,8 +805,9 @@ export const tiktokProvider: SocialProvider = {
       { platform: PLATFORM, endpoint: "POST /post/publish/status/fetch" },
     );
 
-    if (data.error?.code) {
-      const code = mapTikTokErrorCode(data.error.code, data.error.message ?? "");
+    const error = data.error;
+    if (hasTikTokError(error)) {
+      const code = mapTikTokErrorCode(error?.code ?? "", error?.message ?? "");
       return {
         status: "failed",
         errorCode: code,

@@ -48,6 +48,8 @@ export type RefreshResult = {
 };
 
 export type MediaAsset = {
+  /** Internal `post_media.id`, used only for provider-specific delivery. */
+  postMediaId?: string;
   mediaType: "image" | "video";
   mimeType: string;
   /** Supabase Storage object key, when the media was uploaded. */
@@ -73,6 +75,8 @@ export type PublishInput = {
   media: MediaAsset;
   /** Resolves a persistently stored object to a short-lived HTTPS URL. */
   resolveMediaUrl: (media: MediaAsset) => Promise<string>;
+  /** TikTok Photo delivery URL for a private object; never a Supabase URL. */
+  resolveTikTokPhotoMediaUrl?: (media: MediaAsset) => Promise<string>;
   /** Reads the stored object as bytes, for providers that upload the file. */
   readMedia: (
     media: MediaAsset,
