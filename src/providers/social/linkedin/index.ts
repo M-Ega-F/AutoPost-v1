@@ -115,18 +115,65 @@ function uploadUrlOf(value: unknown): string | null {
   return null;
 }
 
-async function uploadMedia(input: PublishInput): Promise<string> {
-  const { bytes, size, mimeType } = await input.readMedia(input.media);
-  const accountMetadata = metadataOf(input.account);
-  const owner =
-    typeof accountMetadata.authorUrn === "string"
-      ? accountMetadata.authorUrn
-      : `urn:li:person:${input.account.platformAccountId}`;
-  const recipe =
-    input.media.mediaType === "video"
-      ? "urn:li:digitalmediaRecipe:feedshare-video"
-      : "urn:li:digitalmediaRecipe:feedshare-image";
+function ownerUrnOf(account: SocialAccountRecord): string {
+  const accountMetadata = metadataOf(account);
+  return typeof accountMetadata.authorUrn === "string"
+    ? accountMetadata.authorUrn
+    : `urn:li:person:${account.platformAccountId}`;
+}
 
+async function uploadImage(
+  input: PublishInput,
+  owner: string,
+  bytes: Uint8Array,
+  size: number,
+  mimeType: string,
+): Promise<string> {
+  const initialized = await requestJson<{
+    value?: {
+      uploadUrl?: string;
+      image?: string;
+    };
+  }>(
+    `${API_BASE}/rest/images?action=initializeUpload`,
+    {
+      method: "POST",
+      headers: headers(input.accessToken, true),
+      body: jsonBody({
+        initializeUploadRequest: { owner },
+      }),
+    },
+    { platform: PLATFORM, endpoint: "POST /rest/images?action=initializeUpload" },
+  );
+
+  const image = initialized.data.value?.image;
+  const uploadUrl = initialized.data.value?.uploadUrl;
+  if (!image || !uploadUrl) {
+    throw new ProviderError({
+      code: "publish_failed",
+      message: humanErrorMessage(PLATFORM, "publish_failed"),
+      retryable: false,
+      responseLog: initialized.responseLog,
+    });
+  }
+
+  await uploadBytes(uploadUrl, bytes, {
+    platform: PLATFORM,
+    endpoint: "PUT {linkedin-image-upload-url}",
+    contentType: mimeType,
+    contentRange: `bytes 0-${Math.max(0, size - 1)}/${size}`,
+  });
+
+  return image;
+}
+
+async function uploadVideoWithAssetsApi(
+  input: PublishInput,
+  owner: string,
+  bytes: Uint8Array,
+  size: number,
+  mimeType: string,
+): Promise<string> {
   const registered = await requestJson<{
     value?: {
       asset?: string;
@@ -140,7 +187,7 @@ async function uploadMedia(input: PublishInput): Promise<string> {
       body: jsonBody({
         registerUploadRequest: {
           owner,
-          recipes: [recipe],
+          recipes: ["urn:li:digitalmediaRecipe:feedshare-video"],
           serviceRelationships: [
             { identifier: "urn:li:userGeneratedContent", relationshipType: "OWNER" },
           ],
@@ -170,6 +217,17 @@ async function uploadMedia(input: PublishInput): Promise<string> {
   });
 
   return asset;
+}
+
+async function uploadMedia(input: PublishInput): Promise<string> {
+  const { bytes, size, mimeType } = await input.readMedia(input.media);
+  const owner = ownerUrnOf(input.account);
+
+  if (input.media.mediaType === "image") {
+    return uploadImage(input, owner, bytes, size, mimeType);
+  }
+
+  return uploadVideoWithAssetsApi(input, owner, bytes, size, mimeType);
 }
 
 async function publishPost(input: PublishInput): Promise<PublishResult> {
