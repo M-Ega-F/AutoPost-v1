@@ -125,7 +125,7 @@ export function MediaLibrary({ initial }: { initial: PaginatedMediaAssets }) {
       {loading ? <div className="flex min-h-48 items-center justify-center text-sm text-muted-foreground"><Loader2 className="mr-2 size-4 animate-spin" aria-hidden="true" />Loading media…</div> : assets.length === 0 ? (
         <Card className="rounded-lg border-dashed shadow-none"><CardContent className="flex min-h-56 flex-col items-center justify-center gap-3 text-center"><FileImage className="size-10 text-primary" aria-hidden="true" /><div><p className="font-medium">{search || type !== "all" ? "No media matches this filter" : "Your media library is empty"}</p><p className="mt-1 text-sm text-muted-foreground">{search || type !== "all" ? "Try a different search or filter." : "Upload an image or video to reuse it in future posts."}</p></div></CardContent></Card>
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 2xl:grid-cols-5">
           {assets.map((asset) => (
             <Card key={asset.id} className="gap-0 overflow-hidden rounded-lg p-0 shadow-none">
               <div className={`aspect-video overflow-hidden ${asset.mediaType === "video" ? "bg-black" : "bg-muted"}`}>{preview(asset)}</div>

@@ -71,10 +71,11 @@ export default async function DashboardPage() {
           </p>
         </section>
 
-        <DashboardQuickActions />
         <DashboardStats stats={data.stats} />
-        <DashboardPerformance performance={data.performance} />
-        <PublishingHealthCard initialSnapshot={reliability} />
+        <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1.45fr)_minmax(20rem,0.85fr)]">
+          <DashboardPerformance performance={data.performance} />
+          <PublishingHealthCard initialSnapshot={reliability} />
+        </div>
 
         <ReconnectBanner
           accounts={data.connectedAccounts.filter(
@@ -82,13 +83,16 @@ export default async function DashboardPage() {
           )}
         />
 
-        <div className="grid gap-6 xl:grid-cols-2">
+        <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
           <UpcomingPostsCard posts={data.upcoming} timeZone={settings.timezone} />
           <RecentActivityCard posts={data.recent} />
         </div>
 
-        <FailedPostsCard items={data.failedTargets} />
-        <ConnectedAccountsSummary accounts={data.connectedAccounts} />
+        <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)]">
+          <ConnectedAccountsSummary accounts={data.connectedAccounts} />
+          <FailedPostsCard items={data.failedTargets} />
+        </div>
+        <DashboardQuickActions />
         </div>
       </DashboardPolling>
     </>

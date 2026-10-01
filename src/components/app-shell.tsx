@@ -43,11 +43,11 @@ export function AppShell({
         Skip to content
       </a>
 
-      <aside className="fixed inset-y-0 left-0 z-40 hidden w-64 lg:block">
+      <aside className="fixed inset-y-0 left-0 z-40 hidden w-48 lg:block">
         <AppSidebar />
       </aside>
 
-      <div className="lg:pl-64">
+      <div className="lg:pl-48">
         <AppHeader
           userEmail={userEmail}
           workspaces={workspaces}
@@ -57,7 +57,7 @@ export function AppShell({
         <WorkspacePermissionProvider role={workspaces.find((workspace) => workspace.id === activeWorkspaceId)?.role ?? "viewer"}>
           <main
             id="content"
-            className="mx-auto w-full max-w-5xl scroll-mt-20 px-4 py-6 md:px-6 md:py-8 lg:px-8"
+            className="mx-auto w-full max-w-[1440px] scroll-mt-20 px-4 py-6 md:px-6 md:py-8 lg:px-8"
           >
             {children}
           </main>

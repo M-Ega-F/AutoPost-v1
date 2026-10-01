@@ -797,7 +797,7 @@ export function CreatePostForm({
   const submitting = isPending || pendingAction !== null;
 
   return (
-    <Card className="max-w-2xl rounded-lg p-4 shadow-none md:p-6">
+    <Card className="rounded-lg p-4 shadow-none md:p-6">
       <form noValidate onSubmit={onPublish} className="space-y-6">
         {serverError ? (
           <Alert variant="destructive" className="border-destructive-border">
@@ -806,6 +806,8 @@ export function CreatePostForm({
           </Alert>
         ) : null}
 
+        <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1.55fr)_minmax(18rem,0.95fr)]">
+        <div className="min-w-0 space-y-6">
         <CaptionField
           value={caption}
           limit={limit}
@@ -867,6 +869,9 @@ export function CreatePostForm({
           ) : null}
         </div>
 
+        </div>
+
+        <div className="min-w-0 space-y-6 lg:sticky lg:top-20">
         <div className="space-y-2">
           <Label id="publish-to-label">
             Publish to{" "}
@@ -1033,6 +1038,8 @@ export function CreatePostForm({
               ) : null}
             </div>
           </TooltipProvider>
+        </div>
+        </div>
         </div>
       </form>
 

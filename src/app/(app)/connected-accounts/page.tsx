@@ -26,7 +26,7 @@ export default async function ConnectedAccountsPage() {
         subtitle="Connect the accounts you want to publish to."
       />
 
-      <div className="space-y-8">
+      <div className="space-y-6">
         {PLATFORMS.map((platform) => {
           const meta = PLATFORM_META[platform];
           const PlatformIcon = meta.icon;
@@ -55,7 +55,7 @@ export default async function ConnectedAccountsPage() {
                 />
               </div>
               {platformAccounts.length > 0 ? (
-                <div className="grid gap-4 md:grid-cols-2">
+                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                   {platformAccounts.map((account) => <AccountCard key={account.id} account={account} />)}
                 </div>
               ) : (

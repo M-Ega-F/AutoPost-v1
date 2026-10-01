@@ -1,1062 +1,1198 @@
-Saya ingin melakukan REWORK TOTAL COLOR SYSTEM pada AutoPost.
+Saya ingin melakukan LAYOUT & UI COMPOSITION REWORK pada AutoPost.
 
-TUJUAN:
-Menyamakan seluruh warna UI AutoPost dengan reference design yang diberikan.
+TUJUAN UTAMA:
+
+Membuat layout AutoPost mendekati reference design yang diberikan sebelumnya.
+
+REFERENCE DESIGN:
+Gunakan gambar reference yang diberikan user sebagai sumber visual utama.
+
+Target visual secara umum:
+
+- SaaS dashboard modern
+- clean
+- compact
+- information-dense tetapi tidak berantakan
+- sidebar tetap
+- content area terstruktur
+- cards tersusun dalam grid
+- dashboard menggunakan hierarchy yang jelas
+- form Create Post menggunakan multi-column layout pada desktop
+- detail/content area dan supporting panels berada dalam grid yang rapi
+- whitespace cukup tetapi tidak boros
+- semua komponen terasa berada dalam satu design system
 
 PENTING:
-Ini adalah COLOR SYSTEM REWORK SAJA.
 
-JANGAN mengubah:
-- business logic
-- data fetching
-- server actions
-- API
-- database
-- schema
-- migration
-- authentication
-- authorization
-- OAuth
-- queue
-- BullMQ
-- worker
-- provider
-- publishing flow
-- validation logic
-- state management
-- routing
-- URL
-- layout structure
-- component hierarchy
-- spacing
-- sizing
-- typography
-- responsive behavior
-- animation behavior
+INI ADALAH LAYOUT REWORK SAJA.
 
-JANGAN melakukan redesign layout.
+JANGAN mengubah business logic.
 
-JANGAN membuat komponen UI baru kecuali benar-benar diperlukan untuk mengganti token warna pada existing component.
+JANGAN mengubah data flow.
+
+JANGAN mengubah API.
+
+JANGAN mengubah server actions.
+
+JANGAN mengubah database.
+
+JANGAN mengubah schema.
+
+JANGAN membuat migration.
+
+JANGAN mengubah authentication.
+
+JANGAN mengubah OAuth.
+
+JANGAN mengubah provider.
+
+JANGAN mengubah queue/BullMQ.
+
+JANGAN mengubah worker.
+
+JANGAN mengubah publishing flow.
+
+JANGAN mengubah validation/business rules.
+
+JANGAN mengubah multi-account selection behavior.
+
+JANGAN mengubah performance optimization yang sudah ada.
+
+JANGAN mengubah color system yang baru saja selesai.
 
 JANGAN mengubah Master Plan:
 
 .agents/plans/Master Plan.md
 
 JANGAN commit.
+
 JANGAN push.
 
 ==================================================
-REFERENCE DESIGN
+1. PRINSIP UTAMA
 ==================================================
 
-Gunakan gambar reference yang diberikan sebagai SOURCE OF TRUTH VISUAL:
+Kita ingin:
 
-Light Mode:
-- clean white background
-- very light slate surfaces
-- indigo primary
-- dark navy text
-- subtle slate borders
-- semantic colors untuk status
+EXISTING LOGIC
+      +
+EXISTING COMPONENTS
+      +
+EXISTING DATA
+      +
+EXISTING COLOR SYSTEM
+      ↓
+NEW VISUAL COMPOSITION
 
-Dark Mode:
-- deep navy background
-- dark slate surfaces
-- indigo primary/accent
-- muted slate text
-- subtle dark borders
-- GREEN khusus untuk analytics/performance chart
-- green dapat digunakan sebagai active/positive accent yang memang terlihat pada reference
-- jangan mengubah seluruh dark mode menjadi green theme
+Bukan:
 
-Visual target:
+REWRITE APPLICATION.
 
-LIGHT MODE
-White / near-white UI
-        ↓
-Indigo primary
-        ↓
-Slate text/border
-        ↓
-Green / orange / red hanya untuk semantic states
+Gunakan komponen yang sudah ada sebanyak mungkin.
 
-DARK MODE
-Deep navy background
-        ↓
-Dark slate surfaces
-        ↓
-Indigo primary
-        ↓
-GREEN analytics/chart accent
-        ↓
-Semantic status colors
+Jika komponen sudah memiliki business logic:
+JANGAN rewrite logic tersebut.
+
+Jika perlu memindahkan komponen:
+ubah composition/layout parent-nya.
 
 ==================================================
-TARGET COLOR TOKENS
+2. REFERENCE LAYOUT
 ==================================================
 
-Gunakan token-based system.
+Reference memiliki karakter visual seperti:
 
-Jangan menyebarkan hardcoded hex color ke seluruh component.
+┌────────────────┬──────────────────────────────────────────┐
+│                │ Header / Search / User                   │
+│                ├──────────────────────────────────────────┤
+│    SIDEBAR     │ Page Header                              │
+│                │                                          │
+│ Dashboard      │ ┌────────┐ ┌────────┐ ┌────────┐ ┌─────┐ │
+│ Create Post    │ │ Metric │ │ Metric │ │ Metric │ │ ... │ │
+│ Scheduled      │ └────────┘ └────────┘ └────────┘ └─────┘ │
+│ History        │                                          │
+│ Media Library  │ ┌────────────────┐ ┌──────────┐ ┌──────┐ │
+│ Review         │ │ Performance    │ │ Platform │ │Recent│ │
+│ Accounts       │ │ Chart          │ │          │ │Posts │ │
+│ Settings       │ │                │ │          │ │      │ │
+│                │ └────────────────┘ └──────────┘ └──────┘ │
+│                │                                          │
+│ Workspace      │ ┌────────────────┐ ┌────────────────────┐ │
+│ User           │ │ Accounts       │ │ Media Library      │ │
+│                │ │ Connected      │ │                    │ │
+└────────────────┴──────────────────────────────────────────┘
 
-Semua warna harus berasal dari centralized design tokens / CSS variables / Tailwind theme yang sudah digunakan project.
+Jangan copy pixel secara buta.
 
-Jika codebase sudah memiliki shadcn/ui token system:
-GUNAKAN DAN PERBARUI SYSTEM TERSEBUT.
+Yang harus dipertahankan adalah:
 
-Jangan membuat color system kedua yang paralel.
-
---------------------------------------------------
-LIGHT MODE
---------------------------------------------------
-
-Target palette:
-
-Primary:
-#4F46E5
-
-Primary hover:
-#4338CA
-
-Primary light / subtle:
-gunakan tint Indigo yang sangat ringan dan konsisten dengan primary.
-
-Background:
-#F8FAFC
-
-Surface / Card:
-#FFFFFF
-
-Surface Alt:
-#F1F5F9
-
-Foreground / Text:
-#0F172A
-
-Muted Text:
-#64748B
-
-Border:
-#E2E8F0
-
-Input background:
-#FFFFFF
-
-Ring / Focus:
-#4F46E5
-
-Info:
-#2563EB
-
-Success:
-#16A34A
-
-Warning:
-#D97706
-
-Danger / Destructive:
-#DC2626
-
---------------------------------------------------
-DARK MODE
---------------------------------------------------
-
-Target palette:
-
-Background:
-#0F172A
-
-Surface:
-#111827
-
-Surface Alt:
-#1E293B
-
-Foreground / Text:
-#F8FAFC
-
-Muted Text:
-#94A3B8
-
-Border:
-#334155
-
-Primary:
-#6366F1
-
-Primary Hover:
-gunakan indigo yang sedikit lebih terang/kuat daripada primary.
-
-Primary subtle:
-gunakan translucent/tinted indigo yang tetap readable pada navy.
-
-Ring / Focus:
-#6366F1
-
-Info:
-#3B82F6
-
-Success:
-#22C55E
-
-Warning:
-#F59E0B
-
-Danger:
-#EF4444
+- hierarchy
+- proportions
+- alignment
+- spacing rhythm
+- card grouping
+- visual density
+- responsive behavior
 
 ==================================================
-DARK MODE ANALYTICS / GRAPH
+3. GLOBAL APP SHELL
 ==================================================
 
-INI WAJIB.
+Pertahankan existing AppLayout / application shell.
 
-Untuk chart/performance graph pada DARK MODE:
+Desktop target:
 
-gunakan HIJAU sebagai warna utama data visualization.
-
-Target utama:
-
-#22C55E
-
-Jika membutuhkan secondary green:
-gunakan variasi green yang masih berada dalam keluarga warna yang sama.
-
-Contoh:
-
-Primary graph:
-#22C55E
-
-Secondary graph:
-#10B981
-
-Graph area/fill:
-gunakan translucent green.
-
-JANGAN menggunakan indigo sebagai line chart utama pada dark mode.
-
-Light mode tetap boleh menggunakan Indigo untuk graph sesuai reference.
-
-Jadi:
-
-LIGHT:
-chart → Indigo
-
-DARK:
-chart → Green
-
-==================================================
-COLOR SEMANTICS
-==================================================
-
-Pertahankan semantic meaning.
-
-SUCCESS:
-green
-
-WARNING:
-orange/amber
-
-ERROR:
-red
-
-INFO:
-blue
-
-Jangan mengganti semantic colors menjadi indigo hanya demi konsistensi brand.
-
-Contoh:
-
-Berhasil:
-green
-
-Gagal:
-red
-
-Peringatan:
-orange
-
-Informasi:
-blue
-
-Brand / action:
-indigo
-
-Analytics dark:
-green
-
-==================================================
-SHADCN/UI
-==================================================
-
-Audit semua komponen shadcn/ui yang digunakan.
-
-Update color tokens secara centralized.
-
-Periksa minimal:
-
-- Button
-- Badge
-- Card
-- Input
-- Textarea
-- Select
-- Dropdown Menu
-- Dialog
-- Alert Dialog
-- Sheet
-- Popover
-- Tooltip
-- Tabs
-- Checkbox
-- Radio Group
-- Switch
-- Progress
-- Separator
-- Table
-- Calendar
-- Command
-- Toast / Sonner
-- Alert
-- Skeleton
-- Form
-- Label
-- Breadcrumb
-- Pagination
-- Avatar
-
-Jangan membuat setiap component memiliki warna sendiri.
-
-Gunakan token:
-
-background
-foreground
-primary
-primary-foreground
-secondary
-secondary-foreground
-muted
-muted-foreground
-accent
-accent-foreground
-destructive
-destructive-foreground
-border
-input
-ring
-
-Jika codebase menggunakan token tambahan:
-pertahankan dan mapping ke palette baru.
-
-==================================================
 SIDEBAR
-==================================================
-
-JANGAN mengubah ukuran/layout sidebar.
-
-Hanya ubah warna.
-
-LIGHT MODE:
++
+MAIN CONTENT
 
 Sidebar:
-#FFFFFF / surface
 
-Text:
-#0F172A
+- fixed/sticky sesuai architecture existing
+- compact
+- tidak terlalu lebar
+- navigation tersusun vertikal
+- logo di bagian atas
+- workspace/account switcher di bagian bawah
+- navigation grouping jelas
 
-Muted navigation:
-#64748B
+Jangan mengubah routing.
 
-Active navigation:
-very light indigo background
+Jangan mengubah navigation item.
 
-Active text/icon:
-#4F46E5
+Jangan menambah menu baru.
 
-Hover:
-very light indigo/slate
+Jangan menghapus menu.
 
-Border:
-#E2E8F0
+Hanya ubah:
 
-DARK MODE:
+- width
+- spacing
+- alignment
+- grouping
+- visual density
+- positioning
 
-Sidebar:
-deep navy / dark surface
-
-Text:
-#F8FAFC
-
-Muted navigation:
-#94A3B8
-
-Active navigation:
-gunakan green accent seperti reference jika memang sudah terlihat pada reference.
-
-Active icon/text:
-green
-
-Hover:
-dark slate
-
-Border:
-#334155
-
-PENTING:
-Active sidebar green pada dark mode adalah ACCENT, bukan mengganti primary brand menjadi green.
+sesuai reference.
 
 ==================================================
-BUTTON
+4. SIDEBAR DESKTOP
 ==================================================
 
-Primary Button:
+Target visual:
 
-LIGHT:
-background #4F46E5
-foreground white
+Sidebar sekitar 160–190px pada desktop,
+tetapi tentukan nilai final berdasarkan existing viewport dan reference.
 
-hover:
-#4338CA
+Jangan membuat sidebar terlalu lebar.
 
-DARK:
-background #6366F1
-foreground white
+Struktur:
 
-hover:
-lighter/brighter indigo
+LOGO
 
-Secondary:
-neutral/slate surface.
+Dashboard
+Create Post
+Scheduled
+History
+Media Library
+Review
+Accounts
+Settings
 
-Outline:
-transparent/background surface
-border slate.
+--------------------------------
 
-Ghost:
-transparent
-hover slate/indigo subtle.
+Workspace selector
 
-Success:
-green.
+User selector
 
-Warning:
-amber.
+Navigation item:
 
-Danger:
-red.
+icon + label.
 
-Jangan membuat semua button green.
+Active item:
+gunakan existing color system.
 
-==================================================
-CARD
-==================================================
+Jangan mengubah icon.
 
-Card harus tetap clean dan subtle.
+Jangan mengubah icon library.
 
-LIGHT:
-
-background:
-#FFFFFF
-
-border:
-#E2E8F0
-
-text:
-#0F172A
-
-muted:
-#64748B
-
-DARK:
-
-background:
-#111827
-
-border:
-#334155
-
-text:
-#F8FAFC
-
-muted:
-#94A3B8
-
-Jangan menggunakan gradient pada card.
-
-Jangan menambahkan glow.
-
-Jangan menambahkan shadow berlebihan.
+Jangan mengubah navigation behavior.
 
 ==================================================
-INPUT / TEXTAREA / SELECT
+5. MAIN CONTENT CONTAINER
 ==================================================
 
-LIGHT:
+Main content harus menggunakan max-width/container yang konsisten.
 
-background #FFFFFF
-border #E2E8F0
-text #0F172A
-placeholder #64748B
+Jangan biarkan content terlalu melebar pada monitor besar.
 
-focus:
-indigo border/ring
+Target:
 
-DARK:
+- horizontal padding konsisten
+- vertical rhythm konsisten
+- section gap konsisten
+- card alignment konsisten
 
-background #111827
-border #334155
-text #F8FAFC
-placeholder #94A3B8
+Semua major section harus memiliki left/right alignment yang sama.
 
-focus:
-indigo ring/border
+Jangan membuat:
 
-Pastikan disabled state tetap jelas.
+section A:
+padding 20
+
+section B:
+padding 32
+
+section C:
+padding 12
+
+secara random.
+
+Gunakan spacing system existing.
 
 ==================================================
-BADGE
+6. HEADER
 ==================================================
 
-Badge harus menggunakan semantic colors.
+Header mengikuti reference:
+
+LEFT:
+search
+
+CENTER:
+optional empty space
+
+RIGHT:
+notifications
+user/avatar
+user name
+workspace/account context
+
+Header tidak boleh terlalu tinggi.
+
+Jangan mengubah functionality search.
+
+Jangan mengubah notification logic.
+
+Jangan mengubah user menu.
+
+Hanya composition dan spacing.
+
+==================================================
+7. DASHBOARD LAYOUT
+==================================================
+
+Dashboard adalah halaman yang paling penting.
+
+Gunakan hierarchy:
+
+1. Page greeting/header
+2. Metric cards
+3. Analytics / performance
+4. Platform overview
+5. Recent posts
+6. Connected accounts
+7. Media library
+
+==================================================
+8. DASHBOARD HEADER
+==================================================
+
+Target:
+
+Selamat pagi, John 👋
+
+subheading di bawahnya.
+
+Date/filter/action berada di sisi kanan.
+
+Desktop:
+
+┌─────────────────────────────────────────────┐
+│ Greeting                         Date/Filter│
+└─────────────────────────────────────────────┘
+
+Mobile:
+
+Greeting
+Date/filter
+stacked.
+
+Jangan mengubah data greeting.
+
+Jangan mengubah date logic.
+
+==================================================
+9. METRIC CARDS
+==================================================
+
+Reference menggunakan 4 metric cards horizontal pada desktop.
 
 Contoh:
 
-Aktif:
-green subtle background + green text
+┌────────────┐ ┌────────────┐ ┌────────────┐ ┌────────────┐
+│ Total Post │ │ Terjadwal  │ │ Berhasil   │ │ Gagal      │
+│ 24         │ │ 8          │ │ 21         │ │ 1          │
+│ +12%       │ │ +33%       │ │ +17%       │ │ -50%       │
+└────────────┘ └────────────┘ └────────────┘ └────────────┘
 
-Terjadwal:
-indigo/blue subtle background + indigo/blue text
+Desktop:
+4 columns.
 
-Draft:
-slate subtle
+Tablet:
+2 columns.
 
-Berhasil:
-green
+Mobile:
+1 column.
 
-Gagal:
-red
+Jangan mengubah metric data.
 
-Menunggu:
-amber
+Jangan mengubah calculation.
 
-Jangan menggunakan saturated full-background badge kecuali existing component memang membutuhkan contrast tersebut.
+Jangan mengubah status.
 
-==================================================
-STATUS
-==================================================
-
-Mapping:
-
-published / success
-→ green
-
-scheduled
-→ indigo / blue
-
-processing
-→ indigo / blue
-
-pending
-→ slate / blue
-
-failed
-→ red
-
-partial_failure
-→ amber/orange
-
-cancelled
-→ slate
-
-Jangan mengubah status logic.
-Hanya visual mapping.
+Hanya layout.
 
 ==================================================
-TOAST / NOTIFICATION
+10. DASHBOARD SECONDARY GRID
 ==================================================
 
-Audit Toast/Sonner.
+Reference menggunakan asymmetric grid.
 
-SUCCESS:
-green accent
+Target:
 
-ERROR:
-red accent
+Performance:
+large
 
-WARNING:
-amber
+Platform:
+medium
 
-INFO:
-blue/indigo
+Recent Posts:
+medium
 
-Default toast:
-surface + border + readable foreground.
+Contoh:
 
-Pastikan contrast tetap baik di light dan dark.
+┌──────────────────────────┬──────────────┬──────────────┐
+│                          │              │              │
+│ Performance Posting     │ Platform     │ Post Terbaru │
+│                          │              │              │
+│ Chart                    │              │              │
+│                          │              │              │
+└──────────────────────────┴──────────────┴──────────────┘
 
-==================================================
-MODAL / DIALOG / SHEET
-==================================================
+Performance harus mendapatkan area terbesar.
 
-Jangan mengubah ukuran atau layout.
+Platform dan Recent Posts lebih compact.
 
-LIGHT:
+Gunakan CSS Grid.
 
-surface #FFFFFF
-border #E2E8F0
-text #0F172A
-
-DARK:
-
-surface #111827
-border #334155
-text #F8FAFC
-
-Overlay:
-gunakan neutral black dengan opacity yang sesuai.
-
-Jangan menggunakan indigo overlay.
+Jangan membuat semuanya 1/3 jika reference menunjukkan hierarchy yang berbeda.
 
 ==================================================
-TABLE
+11. PERFORMANCE CARD
 ==================================================
 
-LIGHT:
+Chart berada di dalam card yang cukup besar.
 
-header:
-#F8FAFC / #F1F5F9
+Header:
 
-body:
-#FFFFFF
+Performance Postingan
++
+date range/filter
 
-border:
-#E2E8F0
+Metric summary dapat berada di bagian atas.
 
-hover:
-very light slate/indigo
+Chart berada di bawah.
 
-DARK:
+Jangan mengubah:
 
-header:
-#1E293B
+- chart data
+- query
+- analytics logic
+- chart calculations
 
-body:
-#111827
+Hanya:
 
-border:
-#334155
+- container
+- width
+- height
+- internal spacing
+- alignment
 
-hover:
-dark slate / subtle indigo
+Dark mode chart tetap GREEN sesuai color system yang sudah dibuat.
 
-Pastikan status badges tetap semantic.
+Light mode chart tetap Indigo.
 
 ==================================================
-ACCOUNT SELECTOR
+12. PLATFORM CARD
 ==================================================
 
-Ini sangat penting karena AutoPost sekarang mendukung MULTI-ACCOUNT SELECTION.
+Platform overview harus compact.
 
-Jangan mengubah behavior.
+Contoh:
 
-Jangan mengubah selection state.
+TikTok       ↑ 33%
+Instagram    ↑ 18%
+Facebook     ↑ 12%
+YouTube      ↑ 6%
+Threads      ↑ 9%
+
+Platform icon di kiri.
+
+Metric di kanan.
+
+Jangan mengubah platform data.
+
+Jangan mengubah provider.
 
 Jangan mengubah account query.
 
-Jangan mengubah target logic.
-
-HANYA warna.
-
-LIGHT:
-
-Platform group:
-neutral surface
-
-Selected account:
-subtle indigo background/border
-
-Checkbox checked:
-indigo
-
-Account text:
-#0F172A
-
-Account secondary text:
-#64748B
-
-DARK:
-
-Platform group:
-dark slate
-
-Selected account:
-subtle indigo background
-
-Checkbox checked:
-indigo
-
-Account text:
-#F8FAFC
-
-Secondary:
-#94A3B8
-
-Jangan menggunakan green sebagai selected account color.
-
-Green hanya untuk semantic positive state / dark analytics / accent yang memang ditunjukkan reference.
-
 ==================================================
-MEDIA LIBRARY
+13. RECENT POSTS
 ==================================================
 
-Jangan mengubah:
+Recent Posts menjadi vertical list compact.
 
-- grid
-- image size
-- pagination
-- selection logic
-- lazy loading
-- media fetching
+Setiap item:
 
-Hanya warna:
-
-selected media:
-indigo border/ring
-
-hover:
-subtle indigo
-
-filter active:
-indigo
-
-metadata:
-slate/muted
-
-Dark mode:
-dark slate surfaces + indigo selection.
-
-==================================================
-DASHBOARD METRICS
-==================================================
-
-Metric cards jangan diberi background warna kuat.
-
-Gunakan:
-
-neutral card
+thumbnail
 +
-small semantic/icon accent.
+title
++
+time
++
+status
 
 Contoh:
 
-Total Post:
-indigo
+[IMG]  Nikmati keindahan alam...
+       2 jam yang lalu        Berhasil
 
-Terjadwal:
-blue/indigo
+[IMG]  Tips produktif bekerja...
+       5 jam yang lalu        Berhasil
 
-Berhasil:
-green
+Jangan mengubah history data.
 
-Gagal:
-red
+Jangan mengubah status logic.
 
-Jangan membuat seluruh card menjadi warna status.
+Hanya layout.
 
 ==================================================
-CHARTS
+14. LOWER DASHBOARD GRID
 ==================================================
 
-LIGHT MODE:
+Reference:
 
-Primary performance chart:
-Indigo #4F46E5
+┌────────────────────────┬──────────────────────────────┐
+│ Akun Terhubung         │ Media Library                │
+│                        │                              │
+│ TikTok                 │ [IMG] [IMG] [IMG] [IMG]     │
+│ Instagram              │                              │
+│ Facebook               │                              │
+│ Threads                │                              │
+└────────────────────────┴──────────────────────────────┘
 
-Area fill:
-translucent indigo
+Connected Accounts:
+compact.
 
-Grid:
-very subtle slate
+Media Library:
+lebih lebar.
 
-Axis:
-muted slate
-
-DARK MODE:
-
-Primary performance chart:
-GREEN #22C55E
-
-Area fill:
-translucent green
-
-Grid:
-subtle dark slate
-
-Axis:
-#94A3B8
-
-Tooltip:
-dark surface / light text
-
-Jangan memakai green pada light-mode chart jika reference masih menunjukkan indigo.
+Gunakan asymmetric grid.
 
 ==================================================
-CONNECTED ACCOUNTS
+15. CONNECTED ACCOUNTS
 ==================================================
 
-Jangan mengubah account data atau behavior.
+Tetap mendukung MULTI-ACCOUNT.
 
-Warna:
+JANGAN mengubah behavior yang baru saja diimplementasikan.
 
-Platform icon:
-tetap menggunakan brand icon masing-masing.
+Contoh:
 
-JANGAN recolor logo platform.
+TikTok
+  @account1
+  @account2
 
-TikTok:
-tetap TikTok branding.
+Instagram
+  @account1
 
-Instagram:
-tetap Instagram branding.
+Layout harus compact.
 
-Facebook:
-tetap Facebook branding.
+Jika banyak account:
+gunakan vertical list.
 
-Threads:
-tetap Threads branding.
+Jangan menghapus account.
 
-Container, border, selected state, status badge:
-gunakan AutoPost design tokens.
+Jangan collapse account menjadi satu.
 
-==================================================
-PLATFORM ICONS
-==================================================
-
-PENTING:
-
-Jangan memaksa semua platform icon menggunakan warna AutoPost.
-
-Brand platform icon harus tetap recognizable.
-
-Yang diubah hanya:
-
-- surrounding background
-- border
-- selection state
-- hover
-- text
-- badge
+Jangan mengubah account query.
 
 ==================================================
-LOGO AUTPOST
+16. MEDIA LIBRARY
 ==================================================
 
-Jangan mengganti bentuk/logo.
+Gunakan horizontal grid.
 
-Jika logo memiliki color treatment:
-gunakan warna yang konsisten dengan primary Indigo.
+Desktop:
 
-Light:
-Indigo.
+[IMG] [IMG] [IMG] [IMG] [IMG]
 
-Dark:
-Indigo/light-indigo.
+Setiap media:
 
-Jangan membuat logo hijau hanya karena chart dark mode hijau.
-
-==================================================
-ACCESSIBILITY
-==================================================
-
-Setelah color system selesai:
-
-Audit contrast untuk:
-
-- body text
-- muted text
-- button text
-- input text
-- placeholder
-- badge
-- status
-- navigation
-- sidebar
-- dark mode
-- focus ring
-
-Jangan menggunakan warna yang terlihat bagus tetapi gagal readability.
-
-Prioritaskan WCAG contrast yang reasonable untuk UI production.
-
-==================================================
-IMPLEMENTATION STRATEGY
-==================================================
-
-SEBELUM EDIT:
-
-1. Audit existing theme architecture.
-2. Cari:
-   - globals.css
-   - tailwind config jika ada
-   - shadcn tokens
-   - CSS variables
-   - theme provider
-   - dark mode implementation
-3. Cari hardcoded colors:
-   - bg-*
-   - text-*
-   - border-*
-   - ring-*
-   - hex
-   - rgb
-   - hsl
-4. Identifikasi mana yang merupakan:
-   - design token
-   - semantic status color
-   - platform brand color
-   - visualization color
-
-JANGAN mengganti semuanya secara blind.
-
-==================================================
-HARD CODE COLOR AUDIT
-==================================================
-
-Cari seluruh repository untuk:
-
-#hex
-rgb()
-rgba()
-hsl()
-bg-
-text-
-border-
-ring-
-fill-
-stroke-
-
-Kelompokkan hasil:
-
-A. Brand/UI colors
-B. Semantic status colors
-C. Platform brand colors
-D. Chart colors
-E. Decorative colors
-
-Kemudian hanya ubah A dan D sesuai target.
-
-B harus tetap semantic.
-
-C harus tetap platform branding.
-
-==================================================
-JANGAN MERUSAK DARK MODE
-==================================================
-
-Dark mode harus benar-benar berbeda dari sekadar:
-
-light color → dark background.
-
-Gunakan:
-
-Background:
-#0F172A
-
-Surface:
-#111827
-
-Surface Alt:
-#1E293B
-
-Border:
-#334155
-
-Text:
-#F8FAFC
-
-Muted:
-#94A3B8
-
-Primary:
-#6366F1
-
-Analytics:
-#22C55E
-
-Pastikan hierarchy:
-
-background
-<
-surface
-<
-surface-alt
-
-terlihat jelas tetapi tetap subtle.
-
-==================================================
-JANGAN UBAH LAYOUT
-==================================================
-
-Jika menemukan masalah layout saat implementasi:
-
-JANGAN memperbaikinya.
-
-Laporkan sebagai:
-
-"Existing layout issue — out of scope."
-
-Scope hanya color system.
+thumbnail
+filename
+size
+selection indicator
 
 Jangan mengubah:
 
-padding
-margin
-gap
-width
-height
-font-size
-line-height
-border-radius
-grid
-flex
-position
-responsive breakpoint
+- media fetching
+- signed URL
+- lazy loading
+- selection state
+- upload
+- delete
+- pagination
 
-kecuali perubahan tersebut secara otomatis diperlukan oleh existing theme mechanism, dan bukan redesign.
+Hanya layout.
 
 ==================================================
-JANGAN UBAH TYPOGRAPHY
+17. CREATE POST LAYOUT
 ==================================================
 
-Pertahankan:
+Ini adalah halaman kedua yang sangat penting.
 
-font family
-font weight
-font size
-line height
-letter spacing
+Reference menggunakan:
 
-persis seperti existing implementation.
+LEFT:
+content/media
+
+RIGHT:
+settings/platforms/schedule
+
+Target desktop:
+
+┌────────────────────────────────┬─────────────────────────┐
+│                                │                         │
+│ Content                        │ Settings                │
+│                                │                         │
+│ Text                           │ Campaign                │
+│                                │                         │
+│ Media                          │ Platform & Account      │
+│                                │                         │
+│ Media picker                   │ Schedule                │
+│                                │                         │
+└────────────────────────────────┴─────────────────────────┘
+
+Target sekitar:
+
+60–65%:
+content/media
+
+35–40%:
+settings/targeting
+
+Jangan mengubah form behavior.
+
+Jangan mengubah form state.
+
+Jangan mengubah target payload.
+
+Jangan mengubah multi-account selection.
 
 ==================================================
-JANGAN UBAH ICON
+18. CREATE POST STEPPER
 ==================================================
 
-Jangan mengganti icon.
+Reference memiliki progress indicator:
 
-Jangan mengganti icon library.
+1 Konten
+2 Platform
+3 Jadwal
 
-Jangan mengubah ukuran icon.
+Pertahankan existing functionality jika sudah ada.
 
-Hanya warna icon jika memang berasal dari theme token.
+Jika existing stepper belum memiliki behavior tertentu:
+JANGAN membuat business logic baru.
 
-Platform logo tetap menggunakan warna brand masing-masing.
+Hanya visual/layout.
+
+Stepper harus compact.
+
+Desktop:
+horizontal.
+
+Mobile:
+horizontal compact atau stacked sesuai existing responsive system.
 
 ==================================================
-VALIDATION
+19. CREATE POST CONTENT PANEL
 ==================================================
 
-Setelah implementasi jalankan:
+Content textarea menjadi dominant element.
+
+Structure:
+
+Card header
+Text input
+character counter
+Media section
+Media preview/upload
+
+Jangan membuat card terlalu tinggi jika tidak diperlukan.
+
+Gunakan vertical rhythm konsisten.
+
+==================================================
+20. PLATFORM & ACCOUNT SELECTOR
+==================================================
+
+Tetap menggunakan multi-account selection yang baru.
+
+Layout:
+
+Platform
+  ☑ TikTok account A
+  ☐ TikTok account B
+
+Instagram
+  ☑ Instagram account A
+
+Facebook
+  ☐ Page A
+  ☑ Page B
+
+Jangan mengubah selection logic.
+
+Jangan mengubah target payload.
+
+Jangan mengubah validation.
+
+Hanya layout dan visual hierarchy.
+
+==================================================
+21. CREATE POST SETTINGS
+==================================================
+
+Right column:
+
+Campaign
+Platform & Account
+Schedule
+
+Urutan mengikuti reference.
+
+Jangan membuat settings menjadi full-width jika desktop.
+
+Desktop:
+sticky/independent column hanya jika existing architecture aman.
+
+Jangan menambahkan JS scroll logic hanya untuk layout.
+
+Jika CSS sticky cukup:
+gunakan CSS.
+
+==================================================
+22. POST DETAIL
+==================================================
+
+Reference menggunakan content detail dalam card.
+
+Target:
+
+┌─────────────────────────────────────┐
+│ Status / Date                       │
+│                                     │
+│ Media Preview                       │
+│                                     │
+│ Caption                             │
+│                                     │
+│ Metrics                             │
+├─────────────────────────────────────┤
+│ Platform / Media / History / Comment│
+│                                     │
+│ Platform list                       │
+└─────────────────────────────────────┘
+
+Jangan mengubah tabs behavior.
+
+Jangan mengubah data fetching.
+
+Jangan mengubah analytics.
+
+Jangan mengubah approval.
+
+Hanya composition.
+
+==================================================
+23. REVIEW / APPROVAL
+==================================================
+
+Review panel tetap menggunakan dynamic loading/performance optimization yang sudah ada.
+
+Jangan membuat Review Panel eager lagi.
+
+Layout:
+
+Main content
++
+supporting review panel
+
+Desktop:
+2-column.
+
+Mobile:
+stack.
+
+Jangan mengubah loading behavior.
+
+==================================================
+24. HISTORY
+==================================================
+
+History harus menggunakan layout:
+
+Page header
+Filter/search
+List/table
+Pagination
+
+Desktop:
+filter toolbar horizontal.
+
+Content:
+wide table/list.
+
+Mobile:
+horizontal scroll atau card representation berdasarkan existing implementation.
+
+Jangan mengubah pagination logic.
+
+Jangan mengubah query.
+
+Jangan mengubah filtering logic.
+
+==================================================
+25. SCHEDULED
+==================================================
+
+Layout:
+
+Header
+Filter
+Scheduled post list/calendar
+
+Jika calendar existing:
+jangan mengganti library.
+
+Hanya:
+
+- sizing
+- spacing
+- placement
+- card composition
+
+==================================================
+26. ACCOUNTS
+==================================================
+
+Connected Accounts page harus menampilkan multiple accounts dengan jelas.
+
+Contoh:
+
+TikTok
+┌──────────────────────────────┐
+│ @account1          Connected │
+│ @account2          Connected │
+└──────────────────────────────┘
+
+Instagram
+...
+
+Jangan collapse accounts.
+
+Jangan mengubah OAuth.
+
+Jangan mengubah connect/disconnect logic.
+
+==================================================
+27. SETTINGS
+==================================================
+
+Settings menggunakan:
+
+Sidebar/tab navigation
++
+content panel
+
+Desktop:
+
+┌───────────────┬───────────────────────────────┐
+│ Settings nav  │ Settings content              │
+│               │                               │
+└───────────────┴───────────────────────────────┘
+
+Mobile:
+stack/selector.
+
+Jangan mengubah settings behavior.
+
+==================================================
+28. RESPONSIVE DESIGN
+==================================================
+
+WAJIB.
+
+Reference utama adalah desktop.
+
+Tetapi layout harus tetap usable:
+
+Desktop:
+>= 1280
+
+Tablet:
+768–1279
+
+Mobile:
+<768
+
+Desktop:
+
+Sidebar visible.
+
+Multi-column grid.
+
+Tablet:
+
+Sidebar tetap mengikuti existing responsive behavior.
+
+Grid menjadi 2 columns bila sesuai.
+
+Mobile:
+
+Sidebar menjadi existing mobile navigation mechanism.
+
+Jangan membuat sidebar desktop memaksa layar mobile.
+
+Dashboard:
+
+4 metrics
+→ 2
+→ 1
+
+Main dashboard grid:
+3 areas
+→ 2
+→ 1
+
+Create Post:
+2 columns
+→ 1 column
+
+Post detail:
+2 columns
+→ 1 column
+
+Jangan mengubah mobile navigation logic.
+
+==================================================
+29. SPACING SYSTEM
+==================================================
+
+Gunakan spacing system existing.
+
+Target visual reference:
+
+- compact cards
+- section gap konsisten
+- content padding konsisten
+- card internal padding konsisten
+
+Jangan menggunakan arbitrary values di setiap component.
+
+Jika project sudah memiliki Tailwind spacing scale:
+gunakan scale tersebut.
+
+==================================================
+30. BORDER RADIUS
+==================================================
+
+Jangan mengubah radius yang sudah ditetapkan color-system redesign sebelumnya.
+
+Gunakan existing radius tokens.
+
+Reference menggunakan rounded cards tetapi bukan excessive rounded/pill UI.
+
+Jangan membuat semua component menjadi pill.
+
+==================================================
+31. SHADOW
+==================================================
+
+Color redesign sebelumnya sudah menghapus excessive glow/shadow.
+
+Pertahankan.
+
+Gunakan shadow hanya jika existing component/design system memang memerlukannya.
+
+Jangan menambahkan:
+
+- glow
+- neon shadow
+- colored shadow
+- glassmorphism
+
+==================================================
+32. GRID ALIGNMENT
+==================================================
+
+Ini WAJIB diperhatikan.
+
+Semua card pada row yang sama harus align.
+
+Contoh:
+
+Metric cards:
+same height.
+
+Performance / Platform / Recent:
+top aligned.
+
+Connected Accounts / Media Library:
+top aligned.
+
+Jangan membuat card random height kecuali content memang membutuhkan.
+
+Gunakan:
+
+grid-auto-rows
+minmax
+stretch
+
+jika sesuai.
+
+==================================================
+33. PAGE DENSITY
+==================================================
+
+Reference bukan dashboard yang sangat spacious.
+
+Target:
+COMPACT PROFESSIONAL SaaS.
+
+Jangan membuat:
+
+- terlalu banyak whitespace
+- card terlalu tinggi
+- heading terlalu besar
+- excessive padding
+
+Tetapi juga jangan terlalu padat sampai sulit dibaca.
+
+==================================================
+34. NO NEW DESIGN LANGUAGE
+==================================================
+
+Jangan menciptakan design language baru.
+
+Gunakan:
+
+EXISTING COLOR SYSTEM
++
+REFERENCE LAYOUT
++
+EXISTING COMPONENTS
+
+==================================================
+35. AUDIT SEBELUM IMPLEMENTASI
+==================================================
+
+Sebelum edit:
+
+1. Audit AppLayout.
+2. Audit Dashboard.
+3. Audit Create Post.
+4. Audit History.
+5. Audit Scheduled.
+6. Audit Media Library.
+7. Audit Accounts.
+8. Audit Settings.
+9. Audit Review.
+10. Audit Post Detail.
+
+Cari existing:
+
+- grid
+- flex
+- containers
+- cards
+- page wrappers
+- responsive breakpoints
+- sidebar
+- header
+- content widths
+
+Jangan langsung rewrite.
+
+Tentukan perubahan minimum yang diperlukan agar visual mendekati reference.
+
+==================================================
+36. COMPONENT REUSE
+==================================================
+
+Prioritas:
+
+existing component
+>
+existing composition
+>
+CSS/layout adjustment
+>
+new component
+
+Jangan membuat duplicate component jika existing component dapat dipakai.
+
+==================================================
+37. BUSINESS LOGIC PROTECTION
+==================================================
+
+Jangan mengubah:
+
+- props meaning
+- server action calls
+- API calls
+- query
+- mutation
+- state semantics
+- validation
+- target resolution
+- publishing
+- scheduling
+- account selection
+- campaign logic
+
+Jika perlu memindahkan component:
+
+pastikan props dan behavior tetap sama.
+
+==================================================
+38. PERFORMANCE PROTECTION
+==================================================
+
+Pertahankan optimasi yang baru saja dibuat.
+
+JANGAN menghilangkan:
+
+- parallel data loading
+- lazy image loading
+- decoding async
+- dynamic Review Panel chunk
+
+Jangan membuat layout baru yang menyebabkan:
+
+- duplicate data fetch
+- duplicate component mount
+- unnecessary client component
+- hydration overhead
+
+Gunakan CSS layout jika memungkinkan.
+
+==================================================
+39. ACCESSIBILITY
+==================================================
+
+Layout baru harus mempertahankan:
+
+- keyboard navigation
+- focus state
+- semantic HTML
+- aria labels
+- button semantics
+- form labels
+
+Jangan mengorbankan accessibility demi visual.
+
+==================================================
+40. VISUAL ACCEPTANCE CRITERIA
+==================================================
+
+Dashboard harus secara visual mendekati reference:
+
+LEFT:
+sidebar
+
+TOP:
+header/search/user
+
+MAIN:
+
+Greeting
+↓
+4 metric cards
+↓
+Performance + Platform + Recent Posts
+↓
+Connected Accounts + Media Library
+
+Create Post:
+
+LEFT:
+Content + Media
+
+RIGHT:
+Campaign + Platform & Account + Schedule
+
+Post Detail:
+
+Main detail
++
+platform/media/history/comment sections
+
+Overall:
+
+- compact
+- clean
+- aligned
+- modern SaaS
+- information dense
+- consistent
+- no random card sizes
+- no random spacing
+
+==================================================
+41. COLOR SYSTEM MUST REMAIN
+==================================================
+
+Gunakan color system yang baru saja selesai.
+
+LIGHT:
+
+White
+Slate
+Indigo
+
+DARK:
+
+Navy
+Slate
+Indigo
+
+DARK CHART:
+
+Green
+
+JANGAN membuat color system baru.
+
+JANGAN mengubah token warna.
+
+JANGAN mengganti green chart kembali menjadi indigo.
+
+==================================================
+42. VALIDATION
+==================================================
+
+Setelah selesai:
 
 npm run lint
 
@@ -1075,187 +1211,190 @@ git diff --check
 Semua harus PASS.
 
 Jika ada failure:
-JANGAN menonaktifkan test.
-
-Perbaiki hanya jika failure disebabkan oleh perubahan color system.
+jangan disable test.
 
 ==================================================
-VISUAL AUDIT
+43. VISUAL VERIFICATION
 ==================================================
 
-Setelah code selesai, lakukan audit visual terhadap:
+Lakukan visual verification minimal pada:
 
-1. /login
-2. /dashboard
-3. /create-post
-4. /scheduled
-5. /history
-6. history detail
-7. /media-library
-8. /connected-accounts
-9. /settings
-10. review/approval
-11. modal/dialog
-12. toast
-13. account selector
-14. dark mode
+/login
+/dashboard
+/create-post
+/scheduled
+/history
+/history detail
+/media-library
+/connected-accounts
+/settings
+/review
 
-Pastikan semua menggunakan color tokens yang sama.
+Verifikasi:
 
-==================================================
-LIGHT MODE ACCEPTANCE CRITERIA
-==================================================
-
-Light mode harus terlihat seperti reference:
-
-- background putih/very light slate
-- card putih
-- border sangat subtle
-- primary indigo
-- sidebar putih
-- active navigation indigo
-- CTA indigo
-- text dark navy
-- muted text slate
-- status semantic
-- chart indigo
-- platform logo tetap original
-
-Tidak boleh terasa:
-- neon
-- terlalu colorful
-- gradient-heavy
-- gaming UI
-- glassmorphism
-- excessive shadow
-
-==================================================
-DARK MODE ACCEPTANCE CRITERIA
-==================================================
-
-Dark mode harus terlihat seperti reference:
-
-- deep navy background
-- dark slate cards
-- subtle borders
-- indigo primary
-- green analytics chart
-- green positive accent
-- semantic status colors
-- white/light text
-- muted slate text
-
-Tidak boleh:
-- full green theme
-- full purple theme
-- pure black background
-- excessive glow
-- neon UI
-
-==================================================
-FINAL REPORT
-==================================================
-
-Setelah selesai, berikan:
-
-# COLOR SYSTEM IMPLEMENTATION REPORT
-
-## 1. Files Changed
-
-Daftar semua file.
-
-## 2. Files Not Changed
+LIGHT MODE
++
+DARK MODE
 
 Pastikan:
 
-- database
+- sidebar
+- header
+- cards
+- grids
+- tables
+- forms
+- account selector
+- modal
+- chart
+- media
+- responsive
+
+tidak rusak.
+
+Jika authenticated route membutuhkan session:
+gunakan existing development/authenticated environment.
+
+==================================================
+44. IMPORTANT: REFERENCE IMAGE
+==================================================
+
+Reference image yang diberikan user adalah visual reference.
+
+Gunakan reference tersebut untuk menilai:
+
+- proportions
+- card grouping
+- hierarchy
+- density
+- alignment
+- sidebar
+- dashboard grid
+- create-post composition
+- detail layout
+
+Tetapi jangan menyalin:
+
+- data
+- nama user
+- metrics
+- platform data
+- text
+- business content
+
+Reference hanya untuk VISUAL DESIGN.
+
+==================================================
+45. OUT OF SCOPE
+==================================================
+
+JANGAN melakukan:
+
+- database optimization
+- API optimization
+- query optimization
+- business logic refactor
+- provider refactor
+- queue refactor
+- worker refactor
+- authentication refactor
+- OAuth refactor
+- schema change
 - migration
+- dependency upgrade
+- package replacement
+- component library replacement
+- typography redesign
+- logo redesign
+- icon redesign
+- color system redesign
+
+==================================================
+46. FINAL REPORT
+==================================================
+
+Setelah implementasi:
+
+# LAYOUT REWORK IMPLEMENTATION REPORT
+
+## 1. Files Changed
+
+Daftar file.
+
+## 2. Files Not Changed
+
+Konfirmasi:
+
 - provider
-- worker
 - queue
+- worker
 - API
 - server actions
+- database
+- schema
+- migration
+- auth
+- OAuth
 - business logic
 
-tidak berubah.
-
-## 3. Color Tokens
-
-Tampilkan final token:
-
-LIGHT:
-
-primary
-background
-surface
-surfaceAlt
-foreground
-muted
-border
-success
-warning
-danger
-info
-
-DARK:
-
-primary
-background
-surface
-surfaceAlt
-foreground
-muted
-border
-success
-warning
-danger
-info
-chart
-
-## 4. Components Updated
+## 3. Pages Updated
 
 Checklist:
 
-- [ ] Sidebar
-- [ ] Header
-- [ ] Buttons
-- [ ] Cards
-- [ ] Inputs
-- [ ] Select
-- [ ] Checkbox
-- [ ] Switch
-- [ ] Badge
-- [ ] Status
-- [ ] Toast
-- [ ] Modal
-- [ ] Dialog
-- [ ] Sheet
-- [ ] Table
-- [ ] Tabs
-- [ ] Media Library
-- [ ] Account Selector
-- [ ] Connected Accounts
+- [ ] App shell
 - [ ] Dashboard
-- [ ] Charts
-- [ ] Review
+- [ ] Create Post
+- [ ] Scheduled
+- [ ] History
+- [ ] History Detail
+- [ ] Media Library
+- [ ] Connected Accounts
 - [ ] Settings
-- [ ] All shadcn components used
+- [ ] Review
+- [ ] Post Detail
 
-## 5. Hardcoded Color Audit
+## 4. Layout Changes
 
-Laporkan apakah masih ada hardcoded UI colors.
+Jelaskan perubahan:
 
-Pisahkan:
+- sidebar
+- header
+- dashboard grid
+- metric cards
+- analytics
+- platform card
+- recent posts
+- connected accounts
+- media library
+- create post columns
+- post detail
+- responsive behavior
 
-- allowed
-- semantic
-- platform brand
-- chart
-- accidental/out-of-system
+## 5. Logic Safety
 
-## 6. Validation
+Konfirmasi:
 
-Laporkan:
+"No business logic was changed."
+
+## 6. Color Safety
+
+Konfirmasi:
+
+"Existing color system was preserved."
+
+## 7. Performance Safety
+
+Konfirmasi:
+
+"Existing performance optimizations were preserved."
+
+## 8. Responsive
+
+Laporkan desktop/tablet/mobile verification.
+
+## 9. Tests
+
+Report:
 
 lint
 typecheck
@@ -1265,71 +1404,56 @@ test:all
 build
 diff-check
 
-## 7. Business Logic Safety
+## 10. Migration
 
-Konfirmasi:
+"No migration created."
 
-"No business logic was changed."
+## 11. Git
 
-## 8. Layout Safety
-
-Konfirmasi:
-
-"No layout/spacing/typography redesign was performed."
-
-## 9. Migration
-
-Konfirmasi:
-
-"No database migration was created."
-
-## 10. Git
-
-Konfirmasi:
-
-"No commit or push was performed."
+"No commit or push performed."
 
 ==================================================
 FINAL ABSOLUTE RULE
 ==================================================
 
-Ini bukan redesign UI.
+REFERENCE IMAGE
+=
+VISUAL LAYOUT SOURCE OF TRUTH.
 
-Ini adalah:
+EXISTING CODE
+=
+BUSINESS LOGIC SOURCE OF TRUTH.
 
-COLOR SYSTEM REWORK.
+Jangan mencampur keduanya.
 
-Reference image adalah visual source of truth.
+Gunakan reference untuk mengubah:
 
-Light:
-Indigo + Slate + White.
+LAYOUT
+SPACING
+GRID
+ALIGNMENT
+POSITIONING
+DENSITY
+RESPONSIVE COMPOSITION
 
-Dark:
-Navy + Slate + Indigo.
+Gunakan existing code untuk mempertahankan:
 
-Dark chart:
-GREEN.
+LOGIC
+DATA
+BEHAVIOR
+STATE
+API
+AUTH
+PUBLISHING
+SCHEDULING
+ACCOUNT SELECTION
+QUEUE
+WORKER
+PROVIDER
 
-Semantic:
-Green / Amber / Red / Blue.
+Hasil akhir harus terasa seperti versi AutoPost yang sama,
+tetapi dengan layout dan visual composition yang jauh lebih dekat dengan reference.
 
-Platform logos:
-tetap brand colors.
-
-Semua komponen harus menggunakan centralized design tokens.
-
-Jangan mengubah business logic.
-
-Jangan mengubah layout.
-
-Jangan mengubah typography.
-
-Jangan mengubah architecture.
-
-Jangan mengubah behavior.
-
-Jangan commit.
-
-Jangan push.
-
-Jangan ubah Master Plan.
+JANGAN commit.
+JANGAN push.
+JANGAN ubah Master Plan.
