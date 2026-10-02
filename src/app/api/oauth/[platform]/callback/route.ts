@@ -6,6 +6,7 @@ import { saveConnectedAccounts } from "@/lib/domain/accounts";
 import { isMissingConfigError, resolveAppUrl, resolveOAuthAppUrl } from "@/lib/env";
 import { AppError, ProviderError, isAuthFailure } from "@/lib/errors";
 import { logger } from "@/lib/logger";
+import { oauthErrorDiagnostics } from "@/lib/oauth-error-diagnostics";
 import { consumeRateLimit } from "@/lib/rate-limit";
 import { getProvider } from "@/providers/social";
 import { PLATFORMS, type Platform } from "@/lib/status";
@@ -64,49 +65,6 @@ function successRedirect(
   const url = new URL("/connected-accounts", resolveAppUrl(origin));
   url.searchParams.set("connected", platforms.join(","));
   return clearStateCookie(NextResponse.redirect(url, 303), platform);
-}
-
-function asRecord(value: unknown): Record<string, unknown> | null {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : null;
-}
-
-function oauthErrorDiagnostics(platform: string, error: unknown): Record<string, unknown> {
-  if (!(error instanceof ProviderError)) {
-    return {
-      platform,
-      error: error instanceof Error ? error.message : String(error),
-    };
-  }
-
-  const response = asRecord(error.responseLog);
-  const body = asRecord(response?.body);
-  const providerError = asRecord(body?.error);
-  const providerErrors = Array.isArray(providerError?.errors)
-    ? providerError.errors
-    : Array.isArray(body?.errors)
-      ? body.errors
-      : [];
-  const firstProviderError = asRecord(providerErrors[0]);
-
-  return {
-    platform,
-    errorCode: error.code,
-    httpStatus: error.status ?? response?.status ?? null,
-    endpoint: typeof response?.endpoint === "string" ? response.endpoint : null,
-    providerMessage:
-      typeof providerError?.message === "string"
-        ? providerError.message
-        : typeof body?.message === "string"
-          ? body.message
-          : null,
-    googleError: typeof body?.error === "string" ? body.error : null,
-    googleErrorDescription:
-      typeof body?.error_description === "string" ? body.error_description : null,
-    googleReason: typeof firstProviderError?.reason === "string" ? firstProviderError.reason : null,
-    error: error.message,
-  };
 }
 
 function classifyError(error: unknown): OAuthErrorCode {
