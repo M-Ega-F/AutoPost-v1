@@ -30,6 +30,8 @@ const TOKEN_URL = "https://oauth2.googleapis.com/token";
 const API_BASE = "https://www.googleapis.com/youtube/v3";
 const UPLOAD_BASE = "https://www.googleapis.com/upload/youtube/v3/videos";
 const YOUTUBE_UPLOAD_SCOPE = "https://www.googleapis.com/auth/youtube.upload";
+const YOUTUBE_READONLY_SCOPE = "https://www.googleapis.com/auth/youtube.readonly";
+export const YOUTUBE_REQUIRED_SCOPES = [YOUTUBE_UPLOAD_SCOPE, YOUTUBE_READONLY_SCOPE] as const;
 const DEFAULT_PRIVACY = "private" as const;
 
 type GoogleToken = {
@@ -94,33 +96,56 @@ function settingsOf(value: unknown): YouTubePostSettings | null {
   return { title, privacy: privacy as YouTubePostSettings["privacy"] };
 }
 
-function reasonOf(payload: unknown): string {
-  if (!payload || typeof payload !== "object") return "";
-  const root = payload as Record<string, unknown>;
-  const error = root.error && typeof root.error === "object"
-    ? (root.error as Record<string, unknown>)
-    : root;
-  const errors = Array.isArray(error.errors) ? error.errors : [];
-  const first = errors[0] && typeof errors[0] === "object" ? errors[0] as Record<string, unknown> : null;
-  return typeof first?.reason === "string" ? first.reason : "";
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
 }
 
-function messageOf(payload: unknown): string {
-  if (!payload || typeof payload !== "object") return "";
-  const root = payload as Record<string, unknown>;
-  const error = root.error && typeof root.error === "object"
-    ? (root.error as Record<string, unknown>)
-    : root;
-  return typeof error.message === "string" ? error.message : "";
+function youtubeErrorDetails(payload: unknown): {
+  code: string;
+  message: string;
+  description: string;
+  reason: string;
+} {
+  const root = asRecord(payload);
+  const nested = asRecord(root?.error);
+  const errors = Array.isArray(nested?.errors)
+    ? nested.errors
+    : Array.isArray(root?.errors)
+      ? root.errors
+      : [];
+  const first = asRecord(errors[0]);
+
+  return {
+    code:
+      typeof root?.error === "string"
+        ? root.error
+        : typeof nested?.code === "string" || typeof nested?.code === "number"
+          ? String(nested.code)
+          : typeof root?.code === "string" || typeof root?.code === "number"
+            ? String(root.code)
+            : "",
+    message:
+      typeof nested?.message === "string"
+        ? nested.message
+        : typeof root?.message === "string"
+          ? root.message
+          : "",
+    description: typeof root?.error_description === "string" ? root.error_description : "",
+    reason: typeof first?.reason === "string" ? first.reason : "",
+  };
 }
 
 function mapYouTubeError(
   status: number,
   payload: unknown,
 ): ProviderError {
-  const reason = reasonOf(payload).toLowerCase();
-  const providerMessage = messageOf(payload).toLowerCase();
-  const haystack = `${reason} ${providerMessage}`;
+  const details = youtubeErrorDetails(payload);
+  const reason = details.reason.toLowerCase();
+  const providerMessage = `${details.message} ${details.description}`.toLowerCase();
+  const providerCode = details.code.toLowerCase();
+  const haystack = `${providerCode} ${reason} ${providerMessage}`;
   let code: ErrorCode = "provider_error";
 
   if (haystack.includes("quota") || haystack.includes("dailylimit") || haystack.includes("uploadlimit")) {
@@ -129,9 +154,9 @@ function mapYouTubeError(
     code = "api_audit_required";
   } else if (haystack.includes("ratelimit") || status === 429) {
     code = "rate_limited";
-  } else if (haystack.includes("auth") || haystack.includes("token")) {
+  } else if (status === 401 || providerCode === "invalid_grant" || providerCode === "invalid_token") {
     code = "token_expired";
-  } else if (haystack.includes("permission") || haystack.includes("forbidden") || status === 403) {
+  } else if (status === 403 || haystack.includes("permission") || haystack.includes("forbidden") || haystack.includes("insufficient scope")) {
     code = "permission_denied";
   } else if (haystack.includes("title") || haystack.includes("description") || haystack.includes("snippet")) {
     code = "invalid_metadata";
@@ -158,8 +183,8 @@ async function readMyChannel(token: string) {
   const channel = result.data.items?.[0];
   if (!channel?.id) {
     throw new ProviderError({
-      code: "permission_denied",
-      message: "No YouTube channel is available for this Google account.",
+      code: "youtube_channel_not_found",
+      message: humanErrorMessage(PLATFORM, "youtube_channel_not_found"),
       retryable: false,
       responseLog: result.responseLog,
     });
@@ -288,7 +313,7 @@ export const youtubeProvider: SocialProvider = {
       access_type: "offline",
       include_granted_scopes: "true",
       prompt: "consent",
-      scope: YOUTUBE_UPLOAD_SCOPE,
+      scope: YOUTUBE_REQUIRED_SCOPES.join(" "),
       state: signOAuthState({
         userId: input.userId,
         workspaceId: input.workspaceId,
@@ -334,6 +359,19 @@ export const youtubeProvider: SocialProvider = {
       });
     }
 
+    const grantedScopes = new Set(
+      (token.data.scope ?? "").split(/\s+/).filter(Boolean),
+    );
+    const missingScopes = YOUTUBE_REQUIRED_SCOPES.filter((scope) => !grantedScopes.has(scope));
+    if (missingScopes.length > 0) {
+      throw new ProviderError({
+        code: "permission_denied",
+        message: "Google did not grant the YouTube permissions required to upload videos and read the channel.",
+        retryable: false,
+        responseLog: token.responseLog,
+      });
+    }
+
     const { channel } = await readMyChannel(token.data.access_token);
     const title = channel.snippet?.title ?? channel.id ?? "YouTube channel";
     return [{
@@ -345,7 +383,7 @@ export const youtubeProvider: SocialProvider = {
       accessToken: token.data.access_token,
       refreshToken: token.data.refresh_token ?? null,
       tokenExpiresAt: tokenExpiry(token.data.expires_in),
-      scopes: token.data.scope ?? YOUTUBE_UPLOAD_SCOPE,
+      scopes: token.data.scope,
       metadata: { channelId: channel.id },
     }];
   },

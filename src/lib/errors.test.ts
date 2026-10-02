@@ -27,6 +27,7 @@ const NOT_RETRYABLE: readonly ErrorCode[] = [
   "unsupported_media",
   "caption_too_long",
   "invalid_media_url",
+  "youtube_channel_not_found",
   "cancelled",
   "unknown",
 ];
@@ -104,7 +105,7 @@ describe("error code coercion", () => {
   });
 
   test("ERROR_CODES is the single source of truth", () => {
-    assert.equal(ERROR_CODES.length, 22);
+    assert.equal(ERROR_CODES.length, 23);
     assert.equal(ERROR_CODES.at(-1), "unknown");
     assert.equal(new Set(ERROR_CODES).size, ERROR_CODES.length);
   });

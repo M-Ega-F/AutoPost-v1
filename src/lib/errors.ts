@@ -15,6 +15,7 @@ export const ERROR_CODES = [
   "permission_denied",
   "account_disconnected",
   "account_needs_reconnect",
+  "youtube_channel_not_found",
   "rate_limited",
   "timeout",
   "network_error",
@@ -119,6 +120,8 @@ export function humanErrorMessage(
         : `This ${name} account is no longer connected.`;
     case "account_needs_reconnect":
       return `${name} needs reconnection. Reconnect the account, then retry.`;
+    case "youtube_channel_not_found":
+      return "Google connected successfully, but no YouTube channel was found for this account.";
     case "rate_limited":
       return `${name} is temporarily rate limiting requests. Try again in a few minutes.`;
     case "timeout":

@@ -451,6 +451,15 @@ export async function decryptRefreshToken(
   return decryptSecret(account.encryptedRefreshToken);
 }
 
+export function resolveEncryptedRefreshToken(
+  existingEncryptedRefreshToken: string | null | undefined,
+  newRefreshToken: string | null | undefined,
+): string | null {
+  return newRefreshToken
+    ? encryptSecret(newRefreshToken)
+    : existingEncryptedRefreshToken ?? null;
+}
+
 /** Persists (or re-points) the accounts an OAuth grant returned. */
 export async function saveConnectedAccounts(
   userId: string,
@@ -487,9 +496,10 @@ export async function saveConnectedAccounts(
       displayName: draft.displayName ?? null,
       avatarUrl: draft.avatarUrl ?? null,
       encryptedAccessToken,
-      encryptedRefreshToken: draft.refreshToken
-        ? encryptSecret(draft.refreshToken)
-        : null,
+      encryptedRefreshToken: resolveEncryptedRefreshToken(
+        existing[0]?.encryptedRefreshToken,
+        draft.refreshToken,
+      ),
       tokenExpiresAt: draft.tokenExpiresAt ?? null,
       scopes: draft.scopes ?? null,
       status: "active" as const,

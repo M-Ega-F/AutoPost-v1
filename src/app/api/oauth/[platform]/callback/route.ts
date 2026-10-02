@@ -15,7 +15,7 @@ import { verifyOAuthState } from "@/providers/social/http";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-type OAuthErrorCode = "denied" | "no_pages" | "not_configured" | "token" | "unknown";
+type OAuthErrorCode = "denied" | "no_pages" | "channel_not_found" | "quota" | "not_configured" | "token" | "unknown";
 
 function isPlatform(value: string): value is Platform {
   return (PLATFORMS as readonly string[]).includes(value);
@@ -66,8 +66,53 @@ function successRedirect(
   return clearStateCookie(NextResponse.redirect(url, 303), platform);
 }
 
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+function oauthErrorDiagnostics(platform: string, error: unknown): Record<string, unknown> {
+  if (!(error instanceof ProviderError)) {
+    return {
+      platform,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+
+  const response = asRecord(error.responseLog);
+  const body = asRecord(response?.body);
+  const providerError = asRecord(body?.error);
+  const providerErrors = Array.isArray(providerError?.errors)
+    ? providerError.errors
+    : Array.isArray(body?.errors)
+      ? body.errors
+      : [];
+  const firstProviderError = asRecord(providerErrors[0]);
+
+  return {
+    platform,
+    errorCode: error.code,
+    httpStatus: error.status ?? response?.status ?? null,
+    endpoint: typeof response?.endpoint === "string" ? response.endpoint : null,
+    providerMessage:
+      typeof providerError?.message === "string"
+        ? providerError.message
+        : typeof body?.message === "string"
+          ? body.message
+          : null,
+    googleError: typeof body?.error === "string" ? body.error : null,
+    googleErrorDescription:
+      typeof body?.error_description === "string" ? body.error_description : null,
+    googleReason: typeof firstProviderError?.reason === "string" ? firstProviderError.reason : null,
+    error: error.message,
+  };
+}
+
 function classifyError(error: unknown): OAuthErrorCode {
   if (error instanceof ProviderError) {
+    if (error.code === "youtube_channel_not_found") return "channel_not_found";
+    if (error.code === "quota_exceeded") return "quota";
     if (error.code === "permission_denied") return "denied";
     if (isAuthFailure(error.code)) return "token";
     return "unknown";
@@ -170,10 +215,7 @@ export async function GET(
 
     return successRedirect(origin, platform, saved);
   } catch (error) {
-    logger.error("oauth callback failed", {
-      platform,
-      error: error instanceof Error ? error.message : String(error),
-    });
+    logger.error("oauth callback failed", oauthErrorDiagnostics(platform, error));
 
     if (isMissingConfigError(error)) {
       logger.warn("oauth callback blocked by configuration", {

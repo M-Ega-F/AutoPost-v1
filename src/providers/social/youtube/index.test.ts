@@ -3,7 +3,7 @@ import { after, beforeEach, test } from "node:test";
 
 import { ProviderError } from "@/lib/errors";
 import type { MediaAsset, PublishInput } from "../types";
-import { mapYouTubeError, youtubeProvider } from "./index";
+import { mapYouTubeError, YOUTUBE_REQUIRED_SCOPES, youtubeProvider } from "./index";
 
 const originalFetch = globalThis.fetch;
 const previousClientId = process.env.YOUTUBE_CLIENT_ID;
@@ -83,7 +83,7 @@ after(() => {
   else process.env.ENCRYPTION_KEY = previousEncryptionKey;
 });
 
-test("YouTube OAuth requests offline upload access", async () => {
+test("YouTube OAuth requests upload and read-only channel access", async () => {
   const authorizationUrl = await youtubeProvider.getAuthorizationUrl({
     userId: "user-1",
     workspaceId: "workspace-1",
@@ -96,9 +96,102 @@ test("YouTube OAuth requests offline upload access", async () => {
   assert.equal(parsed.pathname, "/o/oauth2/v2/auth");
   assert.equal(parsed.searchParams.get("access_type"), "offline");
   assert.equal(parsed.searchParams.get("include_granted_scopes"), "true");
-  assert.equal(parsed.searchParams.get("scope"), "https://www.googleapis.com/auth/youtube.upload");
+  assert.deepEqual(
+    new Set(parsed.searchParams.get("scope")?.split(" ")),
+    new Set(YOUTUBE_REQUIRED_SCOPES),
+  );
   assert.equal(parsed.searchParams.get("redirect_uri"), "https://app.example.test/api/oauth/youtube/callback");
   assert.ok(parsed.searchParams.get("state"));
+});
+
+test("YouTube rejects a token that does not grant every required scope", async () => {
+  const authorizationUrl = await youtubeProvider.getAuthorizationUrl({
+    userId: "user-1",
+    workspaceId: "workspace-1",
+    state: "opaque-state",
+    redirectUri: "https://app.example.test/api/oauth/youtube/callback",
+  });
+  globalThis.fetch = (async () => response({
+    access_token: "access-token",
+    refresh_token: "refresh-token",
+    expires_in: 3600,
+    scope: "https://www.googleapis.com/auth/youtube.upload",
+  })) as typeof globalThis.fetch;
+
+  await assert.rejects(
+    () => youtubeProvider.handleCallback({
+      userId: "user-1",
+      workspaceId: "workspace-1",
+      code: "authorization-code",
+      state: new URL(authorizationUrl).searchParams.get("state") as string,
+      redirectUri: "https://app.example.test/api/oauth/youtube/callback",
+    }),
+    (error: unknown) => error instanceof ProviderError && error.code === "permission_denied",
+  );
+});
+
+test("YouTube callback discovers and returns the authorized channel", async () => {
+  const authorizationUrl = await youtubeProvider.getAuthorizationUrl({
+    userId: "user-1",
+    workspaceId: "workspace-1",
+    state: "opaque-state",
+    redirectUri: "https://app.example.test/api/oauth/youtube/callback",
+  });
+  const calls: string[] = [];
+  const responses = [
+    response({
+      access_token: "access-token",
+      refresh_token: "refresh-token",
+      expires_in: 3600,
+      scope: YOUTUBE_REQUIRED_SCOPES.join(" "),
+    }),
+    response({ items: [{ id: "channel-1", snippet: { title: "Example Channel" } }] }),
+  ];
+  globalThis.fetch = (async (input) => {
+    calls.push(String(input));
+    return responses.shift() as Response;
+  }) as typeof globalThis.fetch;
+
+  const [draft] = await youtubeProvider.handleCallback({
+    userId: "user-1",
+    workspaceId: "workspace-1",
+    code: "authorization-code",
+    state: new URL(authorizationUrl).searchParams.get("state") as string,
+    redirectUri: "https://app.example.test/api/oauth/youtube/callback",
+  });
+
+  assert.equal(draft.platformAccountId, "channel-1");
+  assert.equal(draft.displayName, "Example Channel");
+  assert.equal(draft.scopes, YOUTUBE_REQUIRED_SCOPES.join(" "));
+  assert.deepEqual(calls, [
+    "https://oauth2.googleapis.com/token",
+    "https://www.googleapis.com/youtube/v3/channels?part=snippet&mine=true",
+  ]);
+});
+
+test("YouTube reports an authorized account without a channel separately", async () => {
+  const authorizationUrl = await youtubeProvider.getAuthorizationUrl({
+    userId: "user-1",
+    workspaceId: "workspace-1",
+    state: "opaque-state",
+    redirectUri: "https://app.example.test/api/oauth/youtube/callback",
+  });
+  const responses = [
+    response({ access_token: "access-token", scope: YOUTUBE_REQUIRED_SCOPES.join(" ") }),
+    response({ items: [] }),
+  ];
+  globalThis.fetch = (async () => responses.shift() as Response) as typeof globalThis.fetch;
+
+  await assert.rejects(
+    () => youtubeProvider.handleCallback({
+      userId: "user-1",
+      workspaceId: "workspace-1",
+      code: "authorization-code",
+      state: new URL(authorizationUrl).searchParams.get("state") as string,
+      redirectUri: "https://app.example.test/api/oauth/youtube/callback",
+    }),
+    (error: unknown) => error instanceof ProviderError && error.code === "youtube_channel_not_found",
+  );
 });
 
 test("YouTube publishes video metadata through a resumable upload", async () => {
@@ -154,4 +247,43 @@ test("YouTube maps API verification errors without exposing raw provider details
   assert.equal(error.retryable, false);
   assert.equal(error.message, "YouTube requires Google API verification before public video publishing is available.");
   assert.equal(error.responseLog && typeof error.responseLog === "object", true);
+});
+
+test("YouTube maps 401 to token expiry and 403 to permission", () => {
+  assert.equal(
+    mapYouTubeError(401, { error: { message: "Invalid authentication credentials" } }).code,
+    "token_expired",
+  );
+  assert.equal(
+    mapYouTubeError(403, {
+      error: {
+        message: "The request is not authorized for this resource.",
+        errors: [{ reason: "forbidden" }],
+      },
+    }).code,
+    "permission_denied",
+  );
+  assert.equal(
+    mapYouTubeError(403, {
+      error: {
+        message: "The dailyLimitExceeded quota has been reached.",
+        errors: [{ reason: "dailyLimitExceeded" }],
+      },
+    }).code,
+    "quota_exceeded",
+  );
+});
+
+test("YouTube error logs redact token-shaped fields", () => {
+  const error = mapYouTubeError(403, {
+    access_token: "access-token-secret",
+    refresh_token: "refresh-token-secret",
+    client_secret: "client-secret",
+    error: { message: "Forbidden", errors: [{ reason: "forbidden" }] },
+  });
+
+  const serialized = JSON.stringify(error.responseLog);
+  assert.equal(serialized.includes("access-token-secret"), false);
+  assert.equal(serialized.includes("refresh-token-secret"), false);
+  assert.equal(serialized.includes("client-secret"), false);
 });

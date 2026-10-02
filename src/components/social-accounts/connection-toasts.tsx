@@ -6,7 +6,7 @@ import { toast } from "sonner";
 
 import { PLATFORMS, PLATFORM_META, type Platform } from "@/lib/status";
 
-type OAuthErrorCode = "denied" | "no_pages" | "not_configured" | "token" | "unknown";
+type OAuthErrorCode = "denied" | "no_pages" | "channel_not_found" | "quota" | "not_configured" | "token" | "unknown";
 
 function isPlatform(value: string): value is Platform {
   return (PLATFORMS as readonly string[]).includes(value);
@@ -16,6 +16,8 @@ function isErrorCode(value: string): value is OAuthErrorCode {
   return (
     value === "denied" ||
     value === "no_pages" ||
+    value === "channel_not_found" ||
+    value === "quota" ||
     value === "not_configured" ||
     value === "token" ||
     value === "unknown"
@@ -34,6 +36,15 @@ function messageFor(code: OAuthErrorCode, subject: string): string {
   }
   if (code === "no_pages") {
     return "No publishable Facebook Page was returned. Check the Page access and publishing permissions, then try again.";
+  }
+  if (code === "channel_not_found") {
+    return "Google connected successfully, but no YouTube channel was found for this account.";
+  }
+  if (code === "quota") {
+    return "YouTube quota has been exceeded. Check the Google Cloud quota before trying again.";
+  }
+  if (code === "denied" && subject === "YouTube") {
+    return "Google did not grant the required YouTube permissions. Reconnect and allow upload plus channel access.";
   }
   return `We couldn't connect ${subject}. Try again.`;
 }
