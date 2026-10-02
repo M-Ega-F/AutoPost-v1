@@ -319,6 +319,38 @@ describe("createPostSchema", () => {
     assert.equal(result.success, true);
   });
 
+  test("accepts YouTube video settings with the selected target", () => {
+    const result = createPostSchema.safeParse({
+      ...valid,
+      media: {
+        ...VALID_MEDIA,
+        storageKey: "user-1/post-1.mp4",
+        mimeType: "video/mp4",
+        mediaType: "video",
+        duration: 30,
+      },
+      targets: [{ platform: "youtube", socialAccountId: accountA }],
+      youtube: { title: "Demo video", privacy: "unlisted" },
+    });
+    assert.equal(result.success, true);
+  });
+
+  test("requires YouTube settings when YouTube is selected", () => {
+    const result = createPostSchema.safeParse({
+      ...valid,
+      media: {
+        ...VALID_MEDIA,
+        storageKey: "user-1/post-1.mp4",
+        mimeType: "video/mp4",
+        mediaType: "video",
+        duration: 30,
+      },
+      targets: [{ platform: "youtube", socialAccountId: accountA }],
+    });
+    assert.equal(result.success, false);
+    assert.ok(issuePaths(result).includes("youtube"));
+  });
+
   test("rejects the same account twice", () => {
     const result = createPostSchema.safeParse({
       ...valid,

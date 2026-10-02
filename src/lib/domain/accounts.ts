@@ -97,6 +97,7 @@ export async function listAccountSummaries(
     "tiktok",
     "threads",
     "linkedin",
+    "youtube",
     "x",
   ] as Platform[]).map((platform) => {
     const record = byPlatform.get(platform);

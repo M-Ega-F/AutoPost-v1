@@ -25,6 +25,7 @@ export const platformEnum = pgEnum("platform", [
   "tiktok",
   "threads",
   "linkedin",
+  "youtube",
   "x",
 ]);
 
@@ -553,7 +554,7 @@ export const webhookDeliveries = pgTable(
 );
 
 export type TemplateTarget = {
-  platform: "instagram" | "facebook" | "tiktok" | "threads" | "linkedin" | "x";
+  platform: "instagram" | "facebook" | "tiktok" | "threads" | "linkedin" | "youtube" | "x";
   socialAccountId: string | null;
 };
 
@@ -1169,6 +1170,7 @@ export const postPlatforms = pgTable(
       .notNull()
       .references(() => socialAccounts.id, { onDelete: "restrict" }),
     platform: platformEnum("platform").notNull(),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>(),
     status: postPlatformStatusEnum("status").notNull().default("pending"),
     attemptCount: integer("attempt_count").notNull().default(0),
     maxAttempts: integer("max_attempts").notNull().default(3),

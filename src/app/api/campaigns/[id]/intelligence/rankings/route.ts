@@ -13,7 +13,7 @@ const querySchema = z.object({
   type: z.enum(["performance", "engagement", "reach", "views", "goal_contribution"]).default("performance"),
   cursor: z.string().max(2048).optional(),
   limit: z.coerce.number().int().min(1).max(100).default(20),
-  platform: z.enum(["instagram", "facebook", "tiktok", "threads", "linkedin", "x"]).optional(),
+  platform: z.enum(["instagram", "facebook", "tiktok", "threads", "linkedin", "youtube", "x"]).optional(),
   format: z.enum(["image", "video", "text"]).optional(),
   trend: z.enum(["rising", "stable", "declining", "unknown"]).optional(),
   momentum: z.enum(["accelerating", "improving", "stable", "slowing", "declining", "unknown"]).optional(),

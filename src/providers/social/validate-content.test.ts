@@ -19,6 +19,7 @@ import { tiktokProvider } from "@/providers/social/tiktok";
 import { threadsProvider } from "@/providers/social/threads";
 import { linkedinProvider } from "@/providers/social/linkedin";
 import { xProvider } from "@/providers/social/x";
+import { youtubeProvider } from "@/providers/social/youtube";
 
 /* -------------------------------------------------------------------------- */
 
@@ -152,14 +153,76 @@ describe("the provider registry", () => {
     assert.equal(getProvider("threads"), threadsProvider);
     assert.equal(getProvider("linkedin"), linkedinProvider);
     assert.equal(getProvider("x"), xProvider);
+    assert.equal(getProvider("youtube"), youtubeProvider);
     assert.deepEqual(allProviders(), [
       metaInstagramProvider,
       metaFacebookProvider,
       tiktokProvider,
       threadsProvider,
       linkedinProvider,
+      youtubeProvider,
       xProvider,
     ]);
+  });
+});
+
+describe("YouTube provider.validateContent", () => {
+  test("accepts a video and rejects standalone images", async () => {
+    expectOk(await validate(youtubeProvider, "youtube", video()));
+    expectFailure(
+      await validate(youtubeProvider, "youtube", media()),
+      "unsupported_media",
+      "youtube",
+    );
+  });
+
+  test("enforces the YouTube file-size and video mime limits", async () => {
+    expectOk(
+      await validate(
+        youtubeProvider,
+        "youtube",
+        video({ fileSize: PLATFORM_LIMITS.youtube.maxBytes }),
+      ),
+    );
+    expectFailure(
+      await validate(
+        youtubeProvider,
+        "youtube",
+        video({ fileSize: PLATFORM_LIMITS.youtube.maxBytes + 1 }),
+      ),
+      "media_too_large",
+      "youtube",
+    );
+    expectFailure(
+      await validate(
+        youtubeProvider,
+        "youtube",
+        video({ mimeType: "video/webm" }),
+      ),
+      "unsupported_media",
+      "youtube",
+    );
+  });
+
+  test("enforces the caption limit", async () => {
+    expectOk(
+      await validate(
+        youtubeProvider,
+        "youtube",
+        video(),
+        "a".repeat(PLATFORM_LIMITS.youtube.captionLength),
+      ),
+    );
+    expectFailure(
+      await validate(
+        youtubeProvider,
+        "youtube",
+        video(),
+        "a".repeat(PLATFORM_LIMITS.youtube.captionLength + 1),
+      ),
+      "caption_too_long",
+      "youtube",
+    );
   });
 });
 

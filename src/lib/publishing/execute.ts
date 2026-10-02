@@ -750,6 +750,7 @@ function buildPublishInput(
     accessToken,
     caption: post.contentText,
     media,
+    platformMetadata: postPlatform.metadata,
     resolveMediaUrl: async (asset: MediaAsset) => {
       if (asset.storageKey) {
         return createSignedMediaUrl(asset.storageKey, SIGNED_URL_TTL_SECONDS);

@@ -129,6 +129,7 @@ describe("PLATFORM_LIMITS", () => {
       "tiktok",
       "threads",
       "linkedin",
+      "youtube",
       "x",
     ]);
   });
@@ -155,7 +156,7 @@ describe("PLATFORM_LIMITS", () => {
   test("every platform accepts exactly the uploaded allow-list's images and videos", () => {
     for (const platform of PLATFORMS) {
       const limits = PLATFORM_LIMITS[platform];
-      assert.deepEqual([...limits.imageMimeTypes], [
+      assert.deepEqual([...limits.imageMimeTypes], platform === "youtube" ? [] : [
         "image/jpeg",
         "image/png",
         "image/webp",

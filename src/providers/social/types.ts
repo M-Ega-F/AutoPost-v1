@@ -73,6 +73,8 @@ export type PublishInput = {
   accessToken: string;
   caption: string;
   media: MediaAsset;
+  /** Provider-specific post settings, kept out of the generic caption field. */
+  platformMetadata?: unknown;
   /** Resolves a persistently stored object to a short-lived HTTPS URL. */
   resolveMediaUrl: (media: MediaAsset) => Promise<string>;
   /** TikTok Photo delivery URL for a private object; never a Supabase URL. */
@@ -172,6 +174,7 @@ export interface SocialProvider {
     account: SocialAccountRecord;
     media: MediaAsset;
     caption: string;
+    platformMetadata?: unknown;
   }): Promise<ValidationResult>;
 
   publish(input: PublishInput): Promise<PublishResult>;

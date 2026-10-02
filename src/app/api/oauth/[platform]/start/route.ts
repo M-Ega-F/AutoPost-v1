@@ -29,6 +29,7 @@ function missingCredentialNames(platform: string): string[] {
   if (platform === "tiktok") return ["TIKTOK_CLIENT_KEY", "TIKTOK_CLIENT_SECRET"];
   if (platform === "threads") return ["THREADS_CLIENT_ID", "THREADS_CLIENT_SECRET"];
   if (platform === "linkedin") return ["LINKEDIN_CLIENT_ID", "LINKEDIN_CLIENT_SECRET"];
+  if (platform === "youtube") return ["YOUTUBE_CLIENT_ID", "YOUTUBE_CLIENT_SECRET"];
   if (platform === "instagram") return ["INSTAGRAM_CLIENT_ID", "INSTAGRAM_CLIENT_SECRET"];
   // X OAuth 2.0 PKCE supports public clients, so the client secret is optional.
   if (platform === "x") return ["X_CLIENT_ID"];

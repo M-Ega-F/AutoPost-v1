@@ -37,7 +37,7 @@ export function SidebarNav({
               "flex h-11 items-center gap-3 rounded-md px-3 text-sm transition-colors lg:h-10",
               FOCUS_RING,
               active
-                ? "border border-primary/50 bg-accent font-medium text-accent-foreground"
+                ? "border border-primary/50 bg-primary font-medium text-primary-foreground"
                 : "border border-transparent text-muted-foreground hover:border-primary/30 hover:bg-accent/60 hover:text-foreground",
             )}
           >

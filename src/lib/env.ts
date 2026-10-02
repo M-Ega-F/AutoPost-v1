@@ -175,6 +175,13 @@ export const serverConfig = {
     }))();
   },
 
+  get youtube() {
+    return lazy(() => ({
+      clientId: optional("YOUTUBE_CLIENT_ID", "GOOGLE_CLIENT_ID"),
+      clientSecret: optional("YOUTUBE_CLIENT_SECRET", "GOOGLE_CLIENT_SECRET"),
+    }))();
+  },
+
   get x() {
     return lazy(() => ({
       clientId: optional("X_CLIENT_ID"),

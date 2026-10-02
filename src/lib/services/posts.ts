@@ -125,6 +125,7 @@ export async function createPostForUser(
     media: await toDomainMedia(userId, input.media, workspace.workspace.id),
     targets,
     campaignId: input.campaignId,
+    youtube: input.youtube,
     publishTraceId,
   }, workspace.workspace.id);
 }
@@ -150,6 +151,7 @@ export async function saveDraftForUser(
     media: input.media ? await toDomainMedia(userId, input.media) : null,
     targets: resolveTargets(input.targets, accounts),
     campaignId: input.campaignId,
+    youtube: input.youtube,
   });
 }
 
@@ -184,6 +186,7 @@ export async function publishDraftForUser(
     scheduledAt,
     media: await toDomainMedia(userId, input.media),
     targets: resolveTargets(input.targets, accounts),
+    youtube: input.youtube,
     publishTraceId,
   });
 }

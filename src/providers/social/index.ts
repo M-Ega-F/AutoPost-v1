@@ -5,6 +5,7 @@ import { tiktokProvider } from "./tiktok";
 import { threadsProvider } from "./threads";
 import { linkedinProvider } from "./linkedin";
 import { xProvider } from "./x";
+import { youtubeProvider } from "./youtube";
 
 const providers: Record<Platform, SocialProvider> = {
   instagram: metaInstagramProvider,
@@ -12,6 +13,7 @@ const providers: Record<Platform, SocialProvider> = {
   tiktok: tiktokProvider,
   threads: threadsProvider,
   linkedin: linkedinProvider,
+  youtube: youtubeProvider,
   x: xProvider,
 };
 
@@ -30,6 +32,7 @@ export function allProviders(): SocialProvider[] {
     providers.tiktok,
     providers.threads,
     providers.linkedin,
+    providers.youtube,
     providers.x,
   ];
 }

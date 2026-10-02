@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { humanErrorMessage } from "@/lib/errors";
+import { YOUTUBE_PRIVACY_VALUES } from "@/lib/youtube";
 import { INVITABLE_ROLES } from "@/lib/auth/permissions";
 import { PLATFORMS, type Platform } from "@/lib/status";
 import { isValidTimeZone } from "@/lib/time";
@@ -65,6 +66,11 @@ export const platformSchema = z.custom<Platform>(
 const postTargetSchema = z.object({
   platform: platformSchema,
   socialAccountId: z.string().uuid(),
+});
+
+export const youtubePostSettingsSchema = z.object({
+  title: z.string().trim().min(1, "YouTube title is required.").max(100, "YouTube titles can be up to 100 characters."),
+  privacy: z.enum(YOUTUBE_PRIVACY_VALUES),
 });
 
 const acceptedMimeSchema = z.string().refine(
@@ -382,6 +388,7 @@ export const createPostSchema = z
       .min(1, { message: "Select at least one account." }),
     schedule: scheduleSchema.nullable(),
     campaignId: z.string().uuid().nullable().optional(),
+    youtube: youtubePostSettingsSchema.nullable().optional(),
   })
   .superRefine((value, ctx) => {
     const uniqueAccounts = new Set(value.targets.map((target) => target.socialAccountId));
@@ -396,6 +403,13 @@ export const createPostSchema = z
 
     // The effective limit is the minimum across the selected platforms.
     const selectedPlatforms = [...new Set(value.targets.map((target) => target.platform))];
+    if (selectedPlatforms.includes("youtube") && !value.youtube) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["youtube"],
+        message: "Add a YouTube title and privacy setting.",
+      });
+    }
     const limit = captionLimitFor(selectedPlatforms);
     if (value.caption.length > limit) {
       const [first] = captionLimitConstrainers(selectedPlatforms, limit);
@@ -417,6 +431,7 @@ export const saveDraftSchema = z
     targets: z.array(postTargetSchema),
     timezone: z.string().trim().min(1, { message: "Choose a timezone." }),
     campaignId: z.string().uuid().nullable().optional(),
+    youtube: youtubePostSettingsSchema.nullable().optional(),
   })
   .superRefine((value, ctx) => {
     const uniqueAccounts = new Set(value.targets.map((target) => target.socialAccountId));
@@ -431,6 +446,13 @@ export const saveDraftSchema = z
 
     if (value.targets.length === 0) return;
     const selectedPlatforms = [...new Set(value.targets.map((target) => target.platform))];
+    if (selectedPlatforms.includes("youtube") && !value.youtube) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["youtube"],
+        message: "Add a YouTube title and privacy setting.",
+      });
+    }
     const limit = captionLimitFor(selectedPlatforms);
     if (value.caption.length > limit) {
       const [first] = captionLimitConstrainers(selectedPlatforms, limit);
@@ -547,6 +569,7 @@ const historyPlatforms = [
   "tiktok",
   "threads",
   "linkedin",
+  "youtube",
   "x",
 ] as const;
 

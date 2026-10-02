@@ -11,6 +11,7 @@ import {
   Inbox,
   Instagram,
   Linkedin,
+  Youtube,
   Loader2,
   Music2,
   AtSign,
@@ -37,6 +38,7 @@ export type Platform =
   | "tiktok"
   | "threads"
   | "linkedin"
+  | "youtube"
   | "x";
 
 export const PLATFORMS: readonly Platform[] = [
@@ -45,6 +47,7 @@ export const PLATFORMS: readonly Platform[] = [
   "tiktok",
   "threads",
   "linkedin",
+  "youtube",
   "x",
 ];
 
@@ -75,6 +78,7 @@ export const PLATFORM_META: Record<Platform, PlatformMeta> = {
   tiktok: { label: "TikTok", icon: Music2, tone: "neutral" },
   threads: { label: "Threads", icon: MessageCircle, tone: "neutral" },
   linkedin: { label: "LinkedIn", icon: Linkedin, tone: "neutral" },
+  youtube: { label: "YouTube", icon: Youtube, tone: "neutral" },
   x: { label: "X", icon: AtSign, tone: "neutral" },
 };
 
@@ -84,6 +88,7 @@ export const PLATFORM_FALLBACK_ICON: Record<Platform, LucideIcon> = {
   tiktok: Video,
   threads: MessageCircle,
   linkedin: Linkedin,
+  youtube: Youtube,
   x: AtSign,
 };
 

@@ -19,6 +19,7 @@ import {
 import { createPostSchema, saveDraftSchema } from "@/lib/validation/schemas";
 import type { ActionResult } from "@/lib/domain/types";
 import type { Platform, PostStatus } from "@/lib/status";
+import type { YouTubePostSettings } from "@/lib/youtube";
 
 export type CreatePostMediaPayload =
   | {
@@ -61,6 +62,7 @@ export type CreatePostPayload = {
   targets: Array<{ platform: Platform; socialAccountId: string }>;
   schedule: { date: string; time: string; timezone: string } | null;
   campaignId?: string | null;
+  youtube?: YouTubePostSettings | null;
 };
 
 export type DraftPayload = {
@@ -70,6 +72,7 @@ export type DraftPayload = {
   targets: Array<{ platform: Platform; socialAccountId: string }>;
   timezone: string;
   campaignId?: string | null;
+  youtube?: YouTubePostSettings | null;
 };
 
 type PostActionResult = ActionResult & { postId?: string; status?: PostStatus };
@@ -147,6 +150,7 @@ async function createPostActionInternal(
       targets: payload?.targets,
       schedule: payload?.schedule,
       campaignId: payload?.campaignId,
+      youtube: payload?.youtube,
     });
 
     if (!parsed.success) {
@@ -194,6 +198,7 @@ export async function saveDraftAction(
       targets: payload?.targets,
       timezone: payload?.timezone,
       campaignId: payload?.campaignId,
+      youtube: payload?.youtube,
     });
     if (!parsed.success) {
       return { ok: false, message: parsed.error.issues[0]?.message ?? "Invalid draft." };
@@ -245,6 +250,7 @@ export async function publishDraftAction(
       targets: payload?.targets,
       schedule: payload?.schedule,
       campaignId: payload?.campaignId,
+      youtube: payload?.youtube,
     });
     if (!parsed.success) {
       return { ok: false, message: parsed.error.issues[0]?.message ?? "Invalid post." };

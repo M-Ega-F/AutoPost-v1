@@ -46,6 +46,7 @@ import type {
   PaginatedPosts,
 } from "@/lib/domain/types";
 import type { MediaAsset } from "@/providers/social/types";
+import { YOUTUBE_PRIVACY_VALUES, type YouTubePostSettings } from "@/lib/youtube";
 import { zonedTimeToUtc } from "@/lib/time";
 import { getActiveWorkspaceId } from "@/lib/domain/workspaces";
 import { requireWorkspacePermission } from "@/lib/auth/authorization";
@@ -73,6 +74,7 @@ export type CreatePostInput = {
   media: CreatePostMedia;
   targets: Array<{ platform: Platform; socialAccountId: string }>;
   campaignId?: string | null;
+  youtube?: YouTubePostSettings | null;
   publishTraceId?: string;
 };
 
@@ -88,6 +90,7 @@ export type DraftInput = {
   timezone: string;
   media: CreatePostMedia | null;
   targets: DraftTargetInput[];
+  youtube?: YouTubePostSettings | null;
   campaignId?: string | null;
 };
 
@@ -208,6 +211,7 @@ export async function createPost(
       account,
       media: mediaAsset,
       caption: input.contentText,
+      platformMetadata: target.platform === "youtube" ? input.youtube : undefined,
     });
 
     if (!validation.ok) {
@@ -259,6 +263,7 @@ export async function createPost(
           postId: post.id,
           socialAccountId: target.socialAccountId,
           platform: target.platform,
+          metadata: target.platform === "youtube" && input.youtube ? { youtube: input.youtube } : null,
           status: "pending" as const,
           maxAttempts: MAX_ATTEMPTS,
         })),
@@ -388,6 +393,7 @@ async function replaceDraftChildren(
   postId: string,
   media: CreatePostMedia | null,
   targets: DraftTargetInput[],
+  youtube?: YouTubePostSettings | null,
 ): Promise<Array<string | null>> {
   const previousMedia = await tx
     .select({ storageKey: postMedia.storageKey })
@@ -418,6 +424,7 @@ async function replaceDraftChildren(
         postId,
         socialAccountId: target.socialAccountId,
         platform: target.platform,
+        metadata: target.platform === "youtube" && youtube ? { youtube } : null,
         status: "pending" as const,
         maxAttempts: MAX_ATTEMPTS,
       })),
@@ -502,6 +509,7 @@ export async function saveDraft(
       postId,
       input.media,
       input.targets,
+      input.youtube,
     );
 
     return { postId, oldStorageKeys, invalidatedEventId };
@@ -572,6 +580,7 @@ export async function publishDraft(
       account,
       media: mediaAsset,
       caption: input.contentText,
+      platformMetadata: target.platform === "youtube" ? input.youtube : undefined,
     });
     if (!validation.ok) {
       throw new AppError(
@@ -611,6 +620,7 @@ export async function publishDraft(
       input.postId,
       input.media,
       input.targets,
+      input.youtube,
     );
     const targets = await tx
       .select({ id: postPlatforms.id })
@@ -1165,12 +1175,29 @@ export async function getPostDetail(
       .then((derived) => derived ? summaryToCampaignIntelligencePost(derived) : getCampaignPostIntelligence(userId, summary.campaignId!, postId))
       .catch(() => null)
     : Promise.resolve(null);
+  const youtubeSettingsPromise = (async (): Promise<YouTubePostSettings | null> => {
+    const [row] = await db
+      .select({ metadata: postPlatforms.metadata })
+      .from(postPlatforms)
+      .where(and(eq(postPlatforms.postId, postId), eq(postPlatforms.platform, "youtube")))
+      .limit(1);
+    const container = row?.metadata;
+    if (!container || typeof container !== "object" || Array.isArray(container)) return null;
+    const value = (container as Record<string, unknown>).youtube;
+    if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+    const settings = value as Record<string, unknown>;
+    const title = typeof settings.title === "string" ? settings.title : "";
+    const privacy = settings.privacy;
+    if (!title || !(YOUTUBE_PRIVACY_VALUES as readonly unknown[]).includes(privacy)) return null;
+    return { title, privacy: privacy as YouTubePostSettings["privacy"] };
+  })();
 
-  const [media, executions, analytics, campaignIntelligence] = await Promise.all([
+  const [media, executions, analytics, campaignIntelligence, youtube] = await Promise.all([
     mediaPromise,
     executionsPromise,
     analyticsPromise,
     campaignIntelligencePromise,
+    youtubeSettingsPromise,
   ]);
 
   const detail = {
@@ -1193,6 +1220,7 @@ export async function getPostDetail(
       executedAt: row.post_executions.executedAt,
     })),
     analytics,
+    youtube,
     campaignIntelligence,
   };
 

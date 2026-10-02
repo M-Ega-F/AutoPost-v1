@@ -104,7 +104,7 @@ describe("error code coercion", () => {
   });
 
   test("ERROR_CODES is the single source of truth", () => {
-    assert.equal(ERROR_CODES.length, 18);
+    assert.equal(ERROR_CODES.length, 22);
     assert.equal(ERROR_CODES.at(-1), "unknown");
     assert.equal(new Set(ERROR_CODES).size, ERROR_CODES.length);
   });

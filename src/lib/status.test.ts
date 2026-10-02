@@ -272,6 +272,7 @@ describe("status copy contract (Design.md section 5)", () => {
       "tiktok",
       "threads",
       "linkedin",
+      "youtube",
       "x",
     ]);
     assertCopy(PLATFORM_META.instagram, "Instagram");
@@ -279,6 +280,7 @@ describe("status copy contract (Design.md section 5)", () => {
     assertCopy(PLATFORM_META.tiktok, "TikTok");
     assertCopy(PLATFORM_META.threads, "Threads");
     assertCopy(PLATFORM_META.linkedin, "LinkedIn");
+    assertCopy(PLATFORM_META.youtube, "YouTube");
     assertCopy(PLATFORM_META.x, "X");
 
     // Platform badges are always neutral: identity comes from icon + name.
@@ -294,6 +296,7 @@ describe("status copy contract (Design.md section 5)", () => {
     assert.equal(platformLabel("tiktok"), "TikTok");
     assert.equal(platformLabel("threads"), "Threads");
     assert.equal(platformLabel("linkedin"), "LinkedIn");
+    assert.equal(platformLabel("youtube"), "YouTube");
     assert.equal(platformLabel("x"), "X");
   });
 
@@ -304,6 +307,7 @@ describe("status copy contract (Design.md section 5)", () => {
       "tiktok",
       "threads",
       "linkedin",
+      "youtube",
       "x",
     ]);
   });

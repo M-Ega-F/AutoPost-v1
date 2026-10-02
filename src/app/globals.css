@@ -6,25 +6,28 @@
 :root {
   --radius: 0.5rem;
 
-  --background: 210 40% 98%;
-  --foreground: 222 47% 11%;
+  /* Reference palette: paper-white surfaces, icy blue canvas, indigo actions. */
+  --background: 210 44% 97%;
+  --foreground: 214 54% 14%;
   --card: 0 0% 100%;
-  --card-foreground: 222 47% 11%;
+  --card-foreground: 214 54% 14%;
   --popover: 0 0% 100%;
-  --popover-foreground: 222 47% 11%;
-  --primary: 239 84% 67%;
+  --popover-foreground: 214 54% 14%;
+  --primary: 235 79% 61%;
+  --primary-hover: 239 84% 61%;
+  --accent-strong: 22 96% 48%;
   --primary-foreground: 0 0% 100%;
-  --secondary: 210 40% 96%;
-  --secondary-foreground: 222 47% 11%;
-  --muted: 210 40% 96%;
-  --muted-foreground: 215 16% 47%;
-  --accent: 239 100% 97%;
-  --accent-foreground: 243 75% 59%;
+  --secondary: 211 47% 95%;
+  --secondary-foreground: 214 54% 14%;
+  --muted: 211 47% 95%;
+  --muted-foreground: 211 27% 49%;
+  --accent: 232 100% 97%;
+  --accent-foreground: 235 65% 48%;
   --destructive: 0 72% 51%;
   --destructive-foreground: 0 0% 100%;
-  --border: 214 32% 91%;
+  --border: 210 42% 89%;
   --input: 0 0% 100%;
-  --ring: 239 84% 67%;
+  --ring: 235 79% 61%;
 
   --success: 142 71% 37%;
   --success-surface: 142 71% 96%;
@@ -32,49 +35,52 @@
   --warning: 32 95% 44%;
   --warning-surface: 32 100% 96%;
   --warning-border: 32 85% 80%;
-  --info: 221 83% 53%;
-  --info-surface: 221 100% 97%;
-  --info-border: 221 80% 82%;
+  --info: 214 78% 48%;
+  --info-surface: 213 100% 97%;
+  --info-border: 213 72% 82%;
   --destructive-surface: 0 86% 97%;
   --destructive-border: 0 91% 86%;
-  --chart-primary: 239 84% 67%;
-  --chart-secondary: 221 83% 53%;
+  --chart-primary: 235 79% 61%;
+  --chart-secondary: 193 72% 46%;
 }
 
 .dark {
-  --background: 222 47% 11%;
+  /* Dark hierarchy: neutral surfaces, blue actions, and restrained orange accents. */
+  --background: 213 33% 6%;
   --foreground: 210 40% 98%;
-  --card: 221 39% 11%;
+  --card: 216 26% 11%;
   --card-foreground: 210 40% 98%;
-  --popover: 221 39% 13%;
+  --popover: 216 24% 9%;
   --popover-foreground: 210 40% 98%;
-  --primary: 239 84% 67%;
-  --primary-foreground: 222 47% 11%;
-  --secondary: 215 28% 17%;
+  --primary: 207 80% 44%;
+  --primary-hover: 207 71% 50%;
+  --accent-strong: 34 91% 55%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 216 24% 9%;
   --secondary-foreground: 210 40% 98%;
-  --muted: 215 28% 17%;
-  --muted-foreground: 215 20% 65%;
-  --accent: 217 33% 20%;
+  --muted: 216 24% 9%;
+  --muted-foreground: 217 13% 59%;
+  --accent: 216 25% 14%;
   --accent-foreground: 210 40% 98%;
   --destructive: 0 84% 60%;
   --destructive-foreground: 0 0% 100%;
-  --border: 215 25% 27%;
-  --input: 215 25% 27%;
-  --ring: 239 84% 67%;
+  --border: 216 20% 18%;
+  --input: 216 20% 18%;
+  --ring: 207 71% 50%;
 
   --success: 142 71% 45%;
   --success-surface: 142 55% 14%;
   --success-border: 142 45% 30%;
-  --warning: 38 92% 50%;
-  --warning-surface: 38 55% 14%;
-  --warning-border: 38 70% 32%;
-  --info: 217 91% 60%;
-  --info-surface: 217 55% 14%;
-  --info-border: 217 65% 32%;
+  --warning: 48 96% 47%;
+  --warning-surface: 48 55% 14%;
+  --warning-border: 48 70% 32%;
+  --info: 199 93% 60%;
+  --info-surface: 199 55% 14%;
+  --info-border: 199 65% 32%;
   --destructive-surface: 0 45% 14%;
   --destructive-border: 0 40% 30%;
-  --chart-primary: 142 71% 45%;
-  --chart-secondary: 160 84% 39%;
+  --chart-primary: 207 80% 44%;
+  --chart-secondary: 34 91% 55%;
 }
 
 @theme inline {
@@ -88,6 +94,8 @@
   --color-popover: hsl(var(--popover));
   --color-popover-foreground: hsl(var(--popover-foreground));
   --color-primary: hsl(var(--primary));
+  --color-primary-hover: hsl(var(--primary-hover));
+  --color-accent-strong: hsl(var(--accent-strong));
   --color-primary-foreground: hsl(var(--primary-foreground));
   --color-secondary: hsl(var(--secondary));
   --color-secondary-foreground: hsl(var(--secondary-foreground));

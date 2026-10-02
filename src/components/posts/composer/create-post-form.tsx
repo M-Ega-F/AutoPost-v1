@@ -28,6 +28,7 @@ import {
 } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   Tooltip,
@@ -37,6 +38,7 @@ import {
 } from "@/components/ui/tooltip";
 import { PLATFORM_LABELS } from "@/lib/errors";
 import { PLATFORMS, type Platform } from "@/lib/status";
+import { YOUTUBE_PRIVACY_VALUES } from "@/lib/youtube";
 import { formatDateTime, zonedTimeToUtc } from "@/lib/time";
 import type { AccountSummary, DraftDetail } from "@/lib/domain/types";
 import {
@@ -75,6 +77,8 @@ const mediaValueSchema = z.object({
 const composerSchema = z
   .object({
     caption: z.string(),
+    youtubeTitle: z.string().max(100),
+    youtubePrivacy: z.enum(YOUTUBE_PRIVACY_VALUES),
     selectedAccountIds: z.array(z.string().uuid()),
     media: mediaValueSchema.nullable(),
   })
@@ -107,6 +111,8 @@ const composerSchema = z
 const draftComposerSchema = z
   .object({
     caption: z.string(),
+    youtubeTitle: z.string().max(100),
+    youtubePrivacy: z.enum(YOUTUBE_PRIVACY_VALUES),
     selectedAccountIds: z.array(z.string().uuid()),
     media: mediaValueSchema.nullable(),
   });
@@ -271,6 +277,8 @@ export function CreatePostForm({
     reValidateMode: "onChange",
     defaultValues: {
       caption: draft?.contentText ?? "",
+      youtubeTitle: draft?.youtube?.title ?? "",
+      youtubePrivacy: draft?.youtube?.privacy ?? "private",
       selectedAccountIds: initialSelectedAccountIds,
       media: draftMedia ?? initialLibraryMedia,
     },
@@ -280,6 +288,7 @@ export function CreatePostForm({
     control,
     reset: resetForm,
     setValue,
+    register,
     trigger,
     handleSubmit,
     getValues,
@@ -287,10 +296,12 @@ export function CreatePostForm({
   } = form;
 
   const watchedCaption = useWatch({ control, name: "caption" });
+  const watchedYoutubeTitle = useWatch({ control, name: "youtubeTitle" });
   const watchedAccountIds = useWatch({ control, name: "selectedAccountIds" });
   const media = useWatch({ control, name: "media" }) ?? null;
 
   const caption = watchedCaption ?? "";
+  const youtubeTitle = watchedYoutubeTitle ?? "";
   const selectedAccountIds = useMemo(
     () => watchedAccountIds ?? [],
     [watchedAccountIds],
@@ -456,7 +467,9 @@ export function CreatePostForm({
             ? "Caption is too long."
               : effectivePlatforms.length === 0
               ? "Select at least one account."
-              : caption.trim().length === 0
+              : selectedPlatforms.includes("youtube") && youtubeTitle.trim().length === 0
+                ? "Add a YouTube title."
+                : caption.trim().length === 0
                 ? "Write a caption to continue."
                 : null;
 
@@ -496,6 +509,9 @@ export function CreatePostForm({
           })),
           schedule,
           campaignId,
+          youtube: selectedPlatforms.includes("youtube")
+            ? { title: values.youtubeTitle.trim(), privacy: values.youtubePrivacy }
+            : null,
         };
         const result = mode === "draft" && draft
           ? await publishDraftAction(draft.id, payload)
@@ -551,7 +567,13 @@ export function CreatePostForm({
           if (mode === "draft") {
             router.push("/drafts");
           } else {
-            resetForm({ caption: "", selectedAccountIds: activeAccountIds, media: null });
+            resetForm({
+              caption: "",
+              selectedAccountIds: activeAccountIds,
+              media: null,
+              youtubeTitle: "",
+              youtubePrivacy: "private",
+            });
           }
           setCompatibility({});
           setSubmitAttempted(false);
@@ -568,7 +590,13 @@ export function CreatePostForm({
         if (mode === "draft") {
           router.push("/drafts");
         } else {
-          resetForm({ caption: "", selectedAccountIds: activeAccountIds, media: null });
+          resetForm({
+            caption: "",
+            selectedAccountIds: activeAccountIds,
+            media: null,
+            youtubeTitle: "",
+            youtubePrivacy: "private",
+          });
         }
         setCompatibility({});
         setSubmitAttempted(false);
@@ -588,6 +616,7 @@ export function CreatePostForm({
       campaignId,
       activeAccountIds,
       selectedAccounts,
+      selectedPlatforms,
     ],
   );
 
@@ -633,6 +662,9 @@ export function CreatePostForm({
           .map((account) => ({ platform: account.platform, socialAccountId: account.id })),
         timezone: draft?.timezone ?? defaultTimezone,
         campaignId,
+        youtube: selectedPlatforms.includes("youtube")
+          ? { title: parsed.data.youtubeTitle.trim(), privacy: parsed.data.youtubePrivacy }
+          : null,
       });
 
       if (!result.ok) {
@@ -808,6 +840,36 @@ export function CreatePostForm({
 
         <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1.55fr)_minmax(18rem,0.95fr)]">
         <div className="min-w-0 space-y-6">
+        {selectedPlatforms.includes("youtube") ? (
+          <div className="space-y-3 rounded-md border border-border p-4">
+            <div className="space-y-1">
+              <Label htmlFor="youtube-title">YouTube title</Label>
+              <Input
+                id="youtube-title"
+                placeholder="Enter a title for YouTube"
+                maxLength={100}
+                disabled={isPending || !canSaveDraft}
+                {...register("youtubeTitle")}
+              />
+              {errors.youtubeTitle?.message ? (
+                <p className="text-xs text-destructive">{errors.youtubeTitle.message}</p>
+              ) : null}
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="youtube-privacy">Privacy</Label>
+              <select
+                id="youtube-privacy"
+                className="flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                disabled={isPending || !canSaveDraft}
+                {...register("youtubePrivacy")}
+              >
+                <option value="private">Private</option>
+                <option value="unlisted">Unlisted</option>
+                <option value="public">Public</option>
+              </select>
+            </div>
+          </div>
+        ) : null}
         <CaptionField
           value={caption}
           limit={limit}

@@ -1060,10 +1060,10 @@ describe("dashboard aggregation", () => {
       failed: 2,
     });
     assert.equal(dashboard.upcoming.length, 1);
-    assert.equal(dashboard.connectedAccounts.length, 6);
+    assert.equal(dashboard.connectedAccounts.length, 7);
     assert.deepEqual(
       dashboard.connectedAccounts.map((account) => account.platform),
-      ["instagram", "facebook", "tiktok", "threads", "linkedin", "x"],
+      ["instagram", "facebook", "tiktok", "threads", "linkedin", "youtube", "x"],
     );
   });
 });
@@ -1072,10 +1072,10 @@ describe("listAccountSummaries", () => {
   test("returns one entry per platform in a fixed order", async () => {
     const summaries = await listAccountSummaries(USER_ID);
 
-    assert.equal(summaries.length, 6);
+    assert.equal(summaries.length, 7);
     assert.deepEqual(
       summaries.map((entry) => entry.platform),
-      ["instagram", "facebook", "tiktok", "threads", "linkedin", "x"],
+      ["instagram", "facebook", "tiktok", "threads", "linkedin", "youtube", "x"],
     );
     for (const entry of summaries) {
       assert.equal(entry.id, null);

@@ -32,6 +32,7 @@ export type JsonRequestOptions = {
     status: number,
     payload: unknown,
   ) => ProviderError | null | undefined;
+  allowEmptyResponse?: boolean;
 };
 
 export type JsonResult<T> = {
@@ -663,6 +664,7 @@ export function verifyOAuthState(state: string): SignedOAuthState | null {
       platform !== "tiktok" &&
       platform !== "threads" &&
       platform !== "linkedin" &&
+      platform !== "youtube" &&
       platform !== "x"
     ) {
       return null;

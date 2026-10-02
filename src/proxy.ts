@@ -17,7 +17,15 @@ import {
  * `/api/*` is deliberately left alone: Route Handlers answer `401` themselves,
  * because a 303 to an HTML login page is useless to a `fetch` caller.
  */
-const PUBLIC_PAGE_ROUTES = new Set(["/", "/login", "/signup", "/forgot-password", "/reset-password"]);
+const PUBLIC_PAGE_ROUTES = new Set([
+  "/",
+  "/login",
+  "/signup",
+  "/forgot-password",
+  "/reset-password",
+  "/terms",
+  "/privacy",
+]);
 
 function isPublicPage(pathname: string): boolean {
   return PUBLIC_PAGE_ROUTES.has(pathname);

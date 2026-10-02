@@ -102,6 +102,14 @@ export const PLATFORM_LIMITS: Record<Platform, PlatformLimits> = {
     minWidth: 1,
     minHeight: 1,
   },
+  youtube: {
+    captionLength: 5_000,
+    maxBytes: 50 * 1024 * 1024,
+    imageMimeTypes: [],
+    videoMimeTypes: VIDEO_MIME,
+    minWidth: 1,
+    minHeight: 1,
+  },
   x: {
     captionLength: 280,
     maxBytes: 50 * 1024 * 1024,

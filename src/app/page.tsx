@@ -5,6 +5,7 @@ import { LandingFeatures } from "@/components/marketing/landing-features";
 import { LandingHero } from "@/components/marketing/landing-hero";
 import { LandingHowItWorks } from "@/components/marketing/landing-how-it-works";
 import { SiteHeader } from "@/components/marketing/site-header";
+import { SiteFooter } from "@/components/marketing/site-footer";
 
 export default async function LandingPage() {
   const user = await getCurrentUser();
@@ -26,6 +27,7 @@ export default async function LandingPage() {
         <LandingHowItWorks />
         <LandingCta createPostHref={createPostHref} />
       </main>
+      <SiteFooter />
     </div>
   );
 }

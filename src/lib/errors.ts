@@ -20,6 +20,10 @@ export const ERROR_CODES = [
   "network_error",
   "provider_error",
   "publish_failed",
+  "invalid_metadata",
+  "invalid_media",
+  "quota_exceeded",
+  "api_audit_required",
   "cancelled",
   "unknown",
 ] as const;
@@ -46,6 +50,7 @@ export const PLATFORM_LABELS = {
   tiktok: "TikTok",
   threads: "Threads",
   linkedin: "LinkedIn",
+  youtube: "YouTube",
   x: "X",
 } as const;
 
@@ -123,6 +128,14 @@ export function humanErrorMessage(
       return `Something went wrong while publishing to ${name}. Retry to try again.`;
     case "publish_failed":
       return `Something went wrong while publishing to ${name}. Retry to try again.`;
+    case "invalid_metadata":
+      return `${name} rejected the video details. Check the title and description.`;
+    case "invalid_media":
+      return `${name} rejected this video file.`;
+    case "quota_exceeded":
+      return `${name} publishing quota has been exceeded. Check your Google Cloud quota before retrying.`;
+    case "api_audit_required":
+      return `${name} requires Google API verification before public video publishing is available.`;
     case "cancelled":
       return "This post was cancelled and will not be published.";
     case "unknown":

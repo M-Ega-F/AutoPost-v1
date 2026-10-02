@@ -1,6 +1,6 @@
 # Social platform connections
 
-AutoPost supports six platform targets:
+AutoPost supports seven platform targets:
 
 | Platform | Environment variables | OAuth callback |
 | --- | --- | --- |
@@ -9,6 +9,7 @@ AutoPost supports six platform targets:
 | TikTok | `TIKTOK_CLIENT_KEY`, `TIKTOK_CLIENT_SECRET` | `/api/oauth/tiktok/callback` |
 | Threads | `THREADS_CLIENT_ID`, `THREADS_CLIENT_SECRET` | `/api/oauth/threads/callback` |
 | LinkedIn | `LINKEDIN_CLIENT_ID`, `LINKEDIN_CLIENT_SECRET` | `/api/oauth/linkedin/callback` |
+| YouTube | `YOUTUBE_CLIENT_ID`, `YOUTUBE_CLIENT_SECRET` | `/api/oauth/youtube/callback` |
 | X | `X_CLIENT_ID` and optionally `X_CLIENT_SECRET` | `/api/oauth/x/callback` |
 
 Instagram uses Meta's standalone Instagram Login flow at
@@ -28,7 +29,23 @@ The new provider scopes are intentionally limited to publishing:
 
 - Threads: `threads_basic`, `threads_content_publish`
 - LinkedIn: `openid`, `profile`, `w_member_social`
+- YouTube: `https://www.googleapis.com/auth/youtube.upload`
 - X: `tweet.read`, `tweet.write`, `users.read`, `offline.access`
+
+## YouTube
+
+YouTube uses Google's server-side OAuth flow with offline access. After consent,
+the provider discovers the selected Google account's channel with
+`channels.list?part=snippet&mine=true` and stores the channel ID as the stable
+social account identity. Access and refresh tokens remain encrypted in the
+existing social account storage; they are not sent to the browser or queue.
+
+The provider supports video-only posts. Create Post stores a title and one of
+`private`, `unlisted`, or `public` as YouTube-specific post metadata, while the
+existing caption becomes the video description. Upload uses YouTube's
+resumable `videos.insert` endpoint and stores the returned YouTube video ID as
+the external post ID. Public uploads still depend on Google's API project
+verification and the channel's permissions/quota.
 
 ## Analytics support
 
@@ -65,9 +82,8 @@ application reads these credentials only on the server. The X provider uses
 OAuth 2.0 PKCE and stores its verifier in an HttpOnly cookie during the OAuth
 round trip.
 
-The enum extension is additive. Apply `drizzle/0001_add_social_platforms.sql`
-or `supabase/migrations/0002_add_social_platforms.sql` to an existing database
-before creating posts for the new targets.
+The enum extension is additive. Apply the latest generated Drizzle migration to
+an existing database before creating posts for the new targets.
 
 Provider configuration is lazy, so the app can still start when optional
 credentials for one of the platforms have not been added yet. That platform

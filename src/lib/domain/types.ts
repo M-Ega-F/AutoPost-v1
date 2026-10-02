@@ -5,6 +5,7 @@ import type {
   SocialAccountStatus,
 } from "@/lib/status";
 import type { CampaignIntelligencePost } from "@/lib/domain/campaign-intelligence";
+import type { YouTubePostSettings } from "@/lib/youtube";
 
 export type AccountHealthStatus =
   | "healthy"
@@ -205,6 +206,7 @@ export type PostDetail = PostSummary & {
   media: MediaSummary | null;
   executions: ExecutionSummary[];
   analytics: PostAnalyticsDetail | null;
+  youtube?: YouTubePostSettings | null;
   campaignIntelligence?: CampaignIntelligencePost | null;
 };
 
