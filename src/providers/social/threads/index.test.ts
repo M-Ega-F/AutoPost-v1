@@ -171,6 +171,7 @@ test("Threads rejects a callback state for a different user", async () => {
 test("Threads publishes an image container and then publishes it", async () => {
   const calls = mockFetch(
     { body: { id: "container-1" } },
+    { body: { id: "container-1", status: "FINISHED" } },
     { body: { id: "threads-post-1" } },
   );
 
@@ -186,13 +187,33 @@ test("Threads publishes an image container and then publishes it", async () => {
       body: { containerId: "container-1", postId: "threads-post-1" },
     },
   });
-  assert.equal(calls.length, 2);
+  assert.equal(calls.length, 3);
   assert.equal(calls[0].url.includes("access-token-never-in-url"), false);
   assert.equal(calls[1].url.includes("access-token-never-in-url"), false);
+  assert.equal(new URL(calls[1].url).searchParams.get("fields"), "id,status,error_message");
+  assert.equal(calls[1].init.method, "GET");
+  assert.equal(calls[2].url.includes("access-token-never-in-url"), false);
   assert.equal(new Headers(calls[0].init.headers).get("authorization"), "Bearer access-token-never-in-url");
   assert.match(String(calls[0].init.body), /media_type=IMAGE/);
-    assert.equal(new URLSearchParams(String(calls[0].init.body)).get("text"), "Hello Threads");
-  assert.match(String(calls[1].init.body), /creation_id=container-1/);
+  assert.equal(new URLSearchParams(String(calls[0].init.body)).get("text"), "Hello Threads");
+  assert.match(String(calls[2].init.body), /creation_id=container-1/);
+});
+
+test("Threads waits for a container still in progress before publishing", async () => {
+  const calls = mockFetch(
+    { body: { id: "container-1" } },
+    { body: { id: "container-1", status: "IN_PROGRESS" } },
+    { body: { id: "container-1", status: "FINISHED" } },
+    { body: { id: "threads-post-1" } },
+  );
+
+  const result = await threadsProvider.publish(publishInput());
+
+  assert.equal(result.status, "published");
+  assert.equal(calls.length, 4);
+  assert.equal(new URL(calls[1].url).pathname, "/v1.0/container-1");
+  assert.equal(new URL(calls[2].url).searchParams.get("fields"), "id,status,error_message");
+  assert.match(String(calls[3].init.body), /creation_id=container-1/);
 });
 
 test("Threads normalizes invalid-token and rate-limit responses", async () => {

@@ -13,8 +13,10 @@ import {
   requestJson,
   responseLog as buildResponseLog,
   signOAuthState,
+  sleep,
   validateMediaLimits,
   verifyOAuthState,
+  type JsonResult,
 } from "../http";
 import type {
   ConnectedAccountDraft,
@@ -31,6 +33,8 @@ const GRAPH_BASE = "https://graph.threads.net/v1.0";
 const OAUTH_BASE = "https://graph.threads.net";
 const AUTHORIZE_URL = "https://threads.net/oauth/authorize";
 const SCOPES = "threads_basic,threads_content_publish";
+const CONTAINER_STATUS_MAX_ATTEMPTS = 10;
+const CONTAINER_STATUS_INTERVAL_MS = 1_000;
 
 function requireCredentials(): { clientId: string; clientSecret: string } {
   const { clientId, clientSecret } = serverConfig.threads;
@@ -66,6 +70,12 @@ type ThreadsUser = {
   username?: string;
   name?: string;
   threads_profile_picture_url?: string;
+};
+
+type ThreadsContainer = {
+  id?: string;
+  status?: string;
+  error_message?: string;
 };
 
 function mapThreadsError(
@@ -139,6 +149,49 @@ async function readProfile(token: string): Promise<ThreadsUser> {
   return data;
 }
 
+async function waitForContainer(
+  containerId: string,
+  accessToken: string,
+): Promise<JsonResult<ThreadsContainer>> {
+  let latest: JsonResult<ThreadsContainer> | undefined;
+
+  for (let attempt = 0; attempt < CONTAINER_STATUS_MAX_ATTEMPTS; attempt += 1) {
+    latest = await threadsRequest<ThreadsContainer>(
+      `${GRAPH_BASE}/${encodeURIComponent(containerId)}?fields=id,status,error_message`,
+      {
+        method: "GET",
+        headers: { Authorization: `Bearer ${accessToken}` },
+      },
+      "GET /{container-id}?fields=id,status,error_message",
+    );
+
+    const status = latest.data.status?.toUpperCase();
+    if (status === "FINISHED" || status === "PUBLISHED") return latest;
+
+    if (status === "ERROR" || status === "EXPIRED") {
+      throw new ProviderError({
+        code: "provider_error",
+        message: humanErrorMessage(PLATFORM, "provider_error"),
+        retryable: false,
+        status: latest.responseLog.status,
+        responseLog: latest.responseLog,
+      });
+    }
+
+    if (attempt < CONTAINER_STATUS_MAX_ATTEMPTS - 1) {
+      await sleep(CONTAINER_STATUS_INTERVAL_MS);
+    }
+  }
+
+  throw new ProviderError({
+    code: "provider_error",
+    message: humanErrorMessage(PLATFORM, "provider_error"),
+    retryable: false,
+    status: latest?.responseLog.status,
+    responseLog: latest?.responseLog,
+  });
+}
+
 async function publishMedia(input: PublishInput): Promise<PublishResult> {
   const userId = input.account.platformAccountId;
   const mediaUrl = await input.resolveMediaUrl(input.media);
@@ -167,6 +220,22 @@ async function publishMedia(input: PublishInput): Promise<PublishResult> {
       retryable: false,
       responseLog: container.responseLog,
     });
+  }
+
+  const containerStatus = await waitForContainer(
+    container.data.id,
+    input.accessToken,
+  );
+  if (containerStatus.data.status?.toUpperCase() === "PUBLISHED") {
+    return {
+      status: "published",
+      externalPostId: containerStatus.data.id ?? container.data.id,
+      responseLog: buildResponseLog(PLATFORM, "threads-publish", containerStatus.responseLog.status, {
+        containerId: container.data.id,
+        postId: containerStatus.data.id ?? container.data.id,
+        status: "PUBLISHED",
+      }),
+    };
   }
 
   const published = await threadsRequest<{ id?: string }>(
