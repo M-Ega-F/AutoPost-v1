@@ -13,7 +13,7 @@ export class MissingConfigError extends Error {
 
   constructor(missing: string[]) {
     super(
-      `Missing environment configuration: ${missing.join(", ")}. Copy the values from your Supabase, Upstash and social app dashboards into .env.local.`,
+      `Missing environment configuration: ${missing.join(", ")}. Copy the values from your Supabase, Redis Cloud and social app dashboards into .env.local.`,
     );
     this.name = "MissingConfigError";
     this.missing = missing;
@@ -102,7 +102,7 @@ export const serverConfig = {
   },
 
   get redisUrl() {
-    return required("UPSTASH_REDIS_URL", "REDIS_URL");
+    return required("REDIS_URL");
   },
 
   get reviewAutomationIntervalMs() {

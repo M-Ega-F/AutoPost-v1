@@ -48,9 +48,7 @@ cut -d= -f1 .env.local | grep -v '^\s*$' | sort
 | Supabase | `NEXT_PUBLIC_SUPABASE_ANON_KEY` (fallback `SUPABASE_ANON_KEY`) | `serverConfig.supabaseAnonKey`, `src/proxy.ts`, `src/lib/auth/client.ts` | yes | |
 | Supabase | `SUPABASE_SERVICE_ROLE_KEY` (fallback `SERVICE_ROLE_KEY`) | `serverConfig.supabaseServiceRoleKey`, storage, seeding | yes | never sent to the browser |
 | Database | `DATABASE_URL` | `serverConfig.databaseUrl` (Drizzle) | yes | use the pooled/connection-string value from the Supabase dashboard |
-| Redis | `UPSTASH_REDIS_URL` (fallback `REDIS_URL`) | `serverConfig.redisUrl` (BullMQ, TCP) | yes | must be a `rediss://` URL — BullMQ needs TCP, not the REST API |
-| Redis | `UPSTASH_REDIS_REST_URL` | not read by the app | optional | listed in Plan §39; harmless to keep |
-| Redis | `UPSTASH_REDIS_REST_TOKEN` | not read by the app | optional | listed in Plan §39; harmless to keep |
+| Redis Cloud | `REDIS_URL` | `serverConfig.redisUrl` (BullMQ, TCP/TLS) | yes | use a `redis://` or `rediss://` URL — BullMQ needs TCP, not a REST endpoint |
 | Encryption | `ENCRYPTION_KEY` | `serverConfig.encryptionKey` (AES-GCM token vault) | yes | rotating it makes stored tokens undecryptable |
 | Meta / Facebook | `META_CLIENT_ID` (fallback `FACEBOOK_CLIENT_ID`) | `serverConfig.meta.clientId` | optional at boot, **required for Facebook scenarios 2, 6–9, 11, 13, 14** | |
 | Meta / Facebook | `META_CLIENT_SECRET` (fallback `FACEBOOK_CLIENT_SECRET`) | `serverConfig.meta.clientSecret` | optional at boot, required for the same Facebook scenarios | |
@@ -68,7 +66,7 @@ Notes:
 - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` may be present in `.env.local`; nothing in `src/` reads it. The app only
   reads `NEXT_PUBLIC_SUPABASE_ANON_KEY`.
 - `APP_URL` is **not** in `.env.local` today. Add it before running scenarios 2 and 13.
-- The worker refuses to start without `DATABASE_URL`, `UPSTASH_REDIS_URL`/`REDIS_URL` and `ENCRYPTION_KEY`
+- The worker refuses to start without `DATABASE_URL`, `REDIS_URL` and `ENCRYPTION_KEY`
   (`assertConfigured()` in `src/workers/publish-worker.ts:33`). That is your verification for those three.
 
 ### 1.3 Database schema (read-only check)
@@ -164,7 +162,7 @@ Startup check for terminal 2 — the worker logs JSON lines and must print:
 ```
 
 If it instead prints `publish worker failed to start` with
-`Missing environment configuration: …`, one of `DATABASE_URL`, `UPSTASH_REDIS_URL`/`REDIS_URL`, `ENCRYPTION_KEY`
+`Missing environment configuration: …`, one of `DATABASE_URL`, `REDIS_URL`, `ENCRYPTION_KEY`
 is missing. Restart the worker after every `.env.local` edit.
 
 Production-style check (optional): `npm run build && npm start` instead of `npm run dev`.
@@ -877,14 +875,14 @@ have different `scheduled_at` values. `scheduled_at` is always UTC; `timezone` i
 
 | Symptom | Likely cause | Fix |
 | --- | --- | --- |
-| Post stuck on `Processing` | `npm run worker` is not running (terminal 2), or Redis is unreachable | Start the worker. Check it printed `worker started`. Verify `UPSTASH_REDIS_URL` is a `rediss://` TCP URL; BullMQ cannot use the REST endpoint |
+| Post stuck on `Processing` | `npm run worker` is not running (terminal 2), or Redis is unreachable | Start the worker. Check it printed `worker started`. Verify `REDIS_URL` is a `redis://` or `rediss://` TCP/TLS URL; BullMQ cannot use a REST endpoint |
 | `Connect` disabled, card shows "… isn't set up on this server yet." | `META_CLIENT_ID` / `META_CLIENT_SECRET` or `TIKTOK_CLIENT_KEY` / `TIKTOK_CLIENT_SECRET` missing or still placeholders | Fill them in `.env.local`, restart **both** `npm run dev` and `npm run worker` |
 | OAuth redirect mismatch at the provider consent screen | The registered redirect URI is not exactly `<APP_URL>/api/oauth/<platform>/callback` | Set `APP_URL` and register `https://<domain>/api/oauth/{instagram,facebook,tiktok}/callback` (locally `http://localhost:3000/...`) |
 | "Still publishing. We'll keep trying — refresh to check the latest status." | Polling stopped after 2 minutes (24 attempts × 5 s). The status on screen is still the truth | Refresh the page. The post is not failed — check the worker log for `job completed` / `job failed` |
 | `401` with "Please log in to continue." from `/api/media/upload`, `/api/media/url`, `/api/media/compatibility` or `/api/posts/[id]` | Session expired | Log in again at `/login`. Route Handlers answer `401` instead of redirecting (`src/proxy.ts` leaves `/api/*` alone on purpose) |
 | Upload rejected as unsupported | Only JPEG, PNG, WebP, MP4 and MOV up to 100 MB are accepted | Convert the file. Renaming it does not help — `sniffMimeType()` reads magic bytes server-side |
 | Media URL rejected | Not `https://`, not publicly reachable, or a private/metadata address | Use a public HTTPS URL. `localhost`, `127.0.0.1`, private ranges and cloud metadata endpoints are blocked on purpose (SSRF gate in `src/lib/media/fetch-url.ts`) |
-| Worker exits immediately with `publish worker failed to start` | `DATABASE_URL`, `UPSTASH_REDIS_URL`/`REDIS_URL` or `ENCRYPTION_KEY` missing | The error names the missing variables. Add them and restart |
+| Worker exits immediately with `publish worker failed to start` | `DATABASE_URL`, `REDIS_URL` or `ENCRYPTION_KEY` missing | The error names the missing variables. Add them and restart |
 | "Too many posts at once. Wait a moment and try again." / "Too many attempts. …" | Rate limit hit (create post, publish now, schedule, retry, upload, OAuth callback) | Wait the window out (5 minutes for login and OAuth callback) and retry |
 | Every publish fails with "… needs reconnection. Reconnect the account, then retry." | The account is `needs_reconnect`, or the stored token cannot be decrypted | Reconnect from `/connected-accounts`. If you rotated `ENCRYPTION_KEY`, the stored tokens are unreadable — reconnect every account |
 | Post stays `Scheduled` past its time | No worker, or Redis lost the delayed job | Start the worker; the recovery sweep re-queues due targets within 60 s (`requeueDuePlatforms()`) |

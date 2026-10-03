@@ -203,7 +203,7 @@ let defaultStore: LoginRateLimitStore | undefined;
 
 function createDefaultStore(): LoginRateLimitStore {
   const fallback = createMemoryLoginRateLimitStore();
-  const redisUrl = process.env.UPSTASH_REDIS_URL ?? process.env.REDIS_URL;
+  const redisUrl = process.env.REDIS_URL;
   if (!redisUrl) return fallback;
 
   try {

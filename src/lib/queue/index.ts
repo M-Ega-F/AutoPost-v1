@@ -12,8 +12,8 @@ export const CAMPAIGN_AUTOMATION_QUEUE_NAME = "campaign-evaluation";
 let connection: ConnectionOptions | undefined;
 
 /**
- * BullMQ needs a raw TCP Redis connection (`rediss://` for Upstash), not the
- * Upstash REST API. `maxRetriesPerRequest: null` is required by BullMQ.
+ * BullMQ needs a raw TCP Redis connection (`redis://` or `rediss://`), not a
+ * REST API. `maxRetriesPerRequest: null` is required by BullMQ.
  */
 export function getRedisConnection(): ConnectionOptions {
   if (connection) return connection;

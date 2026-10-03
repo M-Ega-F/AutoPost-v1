@@ -60,7 +60,7 @@ Final post menggunakan content.media.id dengan image URN. Jangan memasukkan acce
       ├── PostgreSQL via Drizzle
       └── Supabase Storage private
               ↓
-        Redis / Upstash TCP
+        Redis Cloud TCP/TLS
           ├── publish-worker
           ├── webhook-worker
           ├── review-automation-worker
@@ -86,7 +86,7 @@ Web application dan worker berjalan sebagai process terpisah. Queue hanya membaw
 | PostgreSQL | Application database |
 | Drizzle ORM | Query layer dan migration tooling |
 | BullMQ | Job queue dan worker processing |
-| ioredis | Redis connection untuk BullMQ/Upstash |
+| ioredis | Redis connection untuk BullMQ/Redis Cloud |
 | Zod | Input validation |
 
 ## Project Structure
@@ -122,7 +122,7 @@ Web application dan worker berjalan sebagai process terpisah. Queue hanya membaw
 
 - Node.js yang mendukung dependency repository dan npm.
 - Project Supabase untuk Auth, PostgreSQL, dan Storage.
-- Redis dengan URL TCP, misalnya Upstash Redis rediss://; BullMQ tidak memakai endpoint REST sebagai connection URL.
+- Redis Cloud dengan URL TCP (`redis://` atau `rediss://`); BullMQ tidak memakai endpoint REST sebagai connection URL.
 - OAuth app dan permission yang sesuai untuk provider sosial yang ingin digunakan.
 
 Versi Node.js tidak dipatok di package.json saat ini. Gunakan versi Node.js LTS yang kompatibel dengan Next.js 16 dan dependency yang terpasang.
@@ -161,8 +161,7 @@ Isi .env.local dengan konfigurasi server dan provider yang diperlukan. Jangan me
 
 | Variable | Required | Purpose |
 | --- | --- | --- |
-| UPSTASH_REDIS_URL | Yes | Redis TCP URL untuk BullMQ dan worker |
-| REDIS_URL | Fallback | Alias Redis URL yang juga diterima oleh konfigurasi tertentu |
+| REDIS_URL | Yes | Redis Cloud TCP/TLS URL untuk BullMQ, worker, rate limit, lock, dan heartbeat; gunakan `redis://default:PASSWORD@HOST:PORT` atau `rediss://default:PASSWORD@HOST:PORT` |
 | REVIEW_AUTOMATION_INTERVAL_MS | Optional | Interval scheduler review automation |
 | CAMPAIGN_AUTOMATION_INTERVAL_MS | Optional | Interval scheduler campaign automation |
 
