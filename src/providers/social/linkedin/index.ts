@@ -15,6 +15,7 @@ import {
   responseLog as buildResponseLog,
   signOAuthState,
   uploadBytes,
+  uploadBytesWithHeaders,
   validateMediaLimits,
   verifyOAuthState,
 } from "../http";
@@ -103,18 +104,6 @@ async function readProfile(token: string): Promise<LinkedInProfile> {
   return data;
 }
 
-function uploadUrlOf(value: unknown): string | null {
-  if (!value || typeof value !== "object") return null;
-  for (const item of Object.values(value as Record<string, unknown>)) {
-    if (!item || typeof item !== "object") continue;
-    const record = item as Record<string, unknown>;
-    if (typeof record.uploadUrl === "string") return record.uploadUrl;
-    const nested = uploadUrlOf(record);
-    if (nested) return nested;
-  }
-  return null;
-}
-
 function ownerUrnOf(account: SocialAccountRecord): string {
   const accountMetadata = metadataOf(account);
   return typeof accountMetadata.authorUrn === "string"
@@ -167,56 +156,118 @@ async function uploadImage(
   return image;
 }
 
-async function uploadVideoWithAssetsApi(
+async function uploadVideo(
   input: PublishInput,
   owner: string,
   bytes: Uint8Array,
   size: number,
-  mimeType: string,
 ): Promise<string> {
-  const registered = await requestJson<{
+  const initialized = await requestJson<{
     value?: {
-      asset?: string;
-      uploadMechanism?: unknown;
+      video?: string;
+      uploadToken?: string;
+      uploadInstructions?: Array<{
+        uploadUrl?: string;
+        firstByte?: number;
+        lastByte?: number;
+      }>;
     };
   }>(
-    `${API_BASE}/rest/assets?action=registerUpload`,
+    `${API_BASE}/rest/videos?action=initializeUpload`,
     {
       method: "POST",
       headers: headers(input.accessToken, true),
       body: jsonBody({
-        registerUploadRequest: {
+        initializeUploadRequest: {
           owner,
-          recipes: ["urn:li:digitalmediaRecipe:feedshare-video"],
-          serviceRelationships: [
-            { identifier: "urn:li:userGeneratedContent", relationshipType: "OWNER" },
-          ],
-          supportedUploadMechanism: ["SYNCHRONOUS_UPLOAD"],
+          fileSizeBytes: size,
+          uploadCaptions: false,
+          uploadThumbnail: false,
         },
       }),
     },
-    { platform: PLATFORM, endpoint: "POST /rest/assets?action=registerUpload" },
+    { platform: PLATFORM, endpoint: "POST /rest/videos?action=initializeUpload" },
   );
 
-  const asset = registered.data.value?.asset;
-  const uploadUrl = uploadUrlOf(registered.data.value?.uploadMechanism);
-  if (!asset || !uploadUrl) {
+  const video = initialized.data.value?.video;
+  const uploadToken = initialized.data.value?.uploadToken ?? "";
+  const uploadInstructions = initialized.data.value?.uploadInstructions ?? [];
+  if (!video || uploadInstructions.length === 0) {
     throw new ProviderError({
       code: "publish_failed",
       message: humanErrorMessage(PLATFORM, "publish_failed"),
       retryable: false,
-      responseLog: registered.responseLog,
+      responseLog: initialized.responseLog,
     });
   }
 
-  await uploadBytes(uploadUrl, bytes, {
-    platform: PLATFORM,
-    endpoint: "PUT {linkedin-upload-url}",
-    contentType: mimeType,
-    contentRange: `bytes 0-${Math.max(0, size - 1)}/${size}`,
-  });
+  const uploadedPartIds: string[] = [];
+  let nextByte = 0;
+  for (const instruction of uploadInstructions) {
+    const uploadUrl = instruction.uploadUrl;
+    const firstByte = instruction.firstByte ?? nextByte;
+    const lastByte = Math.min(
+      instruction.lastByte ?? size - 1,
+      size - 1,
+    );
+    if (!uploadUrl || firstByte !== nextByte || firstByte < 0 || lastByte < firstByte) {
+      throw new ProviderError({
+        code: "publish_failed",
+        message: humanErrorMessage(PLATFORM, "publish_failed"),
+        retryable: false,
+        responseLog: initialized.responseLog,
+      });
+    }
 
-  return asset;
+    const responseHeaders = await uploadBytesWithHeaders(
+      uploadUrl,
+      bytes.subarray(firstByte, lastByte + 1),
+      {
+        platform: PLATFORM,
+        endpoint: "PUT {linkedin-video-upload-url}",
+        contentType: "application/octet-stream",
+        contentRange: `bytes ${firstByte}-${lastByte}/${size}`,
+      },
+    );
+    const etag = responseHeaders.get("etag");
+    if (!etag) {
+      throw new ProviderError({
+        code: "publish_failed",
+        message: humanErrorMessage(PLATFORM, "publish_failed"),
+        retryable: false,
+        responseLog: initialized.responseLog,
+      });
+    }
+    uploadedPartIds.push(etag);
+    nextByte = lastByte + 1;
+  }
+
+  if (nextByte !== size) {
+    throw new ProviderError({
+      code: "publish_failed",
+      message: humanErrorMessage(PLATFORM, "publish_failed"),
+      retryable: false,
+      responseLog: initialized.responseLog,
+    });
+  }
+
+  await requestJson(
+    `${API_BASE}/rest/videos?action=finalizeUpload`,
+    {
+      method: "POST",
+      headers: headers(input.accessToken, true),
+      body: jsonBody({
+        finalizeUploadRequest: {
+          video,
+          uploadToken,
+          uploadedPartIds,
+        },
+      }),
+    },
+    { platform: PLATFORM, endpoint: "POST /rest/videos?action=finalizeUpload" },
+  );
+
+  return video;
 }
 
 async function uploadMedia(input: PublishInput): Promise<string> {
@@ -227,7 +278,7 @@ async function uploadMedia(input: PublishInput): Promise<string> {
     return uploadImage(input, owner, bytes, size, mimeType);
   }
 
-  return uploadVideoWithAssetsApi(input, owner, bytes, size, mimeType);
+  return uploadVideo(input, owner, bytes, size);
 }
 
 async function publishPost(input: PublishInput): Promise<PublishResult> {

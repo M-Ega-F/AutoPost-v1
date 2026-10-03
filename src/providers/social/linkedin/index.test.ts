@@ -143,41 +143,54 @@ test("LinkedIn image publishing uses Images API and image URNs", async () => {
   assert.equal(calls.some((call) => call.url.includes("/rest/assets?action=registerUpload")), false);
 });
 
-test("LinkedIn video publishing keeps the Assets API flow", async () => {
+test("LinkedIn video publishing uses Videos API and video URNs", async () => {
   const calls = mockFetch(
     {
       body: {
         value: {
-          asset: "urn:li:digitalmediaAsset:test-video",
-          uploadMechanism: {
-            "com.linkedin.digitalmedia.uploading.MediaUploadHttpRequest": {
+          video: "urn:li:video:test-video",
+          uploadToken: "",
+          uploadInstructions: [
+            {
               uploadUrl: "https://upload.example.test/video",
+              firstByte: 0,
+              lastByte: 2,
             },
-          },
+          ],
         },
       },
     },
-    { status: 201 },
+    { status: 200, headers: { etag: "video-part-1" } },
+    { status: 200 },
     { status: 201, headers: { "x-restli-id": "urn:li:share:video-1" } },
   );
 
   const result = await linkedinProvider.publish(publishInput("video"));
-  const registerBody = JSON.parse(String(calls[0]?.init.body)) as {
-    registerUploadRequest: { recipes: string[] };
+  const initializeBody = JSON.parse(String(calls[0]?.init.body)) as {
+    initializeUploadRequest: { owner: string; fileSizeBytes: number };
   };
-  const postBody = JSON.parse(String(calls[2]?.init.body)) as {
+  const finalizeBody = JSON.parse(String(calls[2]?.init.body)) as {
+    finalizeUploadRequest: { video: string; uploadedPartIds: string[] };
+  };
+  const postBody = JSON.parse(String(calls[3]?.init.body)) as {
     content: { media: { id: string } };
   };
 
   assert.equal(result.status, "published");
-  assert.equal(calls.length, 3);
-  assert.equal(new URL(calls[0].url).pathname, "/rest/assets");
-  assert.equal(new URL(calls[0].url).searchParams.get("action"), "registerUpload");
-  assert.deepEqual(registerBody.registerUploadRequest.recipes, [
-    "urn:li:digitalmediaRecipe:feedshare-video",
-  ]);
+  assert.equal(calls.length, 4);
+  assert.equal(new URL(calls[0].url).pathname, "/rest/videos");
+  assert.equal(new URL(calls[0].url).searchParams.get("action"), "initializeUpload");
+  assert.equal(initializeBody.initializeUploadRequest.owner, "urn:li:person:member-1");
+  assert.equal(initializeBody.initializeUploadRequest.fileSizeBytes, 3);
   assert.equal(calls[1].url, "https://upload.example.test/video");
-  assert.equal(new URL(calls[2].url).pathname, "/rest/posts");
-  assert.equal(postBody.content.media.id, "urn:li:digitalmediaAsset:test-video");
+  assert.equal(new URL(calls[2].url).pathname, "/rest/videos");
+  assert.equal(new URL(calls[2].url).searchParams.get("action"), "finalizeUpload");
+  assert.deepEqual(finalizeBody.finalizeUploadRequest, {
+    video: "urn:li:video:test-video",
+    uploadToken: "",
+    uploadedPartIds: ["video-part-1"],
+  });
+  assert.equal(new URL(calls[3].url).pathname, "/rest/posts");
+  assert.equal(postBody.content.media.id, "urn:li:video:test-video");
+  assert.equal(calls.some((call) => call.url.includes("/rest/assets?action=registerUpload")), false);
 });
-

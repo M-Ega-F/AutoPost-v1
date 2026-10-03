@@ -557,6 +557,24 @@ export async function uploadBytes(
     timeoutMs?: number;
   },
 ): Promise<void> {
+  await uploadBytesWithHeaders(url, bytes, options);
+}
+
+/**
+ * Uploads raw bytes and returns provider response headers for APIs that use
+ * upload ETags to finalize multipart media uploads.
+ */
+export async function uploadBytesWithHeaders(
+  url: string,
+  bytes: Uint8Array,
+  options: {
+    platform: Platform;
+    endpoint: string;
+    contentType: string;
+    contentRange: string;
+    timeoutMs?: number;
+  },
+): Promise<Headers> {
   // `BodyInit` only accepts a view backed by a plain `ArrayBuffer`, so copy when
   // the caller handed us a subarray or a shared buffer.
   const payload: ArrayBuffer =
@@ -584,7 +602,7 @@ export async function uploadBytes(
     },
   );
 
-  if (response.ok) return;
+  if (response.ok) return response.headers;
 
   const text = await response.text();
   throw mapProviderError(

@@ -33,8 +33,9 @@ const GRAPH_BASE = "https://graph.threads.net/v1.0";
 const OAUTH_BASE = "https://graph.threads.net";
 const AUTHORIZE_URL = "https://threads.net/oauth/authorize";
 const SCOPES = "threads_basic,threads_content_publish";
-const CONTAINER_STATUS_MAX_ATTEMPTS = 10;
-const CONTAINER_STATUS_INTERVAL_MS = 1_000;
+const CONTAINER_STATUS_MAX_WAIT_MS = 5 * 60_000;
+const CONTAINER_STATUS_INITIAL_INTERVAL_MS = 1_000;
+const CONTAINER_STATUS_MAX_INTERVAL_MS = 60_000;
 
 function requireCredentials(): { clientId: string; clientSecret: string } {
   const { clientId, clientSecret } = serverConfig.threads;
@@ -154,8 +155,10 @@ async function waitForContainer(
   accessToken: string,
 ): Promise<JsonResult<ThreadsContainer>> {
   let latest: JsonResult<ThreadsContainer> | undefined;
+  let elapsedMs = 0;
+  let intervalMs = CONTAINER_STATUS_INITIAL_INTERVAL_MS;
 
-  for (let attempt = 0; attempt < CONTAINER_STATUS_MAX_ATTEMPTS; attempt += 1) {
+  while (elapsedMs <= CONTAINER_STATUS_MAX_WAIT_MS) {
     latest = await threadsRequest<ThreadsContainer>(
       `${GRAPH_BASE}/${encodeURIComponent(containerId)}?fields=id,status,error_message`,
       {
@@ -178,9 +181,12 @@ async function waitForContainer(
       });
     }
 
-    if (attempt < CONTAINER_STATUS_MAX_ATTEMPTS - 1) {
-      await sleep(CONTAINER_STATUS_INTERVAL_MS);
-    }
+    const remainingMs = CONTAINER_STATUS_MAX_WAIT_MS - elapsedMs;
+    if (remainingMs <= 0) break;
+    const delayMs = Math.min(intervalMs, remainingMs);
+    await sleep(delayMs);
+    elapsedMs += delayMs;
+    intervalMs = Math.min(intervalMs * 2, CONTAINER_STATUS_MAX_INTERVAL_MS);
   }
 
   throw new ProviderError({
