@@ -58,7 +58,11 @@ function publishInput(): PublishInput {
     caption: "A YouTube description",
     media: media(),
     platformMetadata: {
-      youtube: { title: "A YouTube title", privacy: "private" },
+      youtube: {
+        title: "A YouTube title",
+        privacy: "private",
+        selfDeclaredMadeForKids: true,
+      },
     },
     resolveMediaUrl: async () => "https://media.example.test/video.mp4",
     readMedia: async () => ({
@@ -221,13 +225,19 @@ test("YouTube publishes video metadata through a resumable upload", async () => 
     },
   });
   assert.equal(calls.length, 2);
-  assert.match(calls[0].url, /upload\/youtube\/v3\/videos\?uploadType=resumable&part=snippet,status$/);
+  assert.match(calls[0].url, /upload\/youtube\/v3\/videos\?uploadType=resumable&part=snippet,status,contentDetails,processingDetails$/);
   assert.equal(calls[0].init.method, "POST");
   assert.equal(new Headers(calls[0].init.headers).get("x-upload-content-length"), "3");
   assert.equal(new Headers(calls[0].init.headers).get("x-upload-content-type"), "video/mp4");
   assert.deepEqual(JSON.parse(String(calls[0].init.body)), {
     snippet: { title: "A YouTube title", description: "A YouTube description", categoryId: "22" },
-    status: { privacyStatus: "private" },
+    status: {
+      privacyStatus: "private",
+      embeddable: true,
+      license: "youtube",
+      publicStatsViewable: true,
+      selfDeclaredMadeForKids: true,
+    },
   });
   assert.equal(calls[1].url, "https://upload.example.test/session");
   assert.equal(calls[1].init.method, "PUT");

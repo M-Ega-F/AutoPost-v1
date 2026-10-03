@@ -71,6 +71,7 @@ const postTargetSchema = z.object({
 export const youtubePostSettingsSchema = z.object({
   title: z.string().trim().min(1, "YouTube title is required.").max(100, "YouTube titles can be up to 100 characters."),
   privacy: z.enum(YOUTUBE_PRIVACY_VALUES),
+  selfDeclaredMadeForKids: z.boolean().default(false),
 });
 
 const acceptedMimeSchema = z.string().refine(

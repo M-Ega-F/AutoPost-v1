@@ -1189,7 +1189,11 @@ export async function getPostDetail(
     const title = typeof settings.title === "string" ? settings.title : "";
     const privacy = settings.privacy;
     if (!title || !(YOUTUBE_PRIVACY_VALUES as readonly unknown[]).includes(privacy)) return null;
-    return { title, privacy: privacy as YouTubePostSettings["privacy"] };
+    return {
+      title,
+      privacy: privacy as YouTubePostSettings["privacy"],
+      selfDeclaredMadeForKids: settings.selfDeclaredMadeForKids === true,
+    };
   })();
 
   const [media, executions, analytics, campaignIntelligence, youtube] = await Promise.all([

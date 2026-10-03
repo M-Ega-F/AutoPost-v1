@@ -5,4 +5,5 @@ export type YouTubePrivacy = (typeof YOUTUBE_PRIVACY_VALUES)[number];
 export type YouTubePostSettings = {
   title: string;
   privacy: YouTubePrivacy;
+  selfDeclaredMadeForKids: boolean;
 };

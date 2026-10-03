@@ -79,6 +79,7 @@ const composerSchema = z
     caption: z.string(),
     youtubeTitle: z.string().max(100),
     youtubePrivacy: z.enum(YOUTUBE_PRIVACY_VALUES),
+    youtubeMadeForKids: z.boolean().default(false),
     selectedAccountIds: z.array(z.string().uuid()),
     media: mediaValueSchema.nullable(),
   })
@@ -113,6 +114,7 @@ const draftComposerSchema = z
     caption: z.string(),
     youtubeTitle: z.string().max(100),
     youtubePrivacy: z.enum(YOUTUBE_PRIVACY_VALUES),
+    youtubeMadeForKids: z.boolean().default(false),
     selectedAccountIds: z.array(z.string().uuid()),
     media: mediaValueSchema.nullable(),
   });
@@ -279,6 +281,7 @@ export function CreatePostForm({
       caption: draft?.contentText ?? "",
       youtubeTitle: draft?.youtube?.title ?? "",
       youtubePrivacy: draft?.youtube?.privacy ?? "private",
+      youtubeMadeForKids: draft?.youtube?.selfDeclaredMadeForKids ?? false,
       selectedAccountIds: initialSelectedAccountIds,
       media: draftMedia ?? initialLibraryMedia,
     },
@@ -510,7 +513,11 @@ export function CreatePostForm({
           schedule,
           campaignId,
           youtube: selectedPlatforms.includes("youtube")
-            ? { title: values.youtubeTitle.trim(), privacy: values.youtubePrivacy }
+            ? {
+                title: values.youtubeTitle.trim(),
+                privacy: values.youtubePrivacy,
+                selfDeclaredMadeForKids: values.youtubeMadeForKids,
+              }
             : null,
         };
         const result = mode === "draft" && draft
@@ -573,6 +580,7 @@ export function CreatePostForm({
               media: null,
               youtubeTitle: "",
               youtubePrivacy: "private",
+              youtubeMadeForKids: false,
             });
           }
           setCompatibility({});
@@ -596,6 +604,7 @@ export function CreatePostForm({
             media: null,
             youtubeTitle: "",
             youtubePrivacy: "private",
+            youtubeMadeForKids: false,
           });
         }
         setCompatibility({});
@@ -663,7 +672,11 @@ export function CreatePostForm({
         timezone: draft?.timezone ?? defaultTimezone,
         campaignId,
         youtube: selectedPlatforms.includes("youtube")
-          ? { title: parsed.data.youtubeTitle.trim(), privacy: parsed.data.youtubePrivacy }
+          ? {
+              title: parsed.data.youtubeTitle.trim(),
+              privacy: parsed.data.youtubePrivacy,
+              selfDeclaredMadeForKids: parsed.data.youtubeMadeForKids,
+            }
           : null,
       });
 
@@ -868,6 +881,21 @@ export function CreatePostForm({
                 <option value="public">Public</option>
               </select>
             </div>
+            <label htmlFor="youtube-made-for-kids" className="flex items-start gap-2 text-sm">
+              <input
+                id="youtube-made-for-kids"
+                type="checkbox"
+                className="mt-0.5 size-4 rounded border-input accent-primary"
+                disabled={isPending || !canSaveDraft}
+                {...register("youtubeMadeForKids")}
+              />
+              <span>
+                This video is made for kids
+                <span className="mt-1 block text-xs text-muted-foreground">
+                  Only select this when the video is directed to children.
+                </span>
+              </span>
+            </label>
           </div>
         ) : null}
         <CaptionField

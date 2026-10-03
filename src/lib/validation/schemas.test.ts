@@ -330,7 +330,11 @@ describe("createPostSchema", () => {
         duration: 30,
       },
       targets: [{ platform: "youtube", socialAccountId: accountA }],
-      youtube: { title: "Demo video", privacy: "unlisted" },
+      youtube: {
+        title: "Demo video",
+        privacy: "unlisted",
+        selfDeclaredMadeForKids: false,
+      },
     });
     assert.equal(result.success, true);
   });

@@ -51,6 +51,11 @@ type YouTubeChannel = {
 
 type YouTubeVideo = { id?: string };
 
+// Request the metadata plus the server-generated processing information in
+// the final upload response. The extra parts do not change the uploaded media;
+// they let us record the state YouTube assigned to it.
+const YOUTUBE_INSERT_PARTS = "snippet,status,contentDetails,processingDetails";
+
 function requireCredentials(): { clientId: string; clientSecret: string } {
   const { clientId, clientSecret } = serverConfig.youtube;
   if (!clientId || !clientSecret) {
@@ -93,7 +98,11 @@ function settingsOf(value: unknown): YouTubePostSettings | null {
   const title = typeof record.title === "string" ? record.title.trim() : "";
   const privacy = record.privacy;
   if (!title || !(YOUTUBE_PRIVACY_VALUES as readonly unknown[]).includes(privacy)) return null;
-  return { title, privacy: privacy as YouTubePostSettings["privacy"] };
+  return {
+    title,
+    privacy: privacy as YouTubePostSettings["privacy"],
+    selfDeclaredMadeForKids: record.selfDeclaredMadeForKids === true,
+  };
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -225,10 +234,16 @@ async function publishVideo(input: PublishInput): Promise<PublishResult> {
       description: input.caption,
       categoryId: "22",
     },
-    status: { privacyStatus: privacy },
+    status: {
+      privacyStatus: privacy,
+      embeddable: true,
+      license: "youtube",
+      publicStatsViewable: true,
+      selfDeclaredMadeForKids: settings.selfDeclaredMadeForKids,
+    },
   };
   const initialized = await requestJson<null>(
-    `${UPLOAD_BASE}?uploadType=resumable&part=snippet,status`,
+    `${UPLOAD_BASE}?uploadType=resumable&part=${YOUTUBE_INSERT_PARTS}`,
     {
       method: "POST",
       headers: {
